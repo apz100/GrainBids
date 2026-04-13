@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Grain Prices</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2em; }
+        table { border-collapse: collapse; width: 60%; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>Grain Prices</h1>
+    <div id="row-count" style="margin-bottom:0.5em;color:#555;"></div>
+    <div style="margin-bottom: 1em;">
+        <label>Location: <input type="text" id="location-input" placeholder="e.g. Chicago"></label>
+        <label>Crop: <input type="text" id="crop-input" placeholder="e.g. Corn"></label>
+        <button onclick="loadPrices()">Search</button>
+        <button onclick="resetFilters()">Reset</button>
+    </div>
+    <table id="prices-table" style="width:95%;">
+        <thead>
+            <tr id="header-row"></tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+    <script>
+        function loadPrices() {
+            const location = document.getElementById('location-input').value;
+            const crop = document.getElementById('crop-input').value;
+            let url = '/api/prices?';
+            if (location) url += 'location=' + encodeURIComponent(location) + '&';
+            if (crop) url += 'crop=' + encodeURIComponent(crop);
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    const columns = data.columns;
+                    const rows = data.rows;
+                    const theadRow = document.getElementById('header-row');
+                    theadRow.innerHTML = '';
+                    columns.forEach(col => {
+                        const th = document.createElement('th');
+                        // prettify header: replace underscores with spaces and title-case
+                        const pretty = col.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                        th.textContent = pretty;
+                        theadRow.appendChild(th);
+                    });
+                    // show count
+                    document.getElementById('row-count').textContent = `${rows.length} rows`;
+                    const tbody = document.querySelector('#prices-table tbody');
+                    tbody.innerHTML = '';
+                    rows.forEach(row => {
+                        const tr = document.createElement('tr');
+                        columns.forEach(col => {
+                            const td = document.createElement('td');
+                            // show empty as blank string
+                            td.textContent = row[col] !== undefined ? row[col] : '';
+                            tr.appendChild(td);
+                        });
+                        tbody.appendChild(tr);
+                    });
+                });
+        }
+        function resetFilters() {
+            document.getElementById('location-input').value = '';
+            document.getElementById('crop-input').value = '';
+            loadPrices();
+        }
+        // Initial load
+        loadPrices();
+    </script>
+</body>
+</html>

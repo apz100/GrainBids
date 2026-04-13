@@ -1,0 +1,13 @@
+# Web scraping
+playwright
+requests
+beautifulsoup4
+lxml
+html5lib
+
+# Data
+pandas
+openpyxl
+
+# Config (tomllib is stdlib in Python 3.11+; tomli needed for older versions)
+tomli; python_version < "3.11"

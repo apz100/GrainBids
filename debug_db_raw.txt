@@ -1,0 +1,70 @@
+{
+  "columns": [
+    "location",
+    "name",
+    "delivery",
+    "basis",
+    "bushel_cash_price",
+    "mt_cash_price",
+    "other1",
+    "other2",
+    "other3"
+  ],
+  "rows": [
+    {
+      "basis": "",
+      "bushel_cash_price": "",
+      "delivery": "",
+      "location": "",
+      "mt_cash_price": "",
+      "name": "",
+      "other1": "",
+      "other2": "",
+      "other3": ""
+    },
+    {
+      "basis": "",
+      "bushel_cash_price": "",
+      "delivery": "",
+      "location": "",
+      "mt_cash_price": "",
+      "name": "",
+      "other1": "",
+      "other2": "",
+      "other3": ""
+    },
+    {
+      "basis": "",
+      "bushel_cash_price": "",
+      "delivery": "",
+      "location": "",
+      "mt_cash_price": "",
+      "name": "",
+      "other1": "",
+      "other2": "",
+      "other3": ""
+    },
+    {
+      "basis": "",
+      "bushel_cash_price": "",
+      "delivery": "",
+      "location": "",
+      "mt_cash_price": "",
+      "name": "",
+      "other1": "",
+      "other2": "",
+      "other3": ""
+    },
+    {
+      "basis": "",
+      "bushel_cash_price": "",
+      "delivery": "",
+      "location": "",
+      "mt_cash_price": "",
+      "name": "",
+      "other1": "",
+      "other2": "",
+      "other3": ""
+    }
+  ]
+}

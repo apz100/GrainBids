@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l /p/Adam/Code/GrainBidsFrankenstine/*.py)",
+      "Bash(grep -l \"def fetch\" /p/Adam/Code/GrainBidsFrankenstine/*.py)",
+      "Bash(ls -la /p/Adam/Code/GrainBidsFrankenstine/*.ps1)",
+      "Bash(grep -h \"^def fetch\" /p/Adam/Code/GrainBidsFrankenstine/*_source.py)",
+      "Bash(python -c \"from ganaraska_source import fetch_ganaraska; df = fetch_ganaraska\\(\\); print\\(df.to_string\\(\\) if not df.empty else 'EMPTY'\\)\")",
+      "Bash(python -c ':*)",
+      "WebFetch(domain:farmbucks.com)",
+      "WebFetch(domain:auroracoop.com)",
+      "WebFetch(domain:www.frontiercooperative.com)",
+      "WebFetch(domain:www.heartlandcoop.com)",
+      "WebFetch(domain:goldeaglecoop.com)",
+      "WebFetch(domain:www.kokomograin.com)",
+      "WebFetch(domain:www.eliteoctane.net)",
+      "Read(//c/Users/SCALEU~1/AppData/Local/Temp/claude/p--Adam-Code-GrainBidsFrankenstine/b45a0eb0-2634-48b0-90dc-514dec458cfa/tasks//**)"
+    ]
+  }
+}

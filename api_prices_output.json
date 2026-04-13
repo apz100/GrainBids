@@ -1,0 +1,42 @@
+﻿
+
+StatusCode        : 200
+StatusDescription : OK
+Content           : {
+                      "columns": [
+                        "basis",
+                        "bushel_cash_price",
+                        "delivery",
+                        "location",
+                        "mt_cash_price",
+                        "name",
+                        "other1",
+                        "other2",
+                        "other3"
+                      ],
+                      "rows": [
+                        {
+                          "basis": "...
+RawContent        : HTTP/1.1 200 OK
+                    Connection: close
+                    Content-Length: 385047
+                    Content-Type: application/json
+                    Date: Mon, 13 Apr 2026 17:48:09 GMT
+                    Server: Werkzeug/3.1.8 Python/3.11.9
+                    
+                    {
+                      "columns": [
+                        "basis",
+                     ...
+Forms             : 
+Headers           : {[Connection, close], [Content-Length, 385047], 
+                    [Content-Type, application/json], [Date, Mon, 13 Apr 2026 
+                    17:48:09 GMT]...}
+Images            : {}
+InputFields       : {}
+Links             : {}
+ParsedHtml        : 
+RawContentLength  : 385047
+
+
+
