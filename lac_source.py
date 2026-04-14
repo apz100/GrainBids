@@ -209,3 +209,9 @@ def fetch_lac_all(p: Playwright) -> pd.DataFrame:
         return pd.DataFrame()
 
     return pd.concat(all_rows, ignore_index=True)
+
+
+# Backwards-compatible wrapper expected by some tests
+def parse_lac_html(html: str, location_name: str) -> pd.DataFrame:
+    """Compatibility wrapper: parse rendered LAC HTML into DataFrame."""
+    return _parse_lac_dom(html, location_name)

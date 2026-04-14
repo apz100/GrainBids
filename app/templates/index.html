@@ -19,6 +19,11 @@
         <button onclick="loadPrices()">Search</button>
         <button onclick="resetFilters()">Reset</button>
     </div>
+    <!-- Posting disabled in initial release; form removed to keep posted bids read-only -->
+    <div style="margin-bottom:1em; border-top:1px solid #eee; padding-top:1em;">
+        <h3>Recent Posted Bids</h3>
+        <div id="posted-bids-list">(loading...)</div>
+    </div>
     <table id="prices-table" style="width:95%;">
         <thead>
             <tr id="header-row"></tr>
@@ -68,8 +73,39 @@
             document.getElementById('crop-input').value = '';
             loadPrices();
         }
+        function loadPostedBids() {
+            fetch('/api/posted_bids')
+                .then(r => r.json())
+                .then(data => {
+                    const rows = data.rows || [];
+                    const div = document.getElementById('posted-bids-list');
+                    if (!rows.length) {
+                        div.textContent = 'No posted bids';
+                        return;
+                    }
+                    const table = document.createElement('table');
+                    const thead = document.createElement('thead');
+                    const hr = document.createElement('tr');
+                    ['TS','Location','Commodity','Price MT','User','Notes'].forEach(h => { const th=document.createElement('th'); th.textContent=h; hr.appendChild(th); });
+                    thead.appendChild(hr);
+                    table.appendChild(thead);
+                    const tbody = document.createElement('tbody');
+                    rows.forEach(r => {
+                        const tr = document.createElement('tr');
+                        ['ts','location','commodity','posted_price_mt','user','notes'].forEach(k => { const td=document.createElement('td'); td.textContent = r[k] !== undefined ? r[k] : ''; tr.appendChild(td); });
+                        tbody.appendChild(tr);
+                    });
+                    table.appendChild(tbody);
+                    div.innerHTML = '';
+                    div.appendChild(table);
+                })
+                .catch(e => { document.getElementById('posted-bids-list').textContent = 'Error loading posted bids'; });
+        }
+
+        // Posting disabled: postBid() removed to keep posted bids read-only
         // Initial load
         loadPrices();
+        loadPostedBids();
     </script>
 </body>
 </html>

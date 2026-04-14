@@ -65,24 +65,20 @@ DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'grain_b
 STANDARD_COLUMNS = [
     "location",
     "commodity",
-    "delivery_label",
-    "delivery_start",
     "delivery_end",
     "futures_month",
-    "futures_symbol",
     "futures_price",
     "futures_change",
     "basis",
     "cash_price_bu",
     "cash_price_mt",
-    "basis_mt",
 ]
 
 SHEET_MAPPINGS = {
     "Agricharts": {
         "Location": "location",
         "Name": "commodity",
-        "Delivery": "delivery_start",
+        "Delivery": "delivery_end",
         "Delivery End": "delivery_end",
         "Futures Month": "futures_month",
         "Futures Price": "futures_price",
@@ -94,8 +90,6 @@ SHEET_MAPPINGS = {
     "GLG": {
         "Location": "location",
         "Commodity": "commodity",
-        "Delivery": "delivery_start",
-        "Futures Mon.": "futures_symbol",
         "Futures": "futures_price",
         "Chg": "futures_change",
         "Basis": "basis",
@@ -105,8 +99,6 @@ SHEET_MAPPINGS = {
     "LAC": {
         "Location": "location",
         "Commodity": "commodity",
-        "Delivery": "delivery_start",
-        "Month": "futures_symbol",
         "Futures": "futures_price",
         "Change": "futures_change",
         "Basis": "basis",
@@ -116,8 +108,6 @@ SHEET_MAPPINGS = {
     "Andersons": {
         "Location": "location",
         "Commodity": "commodity",
-        "Delivery": "delivery_start",
-        "Futures Month": "futures_symbol",
         "Futures Price": "futures_price",
         "Futures Change": "futures_change",
         "Basis": "basis",
@@ -127,7 +117,6 @@ SHEET_MAPPINGS = {
     "Snobelen": {
         "Location": "location",
         "Name": "commodity",
-        "Delivery": "delivery_start",
         "Delivery End": "delivery_end",
         "Futures Month": "futures_month",
         "Futures Price": "futures_change",   # this sheet is misaligned
@@ -139,9 +128,6 @@ SHEET_MAPPINGS = {
     "Hensall": {
         "Location": "location",
         "Name": "commodity",
-        "Delivery": "delivery_start",
-        "Delivery End": "delivery_end",
-        "Futures Month": "futures_symbol",
         "Futures Price": "futures_price",
         "Change": "futures_change",
         "Basis": "basis",
@@ -151,7 +137,6 @@ SHEET_MAPPINGS = {
     "DG Global": {
         "Location": "location",
         "Name": "commodity",
-        "Delivery": "delivery_start",
         "Delivery End": "delivery_end",
         "Futures Month": "futures_month",
         "Futures Price": "futures_price",
@@ -163,8 +148,6 @@ SHEET_MAPPINGS = {
     "Wanstead": {
         "Location": "location",
         "Commodity": "commodity",
-        "Delivery Label": "delivery_label",
-        "Symbol": "futures_symbol",
         "Futures Price": "futures_price",
         "Futures Change": "futures_change",
         "Basis": "basis",
@@ -174,7 +157,6 @@ SHEET_MAPPINGS = {
     "Ganaraska": {
         "Location": "location",
         "Name": "commodity",
-        "Delivery": "delivery_start",
         "Delivery End": "delivery_end",
         "Futures Month": "futures_month",
         "Futures Price": "futures_price",
@@ -194,6 +176,32 @@ def excel_to_db():
         mapping = SHEET_MAPPINGS.get(sheet, {})
         # rename only columns present
         df = df.rename(columns={k: v for k, v in mapping.items() if k in df.columns})
+        # If the rename produced duplicate column names (e.g. both "Delivery" and
+        # "Delivery End" mapped to "delivery_end"), coalesce them into a single
+        # column by taking the first non-empty value per row.
+        cols_list = list(df.columns)
+        dup_names = [c for c in set(cols_list) if cols_list.count(c) > 1]
+        for dup in dup_names:
+            # collect all columns with this name
+            dup_cols = [i for i, c in enumerate(cols_list) if c == dup]
+            if len(dup_cols) <= 1:
+                continue
+            # Build a single consolidated Series by taking the first non-empty value
+            def first_non_empty(row):
+                for v in row:
+                    try:
+                        if str(v).strip() != '':
+                            return v
+                    except Exception:
+                        if v is not None:
+                            return v
+                return ''
+
+            df_merged = df.loc[:, [c for c in df.columns if c == dup]].apply(first_non_empty, axis=1)
+            # Drop all duplicate-named columns
+            df = df.loc[:, [c for c in df.columns if c != dup]]
+            # Reinsert the merged column
+            df[dup] = df_merged
         # Special handling per-sheet
         if sheet == 'Snobelen':
             # Snobelen has shifted columns in some rows: swap futures_price and futures_change when detected
@@ -208,9 +216,13 @@ def excel_to_db():
                 # clear moved values from futures_change for clarity
                 df.loc[mask_move, 'futures_change'] = ''
         if sheet == 'Wanstead':
-            # sometimes Delivery Label is descriptive; also populate delivery_start with same text
-            if 'delivery_label' in df.columns and 'delivery_start' not in df.columns:
-                df['delivery_start'] = df['delivery_label']
+            # sometimes Delivery Label is descriptive; populate delivery_end with same text
+            if 'delivery_label' in df.columns:
+                if 'delivery_end' not in df.columns:
+                    df['delivery_end'] = df['delivery_label']
+                else:
+                    mask = df['delivery_end'].astype(str).str.strip() == ''
+                    df.loc[mask, 'delivery_end'] = df.loc[mask, 'delivery_label']
         # ensure all standard columns exist
         for col in STANDARD_COLUMNS:
             if col not in df.columns:
@@ -230,28 +242,24 @@ def excel_to_db():
 
     # (numeric parsing available via module-level parse_number)
 
-    # Best-effort: fill futures_month from futures_symbol when missing
-    if 'futures_month' in combined.columns and 'futures_symbol' in combined.columns:
-        mask = (combined['futures_month'].astype(str).str.strip() == '') & (combined['futures_symbol'].astype(str).str.strip() != '')
-        if mask.any():
-            combined.loc[mask, 'futures_month'] = combined.loc[mask, 'futures_symbol'].apply(symbol_to_month)
+    # No futures_symbol column in canonical output anymore; keep futures_month as-is
 
     # We compute numeric values temporarily for validation, but do not persist them to DB to avoid duplicate columns in the UI.
-    # Compute but drop numeric helper columns before saving.
-    tmp_numeric_cols = []
-    for col in ['basis', 'cash_price_bu', 'cash_price_mt', 'futures_price']:
+    # Compute numeric helper columns and persist them so numeric types are
+    # available in the DB for downstream analysis.
+    numeric_sources = ['basis', 'cash_price_bu', 'cash_price_mt', 'futures_price', 'futures_change']
+    for col in numeric_sources:
         if col in combined.columns:
             num_col = f"{col}_num"
             combined[num_col] = combined[col].apply(parse_number)
-            tmp_numeric_cols.append(num_col)
-
-    # Remove temporary numeric helper columns before writing to DB
-    for c in tmp_numeric_cols:
-        if c in combined.columns:
-            combined.drop(columns=[c], inplace=True)
     # drop delivery_label as requested
     if 'delivery_label' in combined.columns:
         combined.drop(columns=['delivery_label'], inplace=True)
+
+    # Ensure backward-compatible columns exist for downstream consumers/tests
+    for legacy_col in ['delivery_start', 'futures_symbol', 'basis_mt']:
+        if legacy_col not in combined.columns:
+            combined[legacy_col] = ''
 
     # write to DB
     conn = sqlite3.connect(DB_PATH)

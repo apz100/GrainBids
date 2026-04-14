@@ -23,8 +23,11 @@ from us_agricharts_source import fetch_us_agricharts
 from wanstead_source import fetch_wanstead_all
 from agricharts_source import fetch_agricharts_bids
 from andersons_source import fetch_andersons_all
+from app.db_utils import save_posted_bid
 
 app = Flask(__name__)
+# Disable posting by default; set True to enable POSTing of posted bids
+ALLOW_POSTED_BIDS_EDIT = False
 
 @app.route('/api/debug_db')
 def debug_db():
@@ -39,6 +42,41 @@ def debug_db():
         })
     except Exception as e:
         return jsonify({'error': str(e)})
+
+
+@app.route('/api/posted_bids', methods=['GET'])
+def get_posted_bids():
+    db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'grain_bids.db'))
+    try:
+        conn = sqlite3.connect(db_path)
+        df = pd.read_sql_query('SELECT id, ts, location, commodity, posted_price_mt, user, notes FROM posted_bids ORDER BY ts DESC LIMIT 200', conn)
+        conn.close()
+        return jsonify({'rows': df.fillna("").to_dict(orient='records')})
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+
+@app.route('/api/posted_bids', methods=['POST'])
+def create_posted_bid():
+    # Posting disabled unless explicitly enabled by config
+    if not ALLOW_POSTED_BIDS_EDIT:
+        return jsonify({'error': 'posting posted bids is disabled'}), 403
+
+    try:
+        data = request.get_json() or {}
+        # basic validation
+        if not data.get('location') or not data.get('commodity') or not data.get('posted_price_mt'):
+            return jsonify({'error': 'location, commodity, and posted_price_mt are required'}), 400
+        save_posted_bid({
+            'location': data.get('location',''),
+            'commodity': data.get('commodity',''),
+            'posted_price_mt': float(data.get('posted_price_mt')) if data.get('posted_price_mt') is not None else None,
+            'user': data.get('user',''),
+            'notes': data.get('notes',''),
+        })
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/')
 def index():
@@ -58,16 +96,13 @@ _cache_db_ttl = 24 * 60 * 60  # 1 day in seconds
 STANDARD_COLUMNS = [
     "location",
     "commodity",
-    "delivery_start",
     "delivery_end",
     "futures_month",
-    "futures_symbol",
     "futures_price",
     "futures_change",
     "basis",
     "cash_price_bu",
     "cash_price_mt",
-    "basis_mt",
     "source_sheet",
 ]
 
@@ -77,11 +112,33 @@ def _refresh_db():
         conn = sqlite3.connect(db_path)
         df = pd.read_sql_query('SELECT * FROM grain_bids', conn)
         conn.close()
-        # Ensure columns are present and in desired order where possible
-        cols = [c for c in STANDARD_COLUMNS if c in df.columns] + [c for c in df.columns if c not in STANDARD_COLUMNS]
+        # Cleanup: drop numeric helper columns (ending with 'num' or containing '_num')
+        drop_cols = [c for c in df.columns if c.lower().endswith('num') or c.lower().endswith('_num') or c.lower().endswith(' num')]
+        if drop_cols:
+            df = df.drop(columns=drop_cols)
+
+        # If delivery_label exists (e.g. Wanstead), move into delivery_end where appropriate
+        if 'delivery_label' in df.columns:
+            if 'delivery_end' not in df.columns:
+                df['delivery_end'] = df['delivery_label']
+            else:
+                mask = df['delivery_end'].astype(str).str.strip() == ''
+                df.loc[mask, 'delivery_end'] = df.loc[mask, 'delivery_label']
+            df = df.drop(columns=['delivery_label'])
+
+        # Normalize futures_month entries (convert symbol-like values into month names)
+        try:
+            from app.normalize import _symbol_to_month_extended
+            if 'futures_month' in df.columns:
+                df['futures_month'] = df['futures_month'].astype(str).apply(lambda s: _symbol_to_month_extended(s) or s)
+        except Exception:
+            pass
+
+        # Ensure columns are present and in desired order (only keep canonical columns)
+        cols = [c for c in STANDARD_COLUMNS if c in df.columns]
         result = {
             'columns': cols,
-            'rows': df.fillna("").to_dict(orient="records")
+            'rows': df[cols].fillna("").to_dict(orient="records")
         }
     except Exception as e:
         print(f"Error loading DB: {e}", file=sys.stderr)
