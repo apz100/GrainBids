@@ -1,0 +1,70 @@
+# ---------- Environment / secrets ----------
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# ---------- Python ----------
+.venv/
+venv/
+ENV/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ---------- Databases / local state ----------
+*.db
+*.sqlite
+*.sqlite3
+
+# ---------- Node / Next.js ----------
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+out/
+.turbo/
+pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---------- Build artifacts ----------
+dist/
+build/
+*.tsbuildinfo
+
+# ---------- Logs / debug dumps ----------
+*.log
+debug_*.txt
+debug_*.json
+api_prices*.json
+
+# ---------- Generated exports ----------
+*_output.csv
+*_output.xlsx
+Ontario_CashBids_*.xlsx
+
+# ---------- Archive hygiene ----------
+archive/**/__pycache__/
+archive/**/.pytest_cache/
+archive/**/*.db
+archive/**/*.sqlite*
+
+# ---------- Editor / OS ----------
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

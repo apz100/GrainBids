@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function HomePage() {
   return (
     <main className="mx-auto max-w-5xl px-6 py-14">
@@ -5,7 +7,7 @@ export default function HomePage() {
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/50 px-3 py-1 text-xs text-black/70 backdrop-blur">
             <span className="h-2 w-2 rounded-full bg-[color:var(--brass)]" />
-            BasisBoard MVP scaffold
+            GrainBids / Bids module
           </div>
           <h1 className="mt-6 text-balance font-[family-name:var(--font-serif)] text-5xl leading-[1.02] tracking-tight">
             Competitor bids and basis changes, without the spreadsheet chaos.
@@ -23,9 +25,15 @@ export default function HomePage() {
       </section>
 
       <section className="mt-10 rounded-2xl border border-black/10 bg-white/60 p-6 backdrop-blur">
-        <p className="text-sm text-black/70">
-          Next step: wire this page to the API (`/health` and later `/normalized-prices`) and add auth.
-        </p>
+        <p className="text-sm text-black/70">API endpoints are live for uploads, normalized rows, summary cards, and movers.</p>
+        <div className="mt-4 flex gap-2">
+          <Link href="/upload" className="inline-flex rounded-xl border border-black/20 bg-white/80 px-4 py-2 text-sm hover:border-black/40">
+            Open Upload
+          </Link>
+          <Link href="/dashboard" className="inline-flex rounded-xl border border-black/20 bg-white/80 px-4 py-2 text-sm hover:border-black/40">
+            Open Dashboard
+          </Link>
+        </div>
       </section>
     </main>
   );

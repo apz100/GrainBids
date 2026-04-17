@@ -1,5 +1,5 @@
 {
-  "name": "basisboard-web",
+  "name": "grainbids-web",
   "private": true,
   "version": "0.0.1",
   "scripts": {
@@ -25,3 +25,4 @@
     "typescript": "5.5.4"
   }
 }
+

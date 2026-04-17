@@ -1,11 +1,20 @@
-# BasisBoard
+# GrainBids Platform
 
-Monorepo for BasisBoard: a grain bid monitoring SaaS.
+`basisboard/` is the active GrainBids platform codebase.
+BasisBoard is the bids/market module inside GrainBids, not a separate product.
 
 ## Stack
 - `apps/web`: Next.js + TypeScript + Tailwind
 - `apps/api`: FastAPI + SQLAlchemy + Alembic
-- `packages/*`: shared packages placeholders
+- `packages/*`: shared package placeholders
+
+## Product modules
+- `GrainBids / Bids`: upload, normalization, basis tracking, and market comparison
+- `GrainBids / Alerts`: threshold rules and triggered alerts
+- `GrainBids / Quotes`: delivered-value and quote sheet generation
+- `GrainBids / Sources`: source definitions, mappings, and ingest
+- `GrainBids / Watchlists`: tracked markets and priority rows
+- `GrainBids / Admin`: org settings and access controls
 
 ## Local dev
 1. Copy `.env.example` to `.env` in repo root.
@@ -25,9 +34,9 @@ Web:
 - `npm run dev`
 
 ## Notes
-- Docker is intentionally omitted for now to keep the MVP moving fast.
+- This is the single active runtime architecture for GrainBids.
+- Legacy Flask/SQLite and old orchestration code are archived under `archive/`.
 - Alembic migrations live in `apps/api/alembic/versions`.
 
 DB migrate:
-- infra/scripts/db-migrate.ps1 -DatabaseUrl <url>
-
+- `infra/scripts/db-migrate.ps1 -DatabaseUrl <url>`

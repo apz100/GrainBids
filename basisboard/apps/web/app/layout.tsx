@@ -6,8 +6,8 @@ const sans = Instrument_Sans({ subsets: ["latin"], variable: "--font-sans" });
 const serif = Instrument_Serif({ subsets: ["latin"], variable: "--font-serif" });
 
 export const metadata: Metadata = {
-  title: "BasisBoard",
-  description: "See where your bid sits versus the local market in under 60 seconds."
+  title: "GrainBids",
+  description: "GrainBids Bids module: see where your bid sits versus the local market in under 60 seconds."
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -17,3 +17,4 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
+
