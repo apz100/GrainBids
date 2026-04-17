@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --paper: #fbf7ef;
+  --ink: #121317;
+  --brass: #b88b2a;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: radial-gradient(1200px 600px at 20% 10%, rgba(184, 139, 42, 0.15), transparent 60%),
+    radial-gradient(900px 500px at 90% 20%, rgba(18, 19, 23, 0.08), transparent 55%),
+    var(--paper);
+  color: var(--ink);
+}

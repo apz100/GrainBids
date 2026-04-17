@@ -16,6 +16,7 @@
     <div style="margin-bottom: 1em;">
         <label>Location: <input type="text" id="location-input" placeholder="e.g. Chicago"></label>
         <label>Crop: <input type="text" id="crop-input" placeholder="e.g. Corn"></label>
+        <label>Company: <select id="company-select"><option value="">All</option></select></label>
         <button onclick="loadPrices()">Search</button>
         <button onclick="resetFilters()">Reset</button>
     </div>
@@ -35,9 +36,11 @@
         function loadPrices() {
             const location = document.getElementById('location-input').value;
             const crop = document.getElementById('crop-input').value;
+            const company = document.getElementById('company-select').value;
             let url = '/api/prices?';
             if (location) url += 'location=' + encodeURIComponent(location) + '&';
             if (crop) url += 'crop=' + encodeURIComponent(crop);
+            if (company) url += '&company=' + encodeURIComponent(company);
             fetch(url)
                 .then(response => response.json())
                 .then(data => {
@@ -47,8 +50,16 @@
                     theadRow.innerHTML = '';
                     columns.forEach(col => {
                         const th = document.createElement('th');
-                        // prettify header: replace underscores with spaces and title-case
-                        const pretty = col.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                        // custom labels for specific columns
+                        let pretty;
+                        if (col === 'cash_price_bu') {
+                            pretty = 'Bushel Cash Price';
+                        } else if (col === 'cash_price_mt') {
+                            pretty = 'Tonne Cash Price';
+                        } else {
+                            // prettify header: replace underscores with spaces and title-case
+                            pretty = col.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                        }
                         th.textContent = pretty;
                         theadRow.appendChild(th);
                     });
@@ -106,6 +117,21 @@
         // Initial load
         loadPrices();
         loadPostedBids();
+        loadCompanies();
+        function loadCompanies() {
+            fetch('/api/companies')
+                .then(r => r.json())
+                .then(j => {
+                    const sel = document.getElementById('company-select');
+                    sel.innerHTML = '<option value="">All</option>';
+                    (j.companies || []).forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c;
+                        opt.textContent = c;
+                        sel.appendChild(opt);
+                    });
+                }).catch(e => { console.warn('Could not load companies', e); });
+        }
     </script>
 </body>
 </html>

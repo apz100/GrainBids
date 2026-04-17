@@ -99,6 +99,8 @@ SHEET_MAPPINGS = {
     "LAC": {
         "Location": "location",
         "Commodity": "commodity",
+        "Delivery": "delivery_end",
+        "Month": "futures_month",
         "Futures": "futures_price",
         "Change": "futures_change",
         "Basis": "basis",
@@ -108,6 +110,8 @@ SHEET_MAPPINGS = {
     "Andersons": {
         "Location": "location",
         "Commodity": "commodity",
+        "Delivery": "delivery_end",
+        "Futures Month": "futures_month",
         "Futures Price": "futures_price",
         "Futures Change": "futures_change",
         "Basis": "basis",
@@ -117,6 +121,7 @@ SHEET_MAPPINGS = {
     "Snobelen": {
         "Location": "location",
         "Name": "commodity",
+        "Delivery": "delivery_end",
         "Delivery End": "delivery_end",
         "Futures Month": "futures_month",
         "Futures Price": "futures_change",   # this sheet is misaligned
@@ -128,6 +133,9 @@ SHEET_MAPPINGS = {
     "Hensall": {
         "Location": "location",
         "Name": "commodity",
+        "Delivery": "delivery_end",
+        "Delivery End": "delivery_end",
+        "Futures Month": "futures_month",
         "Futures Price": "futures_price",
         "Change": "futures_change",
         "Basis": "basis",
@@ -174,8 +182,21 @@ def excel_to_db():
     for sheet in xls.sheet_names:
         df = pd.read_excel(EXCEL_PATH, sheet_name=sheet)
         mapping = SHEET_MAPPINGS.get(sheet, {})
+        # Keep a copy of original columns so we can preserve raw fields like
+        # 'Delivery Label' or 'Futures Symbol' even if not in the per-sheet mapping.
+        df_raw = df.copy()
         # rename only columns present
-        df = df.rename(columns={k: v for k, v in mapping.items() if k in df.columns})
+        df = df.rename(columns={k: v for k, v in mapping.items() if k in df_raw.columns})
+
+        # Preserve raw 'Delivery Label' and 'Futures Symbol' into normalized
+        # internal columns so they are available in the DB even if not shown.
+        for orig_col in df_raw.columns:
+            lc = str(orig_col).strip().lower()
+            if lc in ('delivery label', 'delivery_label', 'delivery') and 'delivery_label' not in df.columns:
+                # prefer explicit delivery_label but fall back to generic 'Delivery' when present
+                df['delivery_label'] = df_raw[orig_col]
+            if lc in ('futures symbol', 'futures_symbol', 'futures symbol code', 'futures_symbol_code') and 'futures_symbol' not in df.columns:
+                df['futures_symbol'] = df_raw[orig_col]
         # If the rename produced duplicate column names (e.g. both "Delivery" and
         # "Delivery End" mapped to "delivery_end"), coalesce them into a single
         # column by taking the first non-empty value per row.
@@ -215,6 +236,28 @@ def excel_to_db():
                 df.loc[mask_move, 'futures_price'] = df.loc[mask_move, 'futures_change']
                 # clear moved values from futures_change for clarity
                 df.loc[mask_move, 'futures_change'] = ''
+            # Additional fallback: if futures_price still empty, try extracting from raw sheet columns
+            if 'futures_price' in df.columns:
+                mask_empty = df['futures_price'].astype(str).str.strip() == ''
+                if mask_empty.any():
+                    # for each row with empty futures_price, look through raw columns for a numeric-like candidate
+                    def _fill_from_raw(row_idx):
+                        if str(df.at[row_idx, 'futures_price']).strip() != '':
+                            return df.at[row_idx, 'futures_price']
+                        for cand in df_raw.columns:
+                            try:
+                                val = df_raw.at[row_idx, cand]
+                            except Exception:
+                                val = None
+                            if val is None:
+                                continue
+                            if parse_number(val) is not None:
+                                return val
+                        return df.at[row_idx, 'futures_price']
+
+                    empty_idxs = [i for i, v in enumerate(mask_empty) if v]
+                    for i in empty_idxs:
+                        df.at[i, 'futures_price'] = _fill_from_raw(i)
         if sheet == 'Wanstead':
             # sometimes Delivery Label is descriptive; populate delivery_end with same text
             if 'delivery_label' in df.columns:
@@ -227,11 +270,12 @@ def excel_to_db():
         for col in STANDARD_COLUMNS:
             if col not in df.columns:
                 df[col] = ''
-        # ensure all standard columns exist and reorder
-        for col in STANDARD_COLUMNS:
-            if col not in df.columns:
-                df[col] = ''
-        df = df[STANDARD_COLUMNS]
+        # Build saved columns list: canonical columns plus any preserved raw fields
+        saved_cols = list(STANDARD_COLUMNS)
+        for raw_col in ('delivery_label', 'futures_symbol'):
+            if raw_col in df.columns:
+                saved_cols.append(raw_col)
+        df = df[saved_cols]
         df['source_sheet'] = sheet
         normalized_frames.append(df)
     if not normalized_frames:
@@ -252,9 +296,8 @@ def excel_to_db():
         if col in combined.columns:
             num_col = f"{col}_num"
             combined[num_col] = combined[col].apply(parse_number)
-    # drop delivery_label as requested
-    if 'delivery_label' in combined.columns:
-        combined.drop(columns=['delivery_label'], inplace=True)
+    # Keep `delivery_label` in the DB so the app can map it into
+    # `delivery_end` at runtime for display, but do not remove it here.
 
     # Ensure backward-compatible columns exist for downstream consumers/tests
     for legacy_col in ['delivery_start', 'futures_symbol', 'basis_mt']:
