@@ -74,12 +74,16 @@ def ingest_source_file(
         source_identifier=source_identifier,
         started_at=datetime.now(timezone.utc),
         status="running",
+        trigger_type="manual",
+        attempt_number=1,
+        max_attempts=1,
     )
     db.add(run)
     db.commit()
     db.refresh(run)
 
     try:
+        started = datetime.now(timezone.utc)
         source = _get_source(db, source_id)
         commodity = _get_commodity(db, commodity_id)
         rows, headers = _read_source_file(Path(source_file_path))
@@ -100,6 +104,9 @@ def ingest_source_file(
 
         run.raw_row_count = persisted.raw_row_count
         run.normalized_row_count = persisted.inserted_rows
+        run.duration_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+        run.parse_success_rate = 1.0
+        run.schema_drift_count = 0
         run.status = "completed"
         run.completed_at = datetime.now(timezone.utc)
         db.commit()

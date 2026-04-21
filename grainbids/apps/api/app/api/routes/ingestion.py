@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
+from app.services.source_orchestration import build_sla_summary
 from app.services.source_file_ingestion import ingest_source_file, list_ingestion_runs
 
 
@@ -28,13 +29,24 @@ def get_ingestion_runs(
                 "started_at": row.started_at.isoformat() if row.started_at else None,
                 "completed_at": row.completed_at.isoformat() if row.completed_at else None,
                 "status": row.status,
+                "trigger_type": row.trigger_type,
+                "attempt_number": row.attempt_number,
+                "max_attempts": row.max_attempts,
                 "raw_row_count": row.raw_row_count,
                 "normalized_row_count": row.normalized_row_count,
+                "duration_ms": row.duration_ms,
+                "parse_success_rate": float(row.parse_success_rate) if row.parse_success_rate is not None else None,
+                "schema_drift_count": row.schema_drift_count,
                 "error_message": row.error_message,
             }
             for row in list_ingestion_runs(db, limit=limit)
         ]
     }
+
+
+@router.get("/sla")
+def get_ingestion_sla(db: Session = Depends(get_db)):
+    return build_sla_summary(db)
 
 
 @router.post("/source-file/run")

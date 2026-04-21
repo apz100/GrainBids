@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.services.market_data import (
     fetch_source_dataframe,
     get_sources_path_info,
+    list_supported_sources,
     refresh_source,
 )
 from app.services.upload_csv import process_csv_upload
@@ -23,6 +24,11 @@ router = APIRouter(prefix="/api/market-data", tags=["market-data"])
 @router.get("/sources")
 def list_market_sources():
     return get_sources_path_info()
+
+
+@router.get("/adapters")
+def list_market_adapters():
+    return {"rows": list_supported_sources()}
 
 
 @router.post("/refresh")

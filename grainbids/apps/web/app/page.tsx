@@ -7,6 +7,7 @@ export default function HomePage() {
     { title: "Alerts", href: "/alerts", body: "Threshold rules built from normalized bid movement." },
     { title: "Quotes", href: "/quotes", body: "Delivered-value and quote export workflows." },
     { title: "Watchlists", href: "/watchlists", body: "Saved locations, commodities, and delivery windows." },
+    { title: "Signals", href: "/signals", body: "Forecast output and confidence monitoring." },
     { title: "Settings", href: "/settings", body: "Organization defaults, mappings, billing, and access." },
   ];
 

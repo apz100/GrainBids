@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import BigInteger, DateTime, String, func
+from sqlalchemy import BigInteger, DateTime, Numeric, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,7 +17,13 @@ class IngestionRun(Base):
     started_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     completed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="running")
+    trigger_type: Mapped[str] = mapped_column(String(30), nullable=False, default="manual")
+    attempt_number: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
+    max_attempts: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
 
     raw_row_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     normalized_row_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    parse_success_rate: Mapped[float | None] = mapped_column(Numeric(6, 3), nullable=True)
+    schema_drift_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(2000), nullable=True)
