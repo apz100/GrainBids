@@ -3,7 +3,7 @@ import { Instrument_Sans, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 
 const sans = Instrument_Sans({ subsets: ["latin"], variable: "--font-sans" });
-const serif = Instrument_Serif({ subsets: ["latin"], variable: "--font-serif" });
+const serif = Instrument_Serif({ subsets: ["latin"], weight: "400", variable: "--font-serif" });
 
 export const metadata: Metadata = {
   title: "GrainBids",
