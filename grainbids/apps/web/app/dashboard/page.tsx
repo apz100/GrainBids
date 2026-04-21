@@ -14,7 +14,9 @@ type TopMover = {
   basis_change: number | null;
   basis: number | null;
   cash_price_bu: number | null;
+  cash_price_bu_change: number | null;
   cash_price_mt: number | null;
+  cash_price_mt_change: number | null;
   captured_at: string | null;
 };
 
@@ -31,6 +33,8 @@ type NormalizedRow = {
   cash_price_bu: number | null;
   cash_price_mt: number | null;
   basis_change: number | null;
+  cash_price_bu_change: number | null;
+  cash_price_mt_change: number | null;
   captured_at: string | null;
 };
 
@@ -139,7 +143,8 @@ export default async function DashboardPage({ searchParams = {} }: { searchParam
                 <div key={mover.id} className="rounded-xl border border-black/10 bg-white/70 p-3">
                   <div className="text-sm font-medium">{mover.location}</div>
                   <div className="text-xs text-black/55">{mover.commodity_name}</div>
-                  <div className="mt-1 text-sm text-black/75">Basis change: {formatNumber(mover.basis_change)}</div>
+                  <div className="mt-1 text-sm text-black/75">Basis change: {formatSignedNumber(mover.basis_change)}</div>
+                  <div className="text-xs text-black/55">Cash/Bu change: {formatSignedNumber(mover.cash_price_bu_change)}</div>
                 </div>
               ))
             )}
@@ -159,14 +164,17 @@ export default async function DashboardPage({ searchParams = {} }: { searchParam
                   <th className="px-2 py-2">Delivery</th>
                   <th className="px-2 py-2">Futures</th>
                   <th className="px-2 py-2">Basis</th>
+                  <th className="px-2 py-2">Basis Chg</th>
                   <th className="px-2 py-2">Cash/Bu</th>
+                  <th className="px-2 py-2">Bu Chg</th>
                   <th className="px-2 py-2">Cash/MT</th>
+                  <th className="px-2 py-2">MT Chg</th>
                 </tr>
               </thead>
               <tbody>
                 {prices.length === 0 ? (
                   <tr>
-                    <td className="px-2 py-4 text-sm text-black/55" colSpan={8}>
+                    <td className="px-2 py-4 text-sm text-black/55" colSpan={11}>
                       No normalized price rows yet.
                     </td>
                   </tr>
@@ -179,8 +187,11 @@ export default async function DashboardPage({ searchParams = {} }: { searchParam
                       <td className="px-2 py-2">{row.delivery_label || [row.delivery_start, row.delivery_end].filter(Boolean).join(" - ") || "-"}</td>
                       <td className="px-2 py-2">{row.futures_month ?? "-"}</td>
                       <td className="px-2 py-2">{formatNumber(row.basis)}</td>
+                      <td className="px-2 py-2">{formatSignedNumber(row.basis_change)}</td>
                       <td className="px-2 py-2">{formatNumber(row.cash_price_bu)}</td>
+                      <td className="px-2 py-2">{formatSignedNumber(row.cash_price_bu_change)}</td>
                       <td className="px-2 py-2">{formatNumber(row.cash_price_mt)}</td>
+                      <td className="px-2 py-2">{formatSignedNumber(row.cash_price_mt_change)}</td>
                     </tr>
                   ))
                 )}
@@ -229,5 +240,13 @@ function formatNumber(value: number | null | undefined) {
     return "-";
   }
   return Number(value).toFixed(2);
+}
+
+function formatSignedNumber(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+  const number = Number(value);
+  return `${number > 0 ? "+" : ""}${number.toFixed(2)}`;
 }
 

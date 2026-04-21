@@ -5,14 +5,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$apiRoot = Join-Path $PSScriptRoot "..\\..\\apps\\api"
+$apiRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\apps\api")).Path
 Push-Location $apiRoot
 try {
   if (!(Test-Path ".venv")) {
     python -m venv .venv
   }
-  .\.venv\Scripts\Activate.ps1
-  pip install -r requirements.txt | Out-Host
+  $pythonExe = Join-Path ((Resolve-Path ".venv").Path) "Scripts\python.exe"
+  if (!(Test-Path $pythonExe)) {
+    throw "Virtual environment is incomplete. Delete apps/api/.venv and rerun this script."
+  }
+  & $pythonExe -m pip install -r requirements.txt | Out-Host
 
   if (Test-Path ".env") {
     # alembic env.py will load settings from .env via pydantic-settings
@@ -28,7 +31,7 @@ try {
     throw "DATABASE_URL not provided. Pass -DatabaseUrl or create apps/api/.env with DATABASE_URL."
   }
 
-  alembic -c alembic.ini upgrade $Revision
+  & $pythonExe -m alembic -c alembic.ini upgrade $Revision
 } finally {
   Pop-Location
 }

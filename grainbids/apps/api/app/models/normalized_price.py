@@ -30,6 +30,8 @@ class NormalizedPrice(Base):
     cash_price_mt: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
 
     basis_change: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
+    cash_price_bu_change: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
+    cash_price_mt_change: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
     composite_key: Mapped[str] = mapped_column(String(400), nullable=False)
 
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

@@ -16,6 +16,7 @@ from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
 from app.models.raw_upload import RawUpload
 from app.models.source import Source
+from app.services.price_comparison import apply_historical_changes, build_composite_key
 
 
 REQUIRED_CANONICAL_COLUMNS = {"location", "commodity"}
@@ -112,11 +113,6 @@ def infer_column_mapping(headers: list[str], override: dict[str, str] | None = N
     return mapping
 
 
-def _composite_key(location: str, commodity_name: str, delivery_label: str, futures_month: str) -> str:
-    parts = [location.strip().lower(), commodity_name.strip().lower(), delivery_label.strip().lower(), futures_month.strip().lower()]
-    return "|".join(parts)
-
-
 @dataclass
 class NormalizedPersistResult:
     snapshot_id: uuid.UUID
@@ -152,7 +148,7 @@ def persist_normalized_rows(
     db.add(snapshot)
     db.flush()
 
-    normalized_rows: list[NormalizedPrice] = []
+    normalized_by_key: dict[str, NormalizedPrice] = {}
     row_count = 0
 
     for row in rows:
@@ -173,28 +169,39 @@ def persist_normalized_rows(
         cash_price_bu = _parse_decimal(str(row.get(mapping.get("cash_price_bu", ""), "") or ""))
         cash_price_mt = _parse_decimal(str(row.get(mapping.get("cash_price_mt", ""), "") or ""))
 
-        normalized_rows.append(
-            NormalizedPrice(
-                snapshot_id=snapshot.id,
-                location=location,
-                commodity_name=commodity_name,
-                source_name=source_name,
-                delivery_start=delivery_start or None,
-                delivery_end=delivery_end or None,
-                delivery_label=delivery_label or None,
-                futures_month=futures_month or None,
-                futures_price=futures_price,
-                basis=basis,
-                cash_price_bu=cash_price_bu,
-                cash_price_mt=cash_price_mt,
-                basis_change=None,
-                composite_key=_composite_key(location, commodity_name, delivery_label or delivery_end or delivery_start, futures_month),
-            )
+        composite_key = build_composite_key(
+            location=location,
+            commodity_name=commodity_name,
+            delivery_start=delivery_start,
+            delivery_end=delivery_end,
+            futures_month=futures_month,
         )
 
+        # If a source file repeats the same market key, keep the last row from that file.
+        normalized_by_key[composite_key] = NormalizedPrice(
+            snapshot_id=snapshot.id,
+            location=location,
+            commodity_name=commodity_name,
+            source_name=source_name,
+            delivery_start=delivery_start or None,
+            delivery_end=delivery_end or None,
+            delivery_label=delivery_label or None,
+            futures_month=futures_month or None,
+            futures_price=futures_price,
+            basis=basis,
+            cash_price_bu=cash_price_bu,
+            cash_price_mt=cash_price_mt,
+            basis_change=None,
+            cash_price_bu_change=None,
+            cash_price_mt_change=None,
+            composite_key=composite_key,
+        )
+
+    normalized_rows = list(normalized_by_key.values())
     if not normalized_rows:
         raise ValueError("No valid data rows found after normalization")
 
+    apply_historical_changes(db, normalized_rows=normalized_rows, captured_at=captured)
     db.add_all(normalized_rows)
     db.flush()
 

@@ -84,6 +84,8 @@ def list_normalized_prices(
                 "cash_price_bu": _to_float(price.cash_price_bu),
                 "cash_price_mt": _to_float(price.cash_price_mt),
                 "basis_change": _to_float(price.basis_change),
+                "cash_price_bu_change": _to_float(price.cash_price_bu_change),
+                "cash_price_mt_change": _to_float(price.cash_price_mt_change),
                 "composite_key": price.composite_key,
             }
             for price, snapshot in rows
@@ -125,7 +127,9 @@ def top_movers(
                 "basis": _to_float(price.basis),
                 "basis_change": _to_float(price.basis_change),
                 "cash_price_bu": _to_float(price.cash_price_bu),
+                "cash_price_bu_change": _to_float(price.cash_price_bu_change),
                 "cash_price_mt": _to_float(price.cash_price_mt),
+                "cash_price_mt_change": _to_float(price.cash_price_mt_change),
             }
             for price, snapshot in rows
         ]
