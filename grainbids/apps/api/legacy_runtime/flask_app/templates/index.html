@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Grain Prices</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2em; }
+        table { border-collapse: collapse; width: 60%; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>Grain Prices</h1>
+    <div id="row-count" style="margin-bottom:0.5em;color:#555;"></div>
+    <div style="margin-bottom: 1em;">
+        <label>Location: <input type="text" id="location-input" placeholder="e.g. Chicago"></label>
+        <label>Crop: <input type="text" id="crop-input" placeholder="e.g. Corn"></label>
+        <label>Company: <select id="company-select"><option value="">All</option></select></label>
+        <button onclick="loadPrices()">Search</button>
+        <button onclick="resetFilters()">Reset</button>
+    </div>
+    <!-- Posting disabled in initial release; form removed to keep posted bids read-only -->
+    <div style="margin-bottom:1em; border-top:1px solid #eee; padding-top:1em;">
+        <h3>Recent Posted Bids</h3>
+        <div id="posted-bids-list">(loading...)</div>
+    </div>
+    <table id="prices-table" style="width:95%;">
+        <thead>
+            <tr id="header-row"></tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+    <script>
+        function loadPrices() {
+            const location = document.getElementById('location-input').value;
+            const crop = document.getElementById('crop-input').value;
+            const company = document.getElementById('company-select').value;
+            let url = '/api/prices?';
+            if (location) url += 'location=' + encodeURIComponent(location) + '&';
+            if (crop) url += 'crop=' + encodeURIComponent(crop);
+            if (company) url += '&company=' + encodeURIComponent(company);
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    const columns = data.columns;
+                    const rows = data.rows;
+                    const theadRow = document.getElementById('header-row');
+                    theadRow.innerHTML = '';
+                    columns.forEach(col => {
+                        const th = document.createElement('th');
+                        // custom labels for specific columns
+                        let pretty;
+                        if (col === 'cash_price_bu') {
+                            pretty = 'Bushel Cash Price';
+                        } else if (col === 'cash_price_mt') {
+                            pretty = 'Tonne Cash Price';
+                        } else {
+                            // prettify header: replace underscores with spaces and title-case
+                            pretty = col.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                        }
+                        th.textContent = pretty;
+                        theadRow.appendChild(th);
+                    });
+                    // show count
+                    document.getElementById('row-count').textContent = `${rows.length} rows`;
+                    const tbody = document.querySelector('#prices-table tbody');
+                    tbody.innerHTML = '';
+                    rows.forEach(row => {
+                        const tr = document.createElement('tr');
+                        columns.forEach(col => {
+                            const td = document.createElement('td');
+                            // show empty as blank string
+                            td.textContent = row[col] !== undefined ? row[col] : '';
+                            tr.appendChild(td);
+                        });
+                        tbody.appendChild(tr);
+                    });
+                });
+        }
+        function resetFilters() {
+            document.getElementById('location-input').value = '';
+            document.getElementById('crop-input').value = '';
+            loadPrices();
+        }
+        function loadPostedBids() {
+            fetch('/api/posted_bids')
+                .then(r => r.json())
+                .then(data => {
+                    const rows = data.rows || [];
+                    const div = document.getElementById('posted-bids-list');
+                    if (!rows.length) {
+                        div.textContent = 'No posted bids';
+                        return;
+                    }
+                    const table = document.createElement('table');
+                    const thead = document.createElement('thead');
+                    const hr = document.createElement('tr');
+                    ['TS','Location','Commodity','Price MT','User','Notes'].forEach(h => { const th=document.createElement('th'); th.textContent=h; hr.appendChild(th); });
+                    thead.appendChild(hr);
+                    table.appendChild(thead);
+                    const tbody = document.createElement('tbody');
+                    rows.forEach(r => {
+                        const tr = document.createElement('tr');
+                        ['ts','location','commodity','posted_price_mt','user','notes'].forEach(k => { const td=document.createElement('td'); td.textContent = r[k] !== undefined ? r[k] : ''; tr.appendChild(td); });
+                        tbody.appendChild(tr);
+                    });
+                    table.appendChild(tbody);
+                    div.innerHTML = '';
+                    div.appendChild(table);
+                })
+                .catch(e => { document.getElementById('posted-bids-list').textContent = 'Error loading posted bids'; });
+        }
+
+        // Posting disabled: postBid() removed to keep posted bids read-only
+        // Initial load
+        loadPrices();
+        loadPostedBids();
+        loadCompanies();
+        function loadCompanies() {
+            fetch('/api/companies')
+                .then(r => r.json())
+                .then(j => {
+                    const sel = document.getElementById('company-select');
+                    sel.innerHTML = '<option value="">All</option>';
+                    (j.companies || []).forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c;
+                        opt.textContent = c;
+                        sel.appendChild(opt);
+                    });
+                }).catch(e => { console.warn('Could not load companies', e); });
+        }
+    </script>
+</body>
+</html>

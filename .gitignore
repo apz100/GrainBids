@@ -50,12 +50,18 @@ build/
 *.log
 debug_*.txt
 debug_*.json
+debug_*.py
+**/Debug/
+**/debug/
 api_prices*.json
 
 # ---------- Generated exports ----------
 *_output.csv
 *_output.xlsx
 Ontario_CashBids_*.xlsx
+
+# ---------- Legacy runtime artifacts ----------
+**/legacy_runtime/experiments_reference/
 
 # ---------- Archive hygiene ----------
 archive/**/__pycache__/

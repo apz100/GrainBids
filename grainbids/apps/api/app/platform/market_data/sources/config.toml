@@ -1,0 +1,229 @@
+# config.toml — single source of truth for GrainBids platform settings
+# Edit this file to change paths, thresholds, or source settings.
+# No code changes needed when moving output destinations.
+
+[paths]
+# Ordered list of candidate output directories — first writable one wins.
+# Use forward slashes or escaped backslashes.
+output_candidates = [
+    "P:\\Adam\\Code\\TestingGrainBidder\\TestOutput",
+    "\\\\DERKS-SERVER\\Current\\Adam\\Code\\TestingGrainBidder\\TestOutput",
+    "TestOutput",
+]
+
+# SQLite database path (keep LOCAL — SQLite + network shares have locking issues)
+db_path = "data/grain_bids.db"
+
+# Posted bids output directory (CSV for Wix / external use)
+posted_bids_dir = "\\\\DERKS-SERVER\\Current\\Adam\\Code\\CashGrainBids\\PostedBids"
+
+[sources]
+# Set to false to disable a source without removing it from the code
+agricharts = true
+glg        = true
+lac        = true
+andersons  = true
+snobelen   = true
+hensall    = true
+dg_global  = true
+bunge      = false  # URLs no longer valid — needs investigation before re-enabling
+wanstead   = true
+ganaraska  = true
+
+[posted_bid]
+# Discount band applied to trimmed market average (CAD/MT)
+target_discount_cad_mt  = 7.5
+discount_min_cad_mt     = 5.0
+discount_max_cad_mt     = 10.0
+
+# Trimmed mean: drop top/bottom N% of competitor prices before averaging
+trim_percent = 0.20
+
+# Optional absolute floor/ceiling (set to 0.0 to disable)
+min_posted_bid_cad_mt = 0.0
+max_posted_bid_cad_mt = 0.0
+
+# Max allowed daily move (rate limiting)
+max_move_up_cad_mt   = 3.0
+max_move_down_cad_mt = 5.0
+
+# Locations excluded from the competitor universe (exact match, case-insensitive)
+exclude_corn     = ["Cardinal Corn", "Johnstown Corn", "Prescott Corn"]
+exclude_soybeans = ["Prescott Soybeans"]
+
+# ─── US Elevator Sources ──────────────────────────────────────────────────────
+# type = "agricharts"  → writeBidRow() pattern, no browser needed
+# type = "dtn"         → DTN CashBidTable widget, requires Playwright
+#
+# To add a new elevator: copy a block below, set enabled=true, fill name/url/type.
+# No code changes needed — GrainBidder picks these up automatically.
+
+[us]
+enabled = true   # master switch for all US sources
+
+# ── AGRICHARTS — writeBidRow() pattern, no browser needed (fast) ──────────────
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Ag Plus"
+url     = "https://www.agplusinc.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Cardinal Ethanol"
+url     = "https://www.cardinalethanol.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Farmers Win Coop"
+url     = "https://www.farmerswin.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Gold Eagle Coop"
+url     = "https://goldeaglecoop.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Heartland Coop"
+url     = "https://myaccount.heartlandcoop.com/bids.htm"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Heritage Grain Cooperative"
+url     = "https://www.heritagegrain.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Keller"
+url     = "https://www.kellergrain.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Kokomo Grain"
+url     = "https://www.kokomograin.com/markets/cash.php?location_filter="
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Legacy Farmers"
+url     = "https://www.legacyfarmers.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "POET"
+url     = "https://www.poet.com/markets/cash.php"
+
+# ── DTN — CashBidTable widget, requires Playwright ────────────────────────────
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Ag Partners"
+url     = "https://agpartners.net/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Agtegra"
+url     = "https://www.agtegra.com/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Al-Corn"
+url     = "https://www.al-corn.com/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Allied Cooperative"
+url     = "https://www.allied.coop/grain/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Aurora Coop"
+url     = "https://auroracoop.com/markets"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "CFS"
+url     = "https://www.cfscoop.com/products-services/grain"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Elite Octane"
+url     = "https://www.eliteoctane.net/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Frontier Coop"
+url     = "https://www.frontiercooperative.com/grain/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Green Plains"
+url     = "https://gpreinc.com/corn-bids/"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Heritage Cooperative"
+url     = "https://www.heritagecooperative.com/grain/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Kanza Coop"
+url     = "https://www.kanzacoop.com/services/grain"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Linn Coop"
+url     = "https://www.linncoop.com/grain/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Luckey Farmers"
+url     = "https://www.luckeyfarmers.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Midway Coop"
+url     = "https://www.midwaycoop.com/grain/cash-bids"
+
+# ── UNVERIFIED — enable individually after manual check ───────────────────────
+# See us_elevators_urls.toml for full list with notes
+
+[notifications]
+enabled = false
+smtp_host = "smtp.gmail.com"
+smtp_port = 587
+smtp_user = ""
+smtp_password = ""
+from_addr = ""
+to_addrs  = []
+
+# Alert when basis moves by more than this amount in one day (CAD/MT)
+basis_move_threshold_cad_mt = 5.0
+
+# Optional Pushover mobile alerts (https://pushover.net — $5 one-time)
+pushover_app_token = ""
+pushover_user_key  = ""

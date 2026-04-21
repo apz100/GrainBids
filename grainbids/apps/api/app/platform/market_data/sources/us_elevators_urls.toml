@@ -1,0 +1,388 @@
+# us_elevators_urls.toml
+# Complete list of US elevator cash bid URLs discovered via automated probing.
+#
+# type = "agricharts" → writeBidRow() pattern, no browser needed (fast)
+# type = "dtn"        → DTN CashBidTable widget, requires Playwright (slower)
+# type = "unknown"    → JS-rendered, needs manual verification or Playwright
+#
+# Copy confirmed entries into config.toml under [us] / [[us.elevators]]
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── AGRICHARTS (confirmed, no browser needed) ─────────────────────────────────
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Ag Plus"
+url     = "https://www.agplusinc.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Cardinal Ethanol"
+url     = "https://www.cardinalethanol.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Farmers Win Coop"
+url     = "https://www.farmerswin.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Gold Eagle Coop"
+url     = "https://goldeaglecoop.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Heartland Coop"
+url     = "https://www.heartlandcoop.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Heritage Grain Cooperative"
+url     = "https://www.heritagegrain.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Keller"
+url     = "https://www.kellergrain.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Kokomo Grain"
+url     = "https://www.kokomograin.com/markets/cash.php?location_filter="
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "Legacy Farmers"
+url     = "https://www.legacyfarmers.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "agricharts"
+name    = "POET"
+url     = "https://www.poet.com/markets/cash.php"
+
+# ── DTN / CashBidTable (requires Playwright) ──────────────────────────────────
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Ag Partners"
+url     = "https://agpartners.net/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Agtegra"
+url     = "https://www.agtegra.com/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Al-Corn"
+url     = "https://www.al-corn.com/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Allied Cooperative"
+url     = "https://www.allied.coop/grain/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Aurora Coop"
+url     = "https://auroracoop.com/markets"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "CFS"
+url     = "https://www.cfscoop.com/products-services/grain"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Elite Octane"
+url     = "https://www.eliteoctane.net/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Frontier Coop"
+url     = "https://www.frontiercooperative.com/grain/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Green Plains"
+url     = "https://gpreinc.com/corn-bids/"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Heritage Cooperative"
+url     = "https://www.heritagecooperative.com/grain/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Kanza Coop"
+url     = "https://www.kanzacoop.com/services/grain"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Linn Coop"
+url     = "https://www.linncoop.com/grain/cash-bids"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Luckey Farmers"
+url     = "https://www.luckeyfarmers.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = true
+type    = "dtn"
+name    = "Midway Coop"
+url     = "https://www.midwaycoop.com/grain/cash-bids"
+
+# ── UNKNOWN type — need manual verification or Playwright ─────────────────────
+# These sites have cash bid content but the widget type couldn't be detected
+# from static HTML (data loads via JS). Try "dtn" first, then "agricharts".
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Ace Ethanol"
+url     = "https://www.aceethanol.com/cash-bids"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "AGP"
+url     = "https://www.agp.com/grain/bids"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Ag State"
+url     = "https://www.agstate.org/grain"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "ALCIVIA"
+url     = "https://www.alcivia.com/cash-bids"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Alliance Grain"
+url     = "https://www.alliance-grain.com/cash-bids"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Bunge"
+url     = "https://www.bungeag.com/cash-bids"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "CRC"
+url     = "https://www.centralregioncoop.com/grain"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "CVA"
+url     = "https://www.cvacoop.com/cash-bids"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "CGB"
+url     = "https://cgb.com/cgb-grain/"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Five Star Coop"
+url     = "https://www.fivestarcoop.com/cash-bids"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Gateway FS"
+url     = "https://www.gatewayfs.com/markets/cash.php"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Hull Coop"
+url     = "https://www.hullcoop.com/cash-bids"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Landus"
+url     = "https://www.landus.ag/businesses/grain/grain-bids"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Mercer Landmark"
+url     = "https://www.mercerlandmark.com/cash-bids"
+
+# ── Batch 4 companies (61-81) — URLs from agent research, need probing ─────────
+# Official sites confirmed; cash bid sub-pages need verification
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Pro Ag"
+url     = "https://www.proagfarmers.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "PRO Coop"
+url     = "https://procooperative.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Ray Carroll"
+url     = "https://www.ray-carroll.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Skyland Grain"
+url     = "https://www.skylandgrain.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Smithfield"
+url     = "https://smithfieldgrain.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Star of the West"
+url     = "https://www.starofthewest.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "StateLine Coop"
+url     = "https://www.statelinecoop.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Sunrise"
+url     = "https://www.sunriseco-op.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Superior Ag"
+url     = "https://www.superiorag.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Synergy"
+url     = "https://www.synergycoop.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "The Andersons"
+url     = "https://www.andersonsgrain.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "TGM"
+url     = "https://www.totalgrainmarketing.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "United Coop"
+url     = "https://www.unitedcooperative.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "UFC"
+url     = "https://www.ufcmn.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Ursa Farmers Coop"
+url     = "https://www.ursacoop.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "West-Con"
+url     = "https://www.west-con.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Wheaton Dumont"
+url     = "https://www.wdcoop.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Wheaton Grain"
+url     = "https://www.wheatongrain.com"
+
+[[us.elevators]]
+enabled = false
+type    = "unknown"
+name    = "Winchester Ag"
+url     = "https://www.winchesteragservice.com"
+
+# ── NOT FOUND (no cash bid page detected) ─────────────────────────────────────
+# CFE               — https://www.cfe.coop
+# Country Visions   — https://www.countryvisions.coop
+# Evergreen FS      — https://www.evergreenfsinc.com
+# Farmers Coop Dorchester — https://www.farmerscooperativedorchester.com
+# FCS               — https://www.fcs-grain.com
+# Farmward          — https://www.farmward.coop
+# Five Star Coop    — https://www.fivestarcoop.com  (flagged unknown above)
+# FVC               — https://www.fvc.coop
+# Frontier Ag       — https://www.frontierag.com
+# Garden City Coop  — https://www.gardencitycoop.com
+# Hensall Co-op     — https://www.hensalldistrict.com
+# IAS               — https://www.iowaagsystems.com
+# Jennie-O          — https://www.jennieo.com
+# Key Coop          — https://www.key.coop
+# Michael Foods     — https://www.michaelfoods.com
+# Mid Iowa Coop     — https://www.midiowacoop.com
+# Midland Marketing — https://www.midlandmarketing.com
+# NEW Coop          — https://www.newcoop.com
+# New Vision Coop   — https://www.newvisioncoop.com
+# Nexus             — https://www.nexusag.com
+# Pilgrims Gold'n Plum — https://www.pilgrims.com
+# ADM               — https://www.adm.com  (too large, no public cash bid page)
+# Ag Valley         — https://www.agvalley.com
+# Valero            — https://www.valero.com  (refinery, no grain bids)
