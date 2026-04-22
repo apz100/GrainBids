@@ -74,6 +74,8 @@ def refresh_source_by_id(
         "attempts": result.attempts,
         "duration_ms": result.duration_ms,
         "row_count": result.row_count,
+        "alerts_created": result.created_alert_count,
+        "alerts_deduped": result.deduped_alert_count,
         "error_message": result.error_message,
     }
     if status >= 400:

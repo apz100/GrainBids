@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.models.commodity import Commodity
 from app.models.ingestion_run import IngestionRun
 from app.models.source import Source
+from app.services.alert_evaluator import evaluate_alert_rules_for_snapshot
 from app.services.upload_csv import persist_normalized_rows
 
 
@@ -23,6 +24,8 @@ class SourceFileIngestionResult:
     status: str
     raw_row_count: int | None
     normalized_row_count: int | None
+    created_alert_count: int
+    deduped_alert_count: int
     error_message: str | None
 
 
@@ -82,6 +85,9 @@ def ingest_source_file(
     db.commit()
     db.refresh(run)
 
+    created_alert_count = 0
+    deduped_alert_count = 0
+
     try:
         started = datetime.now(timezone.utc)
         source = _get_source(db, source_id)
@@ -107,6 +113,11 @@ def ingest_source_file(
         run.duration_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
         run.parse_success_rate = 1.0
         run.schema_drift_count = 0
+
+        alert_eval = evaluate_alert_rules_for_snapshot(db, snapshot_id=persisted.snapshot_id)
+        created_alert_count = alert_eval.created_alerts
+        deduped_alert_count = alert_eval.deduped_alerts
+
         run.status = "completed"
         run.completed_at = datetime.now(timezone.utc)
         db.commit()
@@ -127,6 +138,8 @@ def ingest_source_file(
         status=run.status,
         raw_row_count=run.raw_row_count,
         normalized_row_count=run.normalized_row_count,
+        created_alert_count=created_alert_count,
+        deduped_alert_count=deduped_alert_count,
         error_message=run.error_message,
     )
 

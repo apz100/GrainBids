@@ -15,6 +15,7 @@ from app.models.commodity import Commodity
 from app.models.ingestion_run import IngestionRun
 from app.models.source import Source
 from app.models.source_health_snapshot import SourceHealthSnapshot
+from app.services.alert_evaluator import evaluate_alert_rules_for_snapshot
 from app.services.source_registry import fetch_with_adapter, get_adapter, list_adapters
 from app.services.upload_csv import process_csv_upload
 
@@ -27,6 +28,8 @@ class RefreshExecutionResult:
     attempts: int
     duration_ms: int | None
     row_count: int | None
+    created_alert_count: int
+    deduped_alert_count: int
     error_message: str | None
 
 
@@ -44,6 +47,8 @@ def run_source_refresh(
     last_error: str | None = None
     duration_ms: int | None = None
     row_count: int | None = None
+    created_alert_count = 0
+    deduped_alert_count = 0
 
     for attempt in range(1, max_attempts + 1):
         run = IngestionRun(
@@ -86,6 +91,9 @@ def run_source_refresh(
                 content_type="text/csv",
                 payload=_to_csv_bytes(rows, headers),
             )
+            alert_eval = evaluate_alert_rules_for_snapshot(db, snapshot_id=upload.snapshot_id)
+            created_alert_count = alert_eval.created_alerts
+            deduped_alert_count = alert_eval.deduped_alerts
             status = "completed"
             run.raw_row_count = row_count
             run.normalized_row_count = upload.inserted_rows
@@ -128,6 +136,8 @@ def run_source_refresh(
                 attempts=attempt,
                 duration_ms=duration_ms,
                 row_count=row_count,
+                created_alert_count=created_alert_count,
+                deduped_alert_count=deduped_alert_count,
                 error_message=None,
             )
 
@@ -142,6 +152,8 @@ def run_source_refresh(
         attempts=max_attempts,
         duration_ms=duration_ms,
         row_count=row_count,
+        created_alert_count=created_alert_count,
+        deduped_alert_count=deduped_alert_count,
         error_message=last_error,
     )
 

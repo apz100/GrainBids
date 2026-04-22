@@ -26,7 +26,8 @@ def main() -> int:
         )
         print(
             f"ingestion_run={result.run_id} status={result.status} "
-            f"raw_rows={result.raw_row_count} normalized_rows={result.normalized_row_count}"
+            f"raw_rows={result.raw_row_count} normalized_rows={result.normalized_row_count} "
+            f"alerts_created={result.created_alert_count} alerts_deduped={result.deduped_alert_count}"
         )
         return 0 if result.status == "completed" else 1
     finally:
