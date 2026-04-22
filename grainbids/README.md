@@ -41,3 +41,13 @@ Web:
 DB migrate:
 - `infra/scripts/db-migrate.ps1 -DatabaseUrl <url>`
 
+Daily ingestion (manual):
+- `infra/scripts/run-daily-ingestion.ps1`
+- logs are written to `.runlogs/daily-ingestion-*.log`
+
+Daily ingestion (Windows Scheduled Task):
+- Preview task config:
+  - `infra/scripts/register-daily-ingestion-task.ps1`
+- Register task:
+  - `infra/scripts/register-daily-ingestion-task.ps1 -Apply`
+
