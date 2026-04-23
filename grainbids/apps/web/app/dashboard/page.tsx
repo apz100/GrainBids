@@ -1,4 +1,5 @@
 import Link from "next/link";
+import OpenAlertsPanel from "./open-alerts-panel";
 
 type SummaryResponse = {
   average_basis: number | null;
@@ -115,6 +116,8 @@ export default async function DashboardPage({ searchParams = {} }: { searchParam
         <MetricCard label="Active Rules" value={summary?.active_alert_rules ?? 0} />
         <MetricCard label="Open Alerts" value={summary?.open_alerts ?? 0} />
       </section>
+
+      <OpenAlertsPanel />
 
       <form className="mt-8 grid gap-3 rounded-lg border border-black/10 bg-white/65 p-4 backdrop-blur md:grid-cols-5">
         <FilterInput name="commodity" label="Commodity" value={searchParams.commodity} />
