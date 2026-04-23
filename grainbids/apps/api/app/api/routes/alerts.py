@@ -61,16 +61,18 @@ def list_alert_rules(
 def list_recent_alerts(
     org_id: uuid.UUID | None = Query(None),
     limit: int = Query(20, ge=1, le=200),
+    open_only: bool = Query(False),
     db: Session = Depends(get_db),
 ):
     resolved_org = org_id or _default_org_id(db)
-    rows = db.execute(
+    query = (
         select(Alert, AlertRule)
         .join(AlertRule, AlertRule.id == Alert.alert_rule_id)
         .where(AlertRule.org_id == resolved_org)
-        .order_by(desc(Alert.triggered_at))
-        .limit(limit)
-    ).all()
+    )
+    if open_only:
+        query = query.where(Alert.status.in_(OPEN_ALERT_STATUSES))
+    rows = db.execute(query.order_by(desc(Alert.triggered_at)).limit(limit)).all()
     return {
         "rows": [
             {

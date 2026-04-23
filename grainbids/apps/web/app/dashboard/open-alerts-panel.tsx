@@ -17,6 +17,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export default function OpenAlertsPanel() {
   const [alerts, setAlerts] = useState<RecentAlert[]>([]);
+  const [openOnly, setOpenOnly] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -26,7 +27,8 @@ export default function OpenAlertsPanel() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/api/alerts/recent?limit=8`, { cache: "no-store" });
+      const openOnlyQuery = openOnly ? "&open_only=true" : "";
+      const res = await fetch(`${API_BASE}/api/alerts/recent?limit=8${openOnlyQuery}`, { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Failed to load alerts");
@@ -60,7 +62,7 @@ export default function OpenAlertsPanel() {
 
   useEffect(() => {
     loadAlerts().catch((err) => setError(String(err)));
-  }, []);
+  }, [openOnly]);
 
   return (
     <section className="mt-8 rounded-2xl border border-black/10 bg-white/65 p-5 backdrop-blur">
@@ -77,6 +79,15 @@ export default function OpenAlertsPanel() {
           Refresh
         </button>
       </div>
+      <label className="mt-3 inline-flex items-center gap-2 text-xs text-black/70">
+        <input
+          type="checkbox"
+          checked={openOnly}
+          onChange={(event) => setOpenOnly(event.target.checked)}
+          className="h-4 w-4 rounded border border-black/20"
+        />
+        Show open alerts only
+      </label>
 
       {message ? <p className="mt-3 text-sm text-emerald-700">{message}</p> : null}
       {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
