@@ -117,6 +117,8 @@ def ingest_source_file(
         alert_eval = evaluate_alert_rules_for_snapshot(db, snapshot_id=persisted.snapshot_id)
         created_alert_count = alert_eval.created_alerts
         deduped_alert_count = alert_eval.deduped_alerts
+        run.created_alert_count = created_alert_count
+        run.deduped_alert_count = deduped_alert_count
 
         run.status = "completed"
         run.completed_at = datetime.now(timezone.utc)

@@ -11,6 +11,8 @@ type IngestionRun = {
   status: string;
   raw_row_count: number | null;
   normalized_row_count: number | null;
+  created_alert_count: number | null;
+  deduped_alert_count: number | null;
   trigger_type: string;
   attempt_number: number;
   max_attempts: number;
@@ -18,6 +20,17 @@ type IngestionRun = {
   parse_success_rate: number | null;
   schema_drift_count: number | null;
   error_message: string | null;
+};
+
+type RecentAlert = {
+  id: string;
+  triggered_at: string | null;
+  status: string;
+  message: string;
+  rule_type: string;
+  comparison_operator: string;
+  threshold_value: number;
+  location: string | null;
 };
 
 type SourceRow = {
@@ -49,6 +62,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export default function SourcesPage() {
   const [runs, setRuns] = useState<IngestionRun[]>([]);
+  const [alerts, setAlerts] = useState<RecentAlert[]>([]);
   const [sources, setSources] = useState<SourceRow[]>([]);
   const [sla, setSla] = useState<SlaSummary | null>(null);
   const [loading, setLoading] = useState(false);
@@ -57,18 +71,21 @@ export default function SourcesPage() {
   const [error, setError] = useState("");
 
   async function loadData() {
-    const [runsRes, sourcesRes, slaRes] = await Promise.all([
+    const [runsRes, sourcesRes, slaRes, alertsRes] = await Promise.all([
       fetch(`${API_BASE}/api/ingestion/runs?limit=25`, { cache: "no-store" }),
       fetch(`${API_BASE}/api/sources`, { cache: "no-store" }),
       fetch(`${API_BASE}/api/ingestion/sla`, { cache: "no-store" }),
+      fetch(`${API_BASE}/api/alerts/recent?limit=10`, { cache: "no-store" }),
     ]);
     const runsJson = runsRes.ok ? await runsRes.json() : { rows: [] };
     const sourcesJson = sourcesRes.ok ? await sourcesRes.json() : { rows: [] };
     const slaJson = slaRes.ok ? await slaRes.json() : null;
+    const alertsJson = alertsRes.ok ? await alertsRes.json() : { rows: [] };
 
     setRuns(runsJson.rows || []);
     setSources(sourcesJson.rows || []);
     setSla(slaJson);
+    setAlerts(alertsJson.rows || []);
   }
 
   useEffect(() => {
@@ -113,7 +130,10 @@ export default function SourcesPage() {
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Source refresh failed");
       }
-      setMessage(`Source refresh completed in ${json.result.duration_ms ?? 0} ms.`);
+      setMessage(
+        `Source refresh completed in ${json.result.duration_ms ?? 0} ms. ` +
+          `Alerts: +${json.result.alerts_created ?? 0}, deduped ${json.result.alerts_deduped ?? 0}.`
+      );
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -241,6 +261,8 @@ export default function SourcesPage() {
                 <th className="px-2 py-2">Status</th>
                 <th className="px-2 py-2">Raw</th>
                 <th className="px-2 py-2">Normalized</th>
+                <th className="px-2 py-2">Alerts +</th>
+                <th className="px-2 py-2">Alerts deduped</th>
                 <th className="px-2 py-2">Duration</th>
                 <th className="px-2 py-2">Started</th>
                 <th className="px-2 py-2">File</th>
@@ -249,7 +271,7 @@ export default function SourcesPage() {
             <tbody>
               {runs.length === 0 ? (
                 <tr>
-                  <td className="px-2 py-4 text-black/55" colSpan={7}>
+                  <td className="px-2 py-4 text-black/55" colSpan={9}>
                     No ingestion runs yet.
                   </td>
                 </tr>
@@ -260,9 +282,48 @@ export default function SourcesPage() {
                     <td className="px-2 py-2">{run.status}</td>
                     <td className="px-2 py-2">{run.raw_row_count ?? "-"}</td>
                     <td className="px-2 py-2">{run.normalized_row_count ?? "-"}</td>
+                    <td className="px-2 py-2">{run.created_alert_count ?? 0}</td>
+                    <td className="px-2 py-2">{run.deduped_alert_count ?? 0}</td>
                     <td className="px-2 py-2">{run.duration_ms ?? "-"}</td>
                     <td className="px-2 py-2">{run.started_at ? new Date(run.started_at).toLocaleString() : "-"}</td>
                     <td className="px-2 py-2">{run.source_identifier}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
+        <h2 className="text-lg font-semibold">Latest triggered alerts</h2>
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/50">
+                <th className="px-2 py-2">When</th>
+                <th className="px-2 py-2">Rule</th>
+                <th className="px-2 py-2">Status</th>
+                <th className="px-2 py-2">Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              {alerts.length === 0 ? (
+                <tr>
+                  <td className="px-2 py-4 text-black/55" colSpan={4}>
+                    No alerts triggered yet.
+                  </td>
+                </tr>
+              ) : (
+                alerts.map((alert) => (
+                  <tr key={alert.id} className="border-b border-black/5">
+                    <td className="px-2 py-2">{alert.triggered_at ? new Date(alert.triggered_at).toLocaleString() : "-"}</td>
+                    <td className="px-2 py-2">
+                      {alert.rule_type} {alert.comparison_operator} {alert.threshold_value}
+                      {alert.location ? ` @ ${alert.location}` : ""}
+                    </td>
+                    <td className="px-2 py-2">{alert.status}</td>
+                    <td className="px-2 py-2">{alert.message}</td>
                   </tr>
                 ))
               )}

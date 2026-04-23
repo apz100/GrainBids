@@ -34,6 +34,8 @@ def get_ingestion_runs(
                 "max_attempts": row.max_attempts,
                 "raw_row_count": row.raw_row_count,
                 "normalized_row_count": row.normalized_row_count,
+                "created_alert_count": row.created_alert_count,
+                "deduped_alert_count": row.deduped_alert_count,
                 "duration_ms": row.duration_ms,
                 "parse_success_rate": float(row.parse_success_rate) if row.parse_success_rate is not None else None,
                 "schema_drift_count": row.schema_drift_count,

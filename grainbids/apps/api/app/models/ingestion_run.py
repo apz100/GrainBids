@@ -23,6 +23,8 @@ class IngestionRun(Base):
 
     raw_row_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     normalized_row_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_alert_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    deduped_alert_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     parse_success_rate: Mapped[float | None] = mapped_column(Numeric(6, 3), nullable=True)
     schema_drift_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

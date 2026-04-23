@@ -97,6 +97,8 @@ def run_source_refresh(
             status = "completed"
             run.raw_row_count = row_count
             run.normalized_row_count = upload.inserted_rows
+            run.created_alert_count = created_alert_count
+            run.deduped_alert_count = deduped_alert_count
         except Exception as exc:  # noqa: BLE001
             last_error = str(exc)
             status = "failed"

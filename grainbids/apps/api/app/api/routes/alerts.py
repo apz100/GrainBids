@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 def module_info():
     return {
         "module": "alerts",
-        "primary_routes": ["/api/alerts/rules"],
+        "primary_routes": ["/api/alerts/rules", "/api/alerts/recent"],
     }
 
 
@@ -53,6 +53,38 @@ def list_alert_rules(
             }
         )
     return {"rows": rows}
+
+
+@router.get("/recent")
+def list_recent_alerts(
+    org_id: uuid.UUID | None = Query(None),
+    limit: int = Query(20, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    resolved_org = org_id or _default_org_id(db)
+    rows = db.execute(
+        select(Alert, AlertRule)
+        .join(AlertRule, AlertRule.id == Alert.alert_rule_id)
+        .where(AlertRule.org_id == resolved_org)
+        .order_by(desc(Alert.triggered_at))
+        .limit(limit)
+    ).all()
+    return {
+        "rows": [
+            {
+                "id": str(alert.id),
+                "alert_rule_id": str(alert.alert_rule_id),
+                "triggered_at": alert.triggered_at.isoformat() if alert.triggered_at else None,
+                "status": alert.status,
+                "message": alert.message,
+                "rule_type": rule.rule_type,
+                "comparison_operator": rule.comparison_operator,
+                "threshold_value": float(rule.threshold_value),
+                "location": rule.location,
+            }
+            for alert, rule in rows
+        ]
+    }
 
 
 @router.post("/rules")
