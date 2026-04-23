@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
+from app.core.request_context import RequestContext, get_request_context
 from app.db.session import get_db
-from app.models.organization import Organization
 from app.models.watchlist import Watchlist
 
 
@@ -24,12 +24,11 @@ def module_info():
 
 @router.get("")
 def list_watchlists(
-    org_id: uuid.UUID | None = Query(None),
+    context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    resolved_org = org_id or _default_org_id(db)
     rows = db.execute(
-        select(Watchlist).where(Watchlist.org_id == resolved_org).order_by(desc(Watchlist.updated_at))
+        select(Watchlist).where(Watchlist.org_id == context.org_id).order_by(desc(Watchlist.updated_at))
     ).scalars().all()
     return {
         "rows": [
@@ -50,12 +49,21 @@ def list_watchlists(
 @router.post("")
 def create_watchlist(
     name: str = Query(..., min_length=2, max_length=200),
-    org_id: uuid.UUID | None = Query(None),
     is_active: bool = Query(True),
+    location: str | None = Query(None),
+    commodity_name: str | None = Query(None),
+    source_name: str | None = Query(None),
+    context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    resolved_org = org_id or _default_org_id(db)
-    row = Watchlist(org_id=resolved_org, name=name.strip(), is_active=is_active, filters_json={})
+    filters = {}
+    if location:
+        filters["location"] = location.strip()
+    if commodity_name:
+        filters["commodity_name"] = commodity_name.strip()
+    if source_name:
+        filters["source_name"] = source_name.strip()
+    row = Watchlist(org_id=context.org_id, name=name.strip(), is_active=is_active, filters_json=filters or {})
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -67,15 +75,38 @@ def update_watchlist(
     watchlist_id: uuid.UUID,
     name: str | None = Query(None, min_length=2, max_length=200),
     is_active: bool | None = Query(None),
+    location: str | None = Query(None),
+    commodity_name: str | None = Query(None),
+    source_name: str | None = Query(None),
+    context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    row = db.execute(select(Watchlist).where(Watchlist.id == watchlist_id)).scalar_one_or_none()
+    row = db.execute(
+        select(Watchlist).where(Watchlist.id == watchlist_id, Watchlist.org_id == context.org_id)
+    ).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="watchlist not found")
     if name is not None:
         row.name = name.strip()
     if is_active is not None:
         row.is_active = is_active
+    current_filters = dict(row.filters_json or {})
+    if location is not None:
+        if location.strip():
+            current_filters["location"] = location.strip()
+        else:
+            current_filters.pop("location", None)
+    if commodity_name is not None:
+        if commodity_name.strip():
+            current_filters["commodity_name"] = commodity_name.strip()
+        else:
+            current_filters.pop("commodity_name", None)
+    if source_name is not None:
+        if source_name.strip():
+            current_filters["source_name"] = source_name.strip()
+        else:
+            current_filters.pop("source_name", None)
+    row.filters_json = current_filters
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -85,18 +116,14 @@ def update_watchlist(
 @router.delete("/{watchlist_id}")
 def delete_watchlist(
     watchlist_id: uuid.UUID,
+    context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    row = db.execute(select(Watchlist).where(Watchlist.id == watchlist_id)).scalar_one_or_none()
+    row = db.execute(
+        select(Watchlist).where(Watchlist.id == watchlist_id, Watchlist.org_id == context.org_id)
+    ).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="watchlist not found")
     db.delete(row)
     db.commit()
     return {"deleted": str(watchlist_id)}
-
-
-def _default_org_id(db: Session) -> uuid.UUID:
-    org = db.execute(select(Organization).order_by(Organization.created_at.asc()).limit(1)).scalar_one_or_none()
-    if org is None:
-        raise HTTPException(status_code=400, detail="No organization exists. Create one first.")
-    return org.id

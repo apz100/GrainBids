@@ -160,8 +160,11 @@ def run_source_refresh(
     )
 
 
-def list_sources_with_health(db: Session) -> list[dict]:
-    rows = db.execute(select(Source).order_by(Source.name.asc())).scalars().all()
+def list_sources_with_health(db: Session, *, org_id: uuid.UUID | None = None) -> list[dict]:
+    query = select(Source).order_by(Source.name.asc())
+    if org_id is not None:
+        query = query.where(Source.org_id == org_id)
+    rows = db.execute(query).scalars().all()
     now = datetime.now(timezone.utc)
     output: list[dict] = []
     for source in rows:
@@ -193,10 +196,13 @@ def list_sources_with_health(db: Session) -> list[dict]:
     return output
 
 
-def build_sla_summary(db: Session) -> dict:
+def build_sla_summary(db: Session, *, org_id: uuid.UUID | None = None) -> dict:
     now = datetime.now(timezone.utc)
-    sources = db.execute(select(Source).where(Source.is_active.is_(True))).scalars().all()
-    source_rows = list_sources_with_health(db)
+    source_query = select(Source).where(Source.is_active.is_(True))
+    if org_id is not None:
+        source_query = source_query.where(Source.org_id == org_id)
+    sources = db.execute(source_query).scalars().all()
+    source_rows = list_sources_with_health(db, org_id=org_id)
     fresh = sum(1 for row in source_rows if row["is_active"] and not row["is_stale"])
     stale = sum(1 for row in source_rows if row["is_active"] and row["is_stale"])
     failing = sum(1 for row in source_rows if row["is_active"] and int(row["consecutive_failures"] or 0) > 0)
@@ -211,7 +217,16 @@ def build_sla_summary(db: Session) -> dict:
         if row["is_active"] and int(row["consecutive_failures"] or 0) > 0
     ]
 
-    last_run = db.execute(select(IngestionRun).order_by(desc(IngestionRun.started_at)).limit(1)).scalar_one_or_none()
+    run_query = select(IngestionRun).order_by(desc(IngestionRun.started_at)).limit(1)
+    if org_id is not None:
+        run_query = (
+            select(IngestionRun)
+            .join(Source, Source.name == IngestionRun.source_name)
+            .where(Source.org_id == org_id)
+            .order_by(desc(IngestionRun.started_at))
+            .limit(1)
+        )
+    last_run = db.execute(run_query).scalar_one_or_none()
 
     return {
         "generated_at": now.isoformat(),
@@ -354,7 +369,7 @@ def _minutes_since(value: datetime | None, now: datetime) -> int | None:
 def seed_sources_from_registry(db: Session, *, org_id: uuid.UUID) -> int:
     existing_names = {
         (source.adapter_key or source.name.strip().lower())
-        for source in db.execute(select(Source)).scalars().all()
+        for source in db.execute(select(Source).where(Source.org_id == org_id)).scalars().all()
     }
     created = 0
     for adapter in list_adapters():

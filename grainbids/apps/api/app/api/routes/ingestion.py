@@ -4,10 +4,13 @@ from dataclasses import asdict
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.request_context import RequestContext, get_request_context, require_admin
 from app.db.session import get_db
+from app.models.source import Source
 from app.services.source_orchestration import build_sla_summary
 from app.services.source_file_ingestion import ingest_source_file, list_ingestion_runs
 
@@ -18,6 +21,7 @@ router = APIRouter(prefix="/api/ingestion", tags=["ingestion"])
 @router.get("/runs")
 def get_ingestion_runs(
     limit: int = Query(25, ge=1, le=200),
+    _context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
     return {
@@ -41,14 +45,17 @@ def get_ingestion_runs(
                 "schema_drift_count": row.schema_drift_count,
                 "error_message": row.error_message,
             }
-            for row in list_ingestion_runs(db, limit=limit)
+            for row in list_ingestion_runs(db, limit=limit, org_id=_context.org_id)
         ]
     }
 
 
 @router.get("/sla")
-def get_ingestion_sla(db: Session = Depends(get_db)):
-    return build_sla_summary(db)
+def get_ingestion_sla(
+    context: RequestContext = Depends(get_request_context),
+    db: Session = Depends(get_db),
+):
+    return build_sla_summary(db, org_id=context.org_id)
 
 
 @router.post("/source-file/run")
@@ -57,12 +64,14 @@ def run_source_file_ingestion(
     source_name: str | None = Query(None),
     source_id: uuid.UUID | None = Query(None),
     commodity_id: uuid.UUID | None = Query(None),
+    context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     file_path = source_file_path or settings.daily_source_file_path
     name = source_name or settings.daily_source_name
     resolved_source_id = source_id or _parse_uuid(settings.daily_source_id, "DAILY_SOURCE_ID")
     resolved_commodity_id = commodity_id or _parse_uuid(settings.daily_commodity_id, "DAILY_COMMODITY_ID")
+    _assert_source_org_scope(db, source_id=resolved_source_id, org_id=context.org_id)
 
     if not file_path:
         raise HTTPException(status_code=400, detail="source_file_path is required")
@@ -80,6 +89,12 @@ def run_source_file_ingestion(
     if status_code >= 400:
         raise HTTPException(status_code=status_code, detail=payload)
     return {"result": payload}
+
+
+def _assert_source_org_scope(db: Session, *, source_id: uuid.UUID, org_id: uuid.UUID) -> None:
+    source = db.execute(select(Source.id).where(Source.id == source_id, Source.org_id == org_id)).scalar_one_or_none()
+    if source is None:
+        raise HTTPException(status_code=404, detail="source not found for this organization")
 
 
 def _parse_uuid(value: str, setting_name: str) -> uuid.UUID:

@@ -146,7 +146,20 @@ def ingest_source_file(
     )
 
 
-def list_ingestion_runs(db: Session, *, limit: int = 25) -> list[IngestionRun]:
+def list_ingestion_runs(
+    db: Session,
+    *,
+    limit: int = 25,
+    org_id: uuid.UUID | None = None,
+) -> list[IngestionRun]:
+    query = select(IngestionRun)
+    if org_id is not None:
+        source_names = db.execute(
+            select(Source.name).where(Source.org_id == org_id)
+        ).scalars().all()
+        if not source_names:
+            return []
+        query = query.where(IngestionRun.source_name.in_(source_names))
     return db.execute(
-        select(IngestionRun).order_by(desc(IngestionRun.started_at)).limit(limit)
+        query.order_by(desc(IngestionRun.started_at)).limit(limit)
     ).scalars().all()

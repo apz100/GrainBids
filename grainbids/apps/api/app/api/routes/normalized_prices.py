@@ -7,11 +7,13 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Select, and_, desc, func, select
 from sqlalchemy.orm import Session
 
+from app.core.request_context import RequestContext, get_request_context
 from app.db.session import get_db
 from app.models.alert import Alert
 from app.models.alert_rule import AlertRule
 from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
+from app.models.source import Source
 
 
 router = APIRouter(prefix="/api/normalized-prices", tags=["normalized-prices"])
@@ -52,11 +54,14 @@ def list_normalized_prices(
     source_name: str | None = Query(None),
     captured_date: date | None = Query(None),
     limit: int = Query(200, ge=1, le=1000),
+    context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
     query: Select = (
         select(NormalizedPrice, PriceSnapshot)
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .where(Source.org_id == context.org_id)
         .order_by(desc(PriceSnapshot.captured_at), NormalizedPrice.location)
     )
 
@@ -100,11 +105,14 @@ def top_movers(
     source_name: str | None = Query(None),
     captured_date: date | None = Query(None),
     limit: int = Query(10, ge=1, le=100),
+    context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
     query: Select = (
         select(NormalizedPrice, PriceSnapshot)
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .where(Source.org_id == context.org_id)
         .where(NormalizedPrice.basis_change.is_not(None))
         .order_by(desc(func.abs(NormalizedPrice.basis_change)), desc(PriceSnapshot.captured_at))
     )
@@ -142,6 +150,7 @@ def summary(
     location: str | None = Query(None),
     source_name: str | None = Query(None),
     captured_date: date | None = Query(None),
+    context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
     filters = _build_filters(commodity=commodity, location=location, source_name=source_name, captured_date=captured_date)
@@ -149,6 +158,8 @@ def summary(
     basis_query = (
         select(func.avg(NormalizedPrice.basis), func.count(NormalizedPrice.id))
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .where(Source.org_id == context.org_id)
     )
     if filters:
         basis_query = basis_query.where(*filters)
@@ -156,11 +167,13 @@ def summary(
     avg_basis, row_count = db.execute(basis_query).one()
 
     active_alert_rules = db.execute(
-        select(func.count(AlertRule.id)).where(AlertRule.is_active.is_(True))
+        select(func.count(AlertRule.id)).where(AlertRule.org_id == context.org_id, AlertRule.is_active.is_(True))
     ).scalar_one()
 
     open_alerts = db.execute(
-        select(func.count(Alert.id)).where(Alert.status.in_(["new", "open", "pending"]))
+        select(func.count(Alert.id))
+        .join(AlertRule, AlertRule.id == Alert.alert_rule_id)
+        .where(AlertRule.org_id == context.org_id, Alert.status.in_(["new", "open", "pending"]))
     ).scalar_one()
 
     return {

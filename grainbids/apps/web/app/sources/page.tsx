@@ -56,6 +56,12 @@ type SlaSummary = {
   fresh_sources: number;
   stale_sources: number;
   failing_sources: number;
+  failing_source_rows?: {
+    id: string;
+    name: string;
+    consecutive_failures: number;
+    latest_error_message: string | null;
+  }[];
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
@@ -214,16 +220,19 @@ export default function SourcesPage() {
             <thead>
               <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/50">
                 <th className="px-2 py-2">Source</th>
+                <th className="px-2 py-2">Interval</th>
                 <th className="px-2 py-2">Freshness</th>
                 <th className="px-2 py-2">Confidence</th>
                 <th className="px-2 py-2">Failures</th>
+                <th className="px-2 py-2">Last Success</th>
+                <th className="px-2 py-2">Last Error</th>
                 <th className="px-2 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
               {sources.length === 0 ? (
                 <tr>
-                  <td className="px-2 py-4 text-black/55" colSpan={5}>
+                  <td className="px-2 py-4 text-black/55" colSpan={8}>
                     No sources configured yet.
                   </td>
                 </tr>
@@ -234,11 +243,16 @@ export default function SourcesPage() {
                       <div className="font-medium">{source.name}</div>
                       <div className="text-xs text-black/55">{source.adapter_key || "-"}</div>
                     </td>
+                    <td className="px-2 py-2">{source.polling_interval_minutes}m</td>
                     <td className="px-2 py-2">
                       {source.is_stale ? "stale" : "fresh"} ({source.stale_age_minutes ?? "-"}m)
                     </td>
                     <td className="px-2 py-2">{source.confidence_score ?? "-"}</td>
                     <td className="px-2 py-2">{source.consecutive_failures}</td>
+                    <td className="px-2 py-2">{source.last_success_at ? new Date(source.last_success_at).toLocaleString() : "-"}</td>
+                    <td className="px-2 py-2 max-w-64 truncate" title={source.latest_error_message || ""}>
+                      {source.latest_error_message || "-"}
+                    </td>
                     <td className="px-2 py-2">
                       <button
                         disabled={refreshingSourceId === source.id}
@@ -254,6 +268,18 @@ export default function SourcesPage() {
             </tbody>
           </table>
         </div>
+        {sla?.failing_source_rows && sla.failing_source_rows.length > 0 ? (
+          <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm">
+            <p className="font-medium text-red-900">Failing sources</p>
+            <ul className="mt-2 space-y-1 text-red-800">
+              {sla.failing_source_rows.map((item) => (
+                <li key={item.id}>
+                  {item.name}: {item.consecutive_failures} failures {item.latest_error_message ? `(${item.latest_error_message})` : ""}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </section>
 
       <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">

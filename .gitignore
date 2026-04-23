@@ -59,6 +59,7 @@ api_prices*.json
 *_output.csv
 *_output.xlsx
 Ontario_CashBids_*.xlsx
+grainbids/apps/api/exports/
 
 # ---------- Legacy runtime artifacts ----------
 **/legacy_runtime/experiments_reference/

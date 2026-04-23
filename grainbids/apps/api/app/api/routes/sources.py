@@ -6,9 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.request_context import RequestContext, get_request_context, require_admin
 from app.db.session import get_db
 from app.models.commodity import Commodity
-from app.models.organization import Organization
 from app.models.source import Source
 from app.services.source_orchestration import list_sources_with_health, run_source_refresh, seed_sources_from_registry
 
@@ -29,8 +29,11 @@ def module_info():
 
 
 @router.get("")
-def list_sources(db: Session = Depends(get_db)):
-    rows = list_sources_with_health(db)
+def list_sources(
+    context: RequestContext = Depends(get_request_context),
+    db: Session = Depends(get_db),
+):
+    rows = list_sources_with_health(db, org_id=context.org_id)
     return {
         "rows": rows,
         "count": len(rows),
@@ -39,11 +42,10 @@ def list_sources(db: Session = Depends(get_db)):
 
 @router.post("/seed")
 def seed_sources(
-    org_id: uuid.UUID | None = Query(None),
+    context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    resolved_org_id = org_id or _default_org_id(db)
-    created = seed_sources_from_registry(db, org_id=resolved_org_id)
+    created = seed_sources_from_registry(db, org_id=context.org_id)
     return {"created": created}
 
 
@@ -51,9 +53,10 @@ def seed_sources(
 def refresh_source_by_id(
     source_id: uuid.UUID,
     commodity_id: uuid.UUID | None = Query(None),
+    context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    source = db.execute(select(Source).where(Source.id == source_id)).scalar_one_or_none()
+    source = db.execute(select(Source).where(Source.id == source_id, Source.org_id == context.org_id)).scalar_one_or_none()
     if source is None:
         raise HTTPException(status_code=404, detail="source not found")
     if not source.is_active:
@@ -81,13 +84,6 @@ def refresh_source_by_id(
     if status >= 400:
         raise HTTPException(status_code=status, detail=payload)
     return {"result": payload}
-
-
-def _default_org_id(db: Session) -> uuid.UUID:
-    org = db.execute(select(Organization).order_by(Organization.created_at.asc()).limit(1)).scalar_one_or_none()
-    if org is None:
-        raise HTTPException(status_code=400, detail="No organization exists. Create one first.")
-    return org.id
 
 
 def _default_commodity_id(db: Session) -> uuid.UUID:

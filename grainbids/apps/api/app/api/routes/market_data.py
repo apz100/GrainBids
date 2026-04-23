@@ -6,9 +6,12 @@ import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.request_context import RequestContext, require_admin
 from app.db.session import get_db
+from app.models.source import Source
 from app.services.market_data import (
     fetch_source_dataframe,
     get_sources_path_info,
@@ -37,6 +40,7 @@ def refresh_market_source(
     persist: bool = Query(False, description="Persist fetched rows through the standard normalization pipeline"),
     source_id: uuid.UUID | None = Query(None, description="Required when persist=true"),
     commodity_id: uuid.UUID | None = Query(None, description="Required when persist=true"),
+    context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     try:
@@ -46,6 +50,7 @@ def refresh_market_source(
 
         if source_id is None or commodity_id is None:
             raise HTTPException(status_code=400, detail="source_id and commodity_id are required when persist=true")
+        _assert_source_in_org(db, source_id=source_id, org_id=context.org_id)
 
         started = time.perf_counter()
         df = fetch_source_dataframe(source)
@@ -86,3 +91,9 @@ def refresh_market_source(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Refresh failed: {exc}") from exc
+
+
+def _assert_source_in_org(db: Session, *, source_id: uuid.UUID, org_id: uuid.UUID) -> None:
+    source = db.execute(select(Source.id).where(Source.id == source_id, Source.org_id == org_id)).scalar_one_or_none()
+    if source is None:
+        raise HTTPException(status_code=404, detail="source not found for this organization")

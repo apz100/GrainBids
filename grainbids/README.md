@@ -28,6 +28,10 @@ API:
 - `pip install -r requirements.txt`
 - `uvicorn app.main:app --reload`
 
+Optional API env values:
+- `ALLOW_IMPLICIT_ORG=true` allows local dev requests without `X-Org-Id`.
+- `ALERT_EMAIL_*` + `ALERT_SMTP_*` enable outbound email when alert events are created.
+
 Web:
 - `cd apps/web`
 - `npm install`
@@ -37,6 +41,7 @@ Web:
 - This is the single active runtime architecture for GrainBids.
 - Legacy Flask/SQLite and old orchestration code are archived under `archive/`.
 - Alembic migrations live in `apps/api/alembic/versions`.
+- Admin-only routes (source refresh/seed, quote export, ingestion run trigger) accept `X-User-Role: admin`.
 
 DB migrate:
 - `infra/scripts/db-migrate.ps1 -DatabaseUrl <url>`
