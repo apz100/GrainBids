@@ -70,13 +70,15 @@ export default function SourcesPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [updatingAlertId, setUpdatingAlertId] = useState("");
+  const [openAlertsOnly, setOpenAlertsOnly] = useState(true);
 
   async function loadData() {
+    const openOnlyQuery = openAlertsOnly ? "&open_only=true" : "";
     const [runsRes, sourcesRes, slaRes, alertsRes] = await Promise.all([
       fetch(`${API_BASE}/api/ingestion/runs?limit=25`, { cache: "no-store" }),
       fetch(`${API_BASE}/api/sources`, { cache: "no-store" }),
       fetch(`${API_BASE}/api/ingestion/sla`, { cache: "no-store" }),
-      fetch(`${API_BASE}/api/alerts/recent?limit=10`, { cache: "no-store" }),
+      fetch(`${API_BASE}/api/alerts/recent?limit=10${openOnlyQuery}`, { cache: "no-store" }),
     ]);
     const runsJson = runsRes.ok ? await runsRes.json() : { rows: [] };
     const sourcesJson = sourcesRes.ok ? await sourcesRes.json() : { rows: [] };
@@ -91,7 +93,7 @@ export default function SourcesPage() {
 
   useEffect(() => {
     loadData().catch((err) => setError(String(err)));
-  }, []);
+  }, [openAlertsOnly]);
 
   async function triggerIngestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -317,6 +319,15 @@ export default function SourcesPage() {
 
       <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
         <h2 className="text-lg font-semibold">Latest triggered alerts</h2>
+        <label className="mt-3 inline-flex items-center gap-2 text-xs text-black/70">
+          <input
+            type="checkbox"
+            checked={openAlertsOnly}
+            onChange={(event) => setOpenAlertsOnly(event.target.checked)}
+            className="h-4 w-4 rounded border border-black/20"
+          />
+          Show open alerts only
+        </label>
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead>
