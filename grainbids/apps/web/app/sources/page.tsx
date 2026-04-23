@@ -25,7 +25,7 @@ type IngestionRun = {
 type RecentAlert = {
   id: string;
   triggered_at: string | null;
-  status: string;
+  status: "new" | "open" | "pending" | "acknowledged" | "resolved" | string;
   message: string;
   rule_type: string;
   comparison_operator: string;
@@ -69,6 +69,7 @@ export default function SourcesPage() {
   const [refreshingSourceId, setRefreshingSourceId] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [updatingAlertId, setUpdatingAlertId] = useState("");
 
   async function loadData() {
     const [runsRes, sourcesRes, slaRes, alertsRes] = await Promise.all([
@@ -158,6 +159,25 @@ export default function SourcesPage() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function updateAlertStatus(alertId: string, status: "acknowledged" | "resolved") {
+    setUpdatingAlertId(alertId);
+    setMessage("");
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/alerts/${alertId}/status?status=${status}`, { method: "PATCH" });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof json.detail === "string" ? json.detail : "Alert update failed");
+      }
+      setMessage(`Alert updated to ${json.status}.`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUpdatingAlertId("");
     }
   }
 
@@ -305,12 +325,13 @@ export default function SourcesPage() {
                 <th className="px-2 py-2">Rule</th>
                 <th className="px-2 py-2">Status</th>
                 <th className="px-2 py-2">Message</th>
+                <th className="px-2 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
               {alerts.length === 0 ? (
                 <tr>
-                  <td className="px-2 py-4 text-black/55" colSpan={4}>
+                  <td className="px-2 py-4 text-black/55" colSpan={5}>
                     No alerts triggered yet.
                   </td>
                 </tr>
@@ -324,6 +345,24 @@ export default function SourcesPage() {
                     </td>
                     <td className="px-2 py-2">{alert.status}</td>
                     <td className="px-2 py-2">{alert.message}</td>
+                    <td className="px-2 py-2">
+                      <div className="flex gap-2">
+                        <button
+                          disabled={updatingAlertId === alert.id || alert.status === "acknowledged" || alert.status === "resolved"}
+                          onClick={() => updateAlertStatus(alert.id, "acknowledged")}
+                          className="rounded-md border border-black/20 bg-white px-2 py-1 text-xs disabled:opacity-50"
+                        >
+                          Acknowledge
+                        </button>
+                        <button
+                          disabled={updatingAlertId === alert.id || alert.status === "resolved"}
+                          onClick={() => updateAlertStatus(alert.id, "resolved")}
+                          className="rounded-md border border-black/20 bg-black px-2 py-1 text-xs text-white disabled:opacity-50"
+                        >
+                          Resolve
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}

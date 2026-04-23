@@ -13,6 +13,8 @@ from app.models.organization import Organization
 
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
+OPEN_ALERT_STATUSES = {"new", "open", "pending"}
+ALERT_STATUSES = OPEN_ALERT_STATUSES | {"acknowledged", "resolved"}
 
 
 @router.get("/module")
@@ -38,7 +40,7 @@ def list_alert_rules(
             select(func.max(Alert.triggered_at)).where(Alert.alert_rule_id == rule.id)
         ).scalar_one_or_none()
         open_count = db.execute(
-            select(func.count(Alert.id)).where(Alert.alert_rule_id == rule.id, Alert.status.in_(["new", "open", "pending"]))
+            select(func.count(Alert.id)).where(Alert.alert_rule_id == rule.id, Alert.status.in_(OPEN_ALERT_STATUSES))
         ).scalar_one()
         rows.append(
             {
@@ -85,6 +87,58 @@ def list_recent_alerts(
             for alert, rule in rows
         ]
     }
+
+
+@router.patch("/{alert_id}/status")
+def update_alert_status(
+    alert_id: uuid.UUID,
+    status: str = Query(..., min_length=2, max_length=50),
+    org_id: uuid.UUID | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    normalized_status = status.strip().lower()
+    if normalized_status not in ALERT_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    resolved_org = org_id or _default_org_id(db)
+    row = db.execute(
+        select(Alert, AlertRule)
+        .join(AlertRule, AlertRule.id == Alert.alert_rule_id)
+        .where(Alert.id == alert_id, AlertRule.org_id == resolved_org)
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="alert not found")
+
+    alert, rule = row
+    alert.status = normalized_status
+    db.add(alert)
+    db.commit()
+    db.refresh(alert)
+    return {
+        "id": str(alert.id),
+        "alert_rule_id": str(alert.alert_rule_id),
+        "triggered_at": alert.triggered_at.isoformat() if alert.triggered_at else None,
+        "status": alert.status,
+        "message": alert.message,
+        "rule_type": rule.rule_type,
+        "comparison_operator": rule.comparison_operator,
+        "threshold_value": float(rule.threshold_value),
+        "location": rule.location,
+    }
+
+
+@router.post("/{alert_id}/ack")
+def acknowledge_alert(
+    alert_id: uuid.UUID,
+    org_id: uuid.UUID | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    return update_alert_status(
+        alert_id=alert_id,
+        status="acknowledged",
+        org_id=org_id,
+        db=db,
+    )
 
 
 @router.post("/rules")
