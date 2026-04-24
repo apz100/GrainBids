@@ -1,7 +1,10 @@
 param(
   [string]$ApiDir = "$PSScriptRoot\..\..\apps\api",
   [string]$LogDir = "",
-  [switch]$SkipPipInstall
+  [switch]$SkipPipInstall,
+  [string]$CommodityId = "",
+  [int]$MaxAttempts = 0,
+  [switch]$SingleSource
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,8 +55,21 @@ try {
     Write-RunLog "Skipping dependency install (-SkipPipInstall)"
   }
 
-  Write-RunLog "Running ingestion job"
-  & $pythonExe -m app.jobs.daily_source_ingestion 2>&1 | ForEach-Object {
+  $jobArgs = @("-m", "app.jobs.daily_source_ingestion")
+  if ($CommodityId -ne "") {
+    $jobArgs += "--commodity-id"
+    $jobArgs += $CommodityId
+  }
+  if ($MaxAttempts -gt 0) {
+    $jobArgs += "--max-attempts"
+    $jobArgs += "$MaxAttempts"
+  }
+  if ($SingleSource.IsPresent) {
+    $jobArgs += "--single-source"
+  }
+
+  Write-RunLog "Running ingestion job ($($jobArgs -join ' '))"
+  & $pythonExe @jobArgs 2>&1 | ForEach-Object {
     $_ | Out-Host
     $_ | Out-File -LiteralPath $script:LogPath -Append -Encoding utf8
   }

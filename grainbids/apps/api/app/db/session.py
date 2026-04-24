@@ -18,7 +18,12 @@ def get_engine() -> Engine:
             raise RuntimeError(
                 "DATABASE_URL is not set. Copy apps/api/.env.example to apps/api/.env and set DATABASE_URL."
             )
-        _engine = create_engine(settings.database_url, pool_pre_ping=True)
+        # Supabase transaction pooler (PgBouncer) is incompatible with psycopg prepared statements.
+        _engine = create_engine(
+            settings.database_url,
+            pool_pre_ping=True,
+            connect_args={"prepare_threshold": None},
+        )
     return _engine
 
 

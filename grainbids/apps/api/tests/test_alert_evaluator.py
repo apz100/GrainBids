@@ -52,6 +52,17 @@ class AlertEvaluatorHelperTests(unittest.TestCase):
         self.assertEqual(_extract_metric_value("cash_price_mt_change", row), Decimal("4.0"))
         self.assertIsNone(_extract_metric_value("delivered_value", row))
 
+    def test_extract_metric_value_ignores_nan(self) -> None:
+        row = SimpleNamespace(
+            basis=Decimal("NaN"),
+            basis_change=None,
+            cash_price_bu=None,
+            cash_price_mt=None,
+            cash_price_bu_change=None,
+            cash_price_mt_change=None,
+        )
+        self.assertIsNone(_extract_metric_value("basis", row))
+
 
 if __name__ == "__main__":
     unittest.main()

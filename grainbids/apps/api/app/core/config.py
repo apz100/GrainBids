@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     daily_source_name: str = "daily_source_file"
     daily_source_id: str = ""
     daily_commodity_id: str = ""
+    file_ingestion_max_attempts: int = 2
     alert_email_enabled: bool = False
     alert_email_from: str | None = None
     alert_email_to: str | None = None

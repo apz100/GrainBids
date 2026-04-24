@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.models.commodity import Commodity
 from app.models.source import Source
 from app.services.source_orchestration import list_sources_with_health, run_source_refresh, seed_sources_from_registry
+from app.services.source_registry import list_pilot_adapter_keys
 
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
@@ -42,11 +43,13 @@ def list_sources(
 
 @router.post("/seed")
 def seed_sources(
+    scope: str = Query("pilot", pattern="^(pilot|all)$"),
     context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    created = seed_sources_from_registry(db, org_id=context.org_id)
-    return {"created": created}
+    adapter_keys = list_pilot_adapter_keys() if scope == "pilot" else None
+    created = seed_sources_from_registry(db, org_id=context.org_id, adapter_keys=adapter_keys)
+    return {"created": created, "scope": scope, "adapter_keys": adapter_keys or "all"}
 
 
 @router.post("/{source_id}/refresh")

@@ -1,7 +1,7 @@
 import uuid
 
 from sqlalchemy import BigInteger, DateTime, Numeric, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -25,6 +25,10 @@ class IngestionRun(Base):
     normalized_row_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_alert_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     deduped_alert_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    duplicate_key_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    rejected_row_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    missing_required_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    row_reject_reasons_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     parse_success_rate: Mapped[float | None] = mapped_column(Numeric(6, 3), nullable=True)
     schema_drift_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

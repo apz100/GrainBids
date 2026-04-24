@@ -13,6 +13,10 @@ type IngestionRun = {
   normalized_row_count: number | null;
   created_alert_count: number | null;
   deduped_alert_count: number | null;
+  duplicate_key_count: number | null;
+  rejected_row_count: number | null;
+  missing_required_count: number | null;
+  row_reject_reasons: Record<string, number> | null;
   trigger_type: string;
   attempt_number: number;
   max_attempts: number;
@@ -49,13 +53,31 @@ type SourceRow = {
   confidence_score: number | null;
   consecutive_failures: number;
   latest_error_message: string | null;
+  latest_parse_success_rate: number | null;
+  latest_schema_drift_count: number | null;
+  latest_duplicate_key_count: number | null;
+  latest_rejected_row_count: number | null;
+  latest_missing_required_count: number | null;
+  latest_row_reject_reasons: Record<string, number> | null;
+  successful_run_count: number;
+  promotion_status: string;
+  can_refresh?: boolean;
+  logical_parent_source_name?: string;
+  logical_row_count?: number;
 };
 
 type SlaSummary = {
+  generated_at: string;
   active_sources: number;
   fresh_sources: number;
   stale_sources: number;
   failing_sources: number;
+  last_successful_ingestion_run?: {
+    id: string;
+    status: string;
+    started_at: string | null;
+    completed_at: string | null;
+  } | null;
   failing_source_rows?: {
     id: string;
     name: string;
@@ -77,6 +99,7 @@ export default function SourcesPage() {
   const [error, setError] = useState("");
   const [updatingAlertId, setUpdatingAlertId] = useState("");
   const [openAlertsOnly, setOpenAlertsOnly] = useState(true);
+  const [runningScheduledCycle, setRunningScheduledCycle] = useState(false);
 
   async function loadData() {
     const openOnlyQuery = openAlertsOnly ? "&open_only=true" : "";
@@ -156,17 +179,38 @@ export default function SourcesPage() {
     setMessage("");
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/api/sources/seed`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/sources/seed?scope=pilot`, { method: "POST" });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Seed failed");
       }
-      setMessage(`Seeded ${json.created ?? 0} sources from registry.`);
+      setMessage(`Seeded ${json.created ?? 0} ${json.scope} sources from registry.`);
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function runScheduledCycle() {
+    setRunningScheduledCycle(true);
+    setMessage("");
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/ingestion/source-files/run?max_attempts=2`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof json.detail === "string" ? json.detail : "Scheduled cycle failed");
+      }
+      setMessage(
+        `Scheduled cycle complete. ${json.summary.completed_sources}/${json.summary.total_sources} sources succeeded.`
+      );
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRunningScheduledCycle(false);
     }
   }
 
@@ -203,17 +247,32 @@ export default function SourcesPage() {
         <MetricCard label="Stale Sources" value={sla?.stale_sources ?? 0} />
         <MetricCard label="Failing Sources" value={sla?.failing_sources ?? 0} />
       </section>
+      <p className="mt-3 text-xs text-black/55">
+        Last successful ingestion:{" "}
+        {sla?.last_successful_ingestion_run?.started_at
+          ? new Date(sla.last_successful_ingestion_run.started_at).toLocaleString()
+          : "-"}
+      </p>
 
       <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold">Source adapters</h2>
-          <button
-            disabled={loading}
-            onClick={seedSources}
-            className="rounded-md border border-black/20 bg-white px-4 py-2 text-sm disabled:opacity-50"
-          >
-            Seed registry sources
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              disabled={runningScheduledCycle}
+              onClick={runScheduledCycle}
+              className="rounded-md border border-black/20 bg-black px-4 py-2 text-sm text-white disabled:opacity-50"
+            >
+              {runningScheduledCycle ? "Running cycle..." : "Run scheduled file cycle"}
+            </button>
+            <button
+              disabled={loading}
+              onClick={seedSources}
+              className="rounded-md border border-black/20 bg-white px-4 py-2 text-sm disabled:opacity-50"
+            >
+              Seed pilot adapters
+            </button>
+          </div>
         </div>
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -223,16 +282,18 @@ export default function SourcesPage() {
                 <th className="px-2 py-2">Interval</th>
                 <th className="px-2 py-2">Freshness</th>
                 <th className="px-2 py-2">Confidence</th>
+                <th className="px-2 py-2">Parse %</th>
                 <th className="px-2 py-2">Failures</th>
                 <th className="px-2 py-2">Last Success</th>
                 <th className="px-2 py-2">Last Error</th>
+                <th className="px-2 py-2">Promotion</th>
                 <th className="px-2 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
               {sources.length === 0 ? (
                 <tr>
-                  <td className="px-2 py-4 text-black/55" colSpan={8}>
+                  <td className="px-2 py-4 text-black/55" colSpan={10}>
                     No sources configured yet.
                   </td>
                 </tr>
@@ -241,26 +302,41 @@ export default function SourcesPage() {
                   <tr key={source.id} className="border-b border-black/5">
                     <td className="px-2 py-2">
                       <div className="font-medium">{source.name}</div>
-                      <div className="text-xs text-black/55">{source.adapter_key || "-"}</div>
+                      <div className="text-xs text-black/55">
+                        {source.logical_parent_source_name
+                          ? `${source.logical_parent_source_name} (${source.logical_row_count ?? 0} rows)`
+                          : source.adapter_key || "-"}
+                      </div>
                     </td>
                     <td className="px-2 py-2">{source.polling_interval_minutes}m</td>
                     <td className="px-2 py-2">
                       {source.is_stale ? "stale" : "fresh"} ({source.stale_age_minutes ?? "-"}m)
                     </td>
                     <td className="px-2 py-2">{source.confidence_score ?? "-"}</td>
+                    <td className="px-2 py-2">
+                      {source.latest_parse_success_rate != null ? `${(source.latest_parse_success_rate * 100).toFixed(1)}%` : "-"}
+                    </td>
                     <td className="px-2 py-2">{source.consecutive_failures}</td>
                     <td className="px-2 py-2">{source.last_success_at ? new Date(source.last_success_at).toLocaleString() : "-"}</td>
                     <td className="px-2 py-2 max-w-64 truncate" title={source.latest_error_message || ""}>
                       {source.latest_error_message || "-"}
                     </td>
                     <td className="px-2 py-2">
-                      <button
-                        disabled={refreshingSourceId === source.id}
-                        onClick={() => runSourceRefresh(source.id)}
-                        className="rounded-md border border-black/20 bg-black px-3 py-1 text-xs text-white disabled:opacity-50"
-                      >
-                        {refreshingSourceId === source.id ? "Running..." : "Refresh"}
-                      </button>
+                      {source.promotion_status}
+                      <div className="text-xs text-black/50">runs: {source.successful_run_count}</div>
+                    </td>
+                    <td className="px-2 py-2">
+                      {source.can_refresh === false ? (
+                        <span className="text-xs text-black/55">n/a</span>
+                      ) : (
+                        <button
+                          disabled={refreshingSourceId === source.id}
+                          onClick={() => runSourceRefresh(source.id)}
+                          className="rounded-md border border-black/20 bg-black px-3 py-1 text-xs text-white disabled:opacity-50"
+                        >
+                          {refreshingSourceId === source.id ? "Running..." : "Refresh"}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -311,6 +387,10 @@ export default function SourcesPage() {
                 <th className="px-2 py-2">Normalized</th>
                 <th className="px-2 py-2">Alerts +</th>
                 <th className="px-2 py-2">Alerts deduped</th>
+                <th className="px-2 py-2">Duplicates</th>
+                <th className="px-2 py-2">Rejected</th>
+                <th className="px-2 py-2">Missing req</th>
+                <th className="px-2 py-2">Parse %</th>
                 <th className="px-2 py-2">Duration</th>
                 <th className="px-2 py-2">Started</th>
                 <th className="px-2 py-2">File</th>
@@ -319,7 +399,7 @@ export default function SourcesPage() {
             <tbody>
               {runs.length === 0 ? (
                 <tr>
-                  <td className="px-2 py-4 text-black/55" colSpan={9}>
+                  <td className="px-2 py-4 text-black/55" colSpan={13}>
                     No ingestion runs yet.
                   </td>
                 </tr>
@@ -332,6 +412,12 @@ export default function SourcesPage() {
                     <td className="px-2 py-2">{run.normalized_row_count ?? "-"}</td>
                     <td className="px-2 py-2">{run.created_alert_count ?? 0}</td>
                     <td className="px-2 py-2">{run.deduped_alert_count ?? 0}</td>
+                    <td className="px-2 py-2">{run.duplicate_key_count ?? 0}</td>
+                    <td className="px-2 py-2">{run.rejected_row_count ?? 0}</td>
+                    <td className="px-2 py-2">{run.missing_required_count ?? 0}</td>
+                    <td className="px-2 py-2">
+                      {run.parse_success_rate != null ? `${(run.parse_success_rate * 100).toFixed(1)}%` : "-"}
+                    </td>
                     <td className="px-2 py-2">{run.duration_ms ?? "-"}</td>
                     <td className="px-2 py-2">{run.started_at ? new Date(run.started_at).toLocaleString() : "-"}</td>
                     <td className="px-2 py-2">{run.source_identifier}</td>

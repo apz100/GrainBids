@@ -146,8 +146,9 @@ def _to_decimal(value: Decimal | float | int | None) -> Decimal | None:
     if value is None:
         return None
     if isinstance(value, Decimal):
-        return value
-    return Decimal(str(value))
+        return value if value.is_finite() else None
+    parsed = Decimal(str(value))
+    return parsed if parsed.is_finite() else None
 
 
 def _compare(value: Decimal, threshold: Decimal, operator: str) -> bool:

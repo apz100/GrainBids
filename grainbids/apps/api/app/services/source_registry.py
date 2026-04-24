@@ -33,10 +33,15 @@ ADAPTERS: dict[str, SourceAdapter] = {
     "snobelen": SourceAdapter("snobelen", "snobelen_source", "fetch_snobelen_all", "playwright", "scraper", 15, 90),
     "wanstead": SourceAdapter("wanstead", "wanstead_source", "fetch_wanstead_all", "playwright", "scraper", 15, 90),
 }
+PILOT_ADAPTER_KEYS = ("agricharts", "glg", "hensall", "snobelen", "andersons")
 
 
 def list_adapters() -> list[SourceAdapter]:
     return [ADAPTERS[key] for key in sorted(ADAPTERS.keys())]
+
+
+def list_pilot_adapter_keys() -> list[str]:
+    return [key for key in PILOT_ADAPTER_KEYS if key in ADAPTERS]
 
 
 def get_adapter(key: str) -> SourceAdapter:

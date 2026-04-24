@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
 from app.models.raw_upload import RawUpload
 from app.models.source import Source
+from app.modules.imports.legacy_helpers import symbol_to_month_extended
 from app.services.price_comparison import apply_historical_changes, build_composite_key
 
 
@@ -37,15 +39,25 @@ CANONICAL_COLUMNS = {
 COLUMN_ALIASES = {
     "location": ["location", "site", "location_name", "elevator"],
     "commodity": ["commodity", "crop", "grain", "name"],
-    "source_name": ["source_name", "source", "buyer", "company"],
+    "source_name": ["source_name", "source", "buyer", "company", "source_sheet", "sheet"],
     "delivery_start": ["delivery_start", "start", "start_date", "delivery start"],
     "delivery_end": ["delivery_end", "end", "end_date", "delivery end"],
     "delivery_label": ["delivery_label", "delivery", "delivery_end", "delivery period"],
-    "futures_month": ["futures_month", "month", "futures contract"],
+    "futures_month": ["futures_month", "month", "futures contract", "symbol", "futures symbol", "futures mon."],
     "futures_price": ["futures_price", "futures", "fut_price"],
     "basis": ["basis", "basis_value"],
-    "cash_price_bu": ["cash_price_bu", "cash_bu", "cash price bu", "bushel cash price"],
-    "cash_price_mt": ["cash_price_mt", "cash_mt", "cash price mt", "tonne cash price", "mt cash price"],
+    "cash_price_bu": ["cash_price_bu", "cash_bu", "cash price bu", "bushel cash price", "cash price", "the andersons cash price"],
+    "cash_price_mt": [
+        "cash_price_mt",
+        "cash_mt",
+        "cash price mt",
+        "tonne cash price",
+        "mt cash price",
+        "cash price (tonne)",
+        "convtd. price (tonnes)",
+        "price / (tonnes)",
+        "converted price",
+    ],
 }
 
 
@@ -56,6 +68,11 @@ class CsvUploadResult:
     inserted_rows: int
     headers: list[str]
     mapping: dict[str, str]
+    parse_success_rate: float
+    duplicate_key_count: int
+    rejected_row_count: int
+    missing_required_count: int
+    row_reject_reasons: dict[str, int]
 
 
 def _parse_decimal(value: str | None) -> Decimal | None:
@@ -64,9 +81,25 @@ def _parse_decimal(value: str | None) -> Decimal | None:
     text = str(value).strip()
     if not text:
         return None
+    tick_match = re.fullmatch(r"(-?\d+)\s*['-]\s*(\d+)", text)
+    if tick_match:
+        whole = Decimal(tick_match.group(1))
+        frac = tick_match.group(2)
+        # Common grain sheets use 1-digit eighths (e.g. 456'6 -> 456.75).
+        if len(frac) == 1 and frac.isdigit():
+            frac_value = Decimal(frac)
+            if Decimal(0) <= frac_value <= Decimal(7):
+                return whole + (frac_value / Decimal(8))
+        text = f"{tick_match.group(1)}.{frac}"
+
     cleaned = text.replace(",", "").replace("$", "")
+    if cleaned.strip().lower() in {"nan", "+nan", "-nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"}:
+        return None
     try:
-        return Decimal(cleaned)
+        parsed = Decimal(cleaned)
+        if not parsed.is_finite():
+            return None
+        return parsed
     except InvalidOperation:
         return None
 
@@ -120,6 +153,11 @@ class NormalizedPersistResult:
     raw_row_count: int
     headers: list[str]
     mapping: dict[str, str]
+    parse_success_rate: float
+    duplicate_key_count: int
+    rejected_row_count: int
+    missing_required_count: int
+    row_reject_reasons: dict[str, int]
 
 
 def persist_normalized_rows(
@@ -150,24 +188,58 @@ def persist_normalized_rows(
 
     normalized_by_key: dict[str, NormalizedPrice] = {}
     row_count = 0
+    duplicate_key_count = 0
+    rejected_row_count = 0
+    missing_required_count = 0
+    row_reject_reasons: dict[str, int] = {}
 
     for row in rows:
         row_count += 1
         location = str(row.get(mapping["location"], "") or "").strip()
         commodity_name = str(row.get(mapping["commodity"], "") or "").strip() or commodity.name
-        if not location or not commodity_name:
+        if _is_blank(location):
+            rejected_row_count += 1
+            missing_required_count += 1
+            _increment_reason(row_reject_reasons, "missing_location")
+            continue
+        if _is_blank(commodity_name):
+            rejected_row_count += 1
+            missing_required_count += 1
+            _increment_reason(row_reject_reasons, "missing_commodity_name")
             continue
 
         source_name = str(row.get(mapping.get("source_name", ""), "") or "").strip() or source.name
         delivery_start = str(row.get(mapping.get("delivery_start", ""), "") or "").strip()
         delivery_end = str(row.get(mapping.get("delivery_end", ""), "") or "").strip()
         delivery_label = str(row.get(mapping.get("delivery_label", ""), "") or "").strip()
-        futures_month = str(row.get(mapping.get("futures_month", ""), "") or "").strip()
+        futures_month_raw = str(row.get(mapping.get("futures_month", ""), "") or "").strip()
+        futures_month = symbol_to_month_extended(futures_month_raw) or futures_month_raw
 
         futures_price = _parse_decimal(str(row.get(mapping.get("futures_price", ""), "") or ""))
         basis = _parse_decimal(str(row.get(mapping.get("basis", ""), "") or ""))
         cash_price_bu = _parse_decimal(str(row.get(mapping.get("cash_price_bu", ""), "") or ""))
         cash_price_mt = _parse_decimal(str(row.get(mapping.get("cash_price_mt", ""), "") or ""))
+        if _is_blank(futures_month):
+            futures_month = (delivery_label or delivery_end or "").strip()
+        if futures_price is None and cash_price_bu is not None and basis is not None:
+            futures_price = cash_price_bu - basis
+
+        reject_reasons = _check_completeness(
+            source_name=source_name,
+            delivery_end=delivery_end,
+            delivery_label=delivery_label,
+            futures_month=futures_month,
+            basis=basis,
+            cash_price_bu=cash_price_bu,
+            cash_price_mt=cash_price_mt,
+        )
+        if reject_reasons:
+            rejected_row_count += 1
+            for reason in reject_reasons:
+                _increment_reason(row_reject_reasons, reason)
+                if reason.startswith("missing_"):
+                    missing_required_count += 1
+            continue
 
         composite_key = build_composite_key(
             location=location,
@@ -176,8 +248,15 @@ def persist_normalized_rows(
             delivery_end=delivery_end,
             futures_month=futures_month,
         )
+        if _is_blank(composite_key):
+            rejected_row_count += 1
+            missing_required_count += 1
+            _increment_reason(row_reject_reasons, "missing_composite_key")
+            continue
 
         # If a source file repeats the same market key, keep the last row from that file.
+        if composite_key in normalized_by_key:
+            duplicate_key_count += 1
         normalized_by_key[composite_key] = NormalizedPrice(
             snapshot_id=snapshot.id,
             location=location,
@@ -199,11 +278,13 @@ def persist_normalized_rows(
 
     normalized_rows = list(normalized_by_key.values())
     if not normalized_rows:
-        raise ValueError("No valid data rows found after normalization")
+        detail = ", ".join(f"{key}:{value}" for key, value in sorted(row_reject_reasons.items()))
+        raise ValueError(f"No valid data rows found after normalization ({detail or 'all rows rejected'})")
 
     apply_historical_changes(db, normalized_rows=normalized_rows, captured_at=captured)
     db.add_all(normalized_rows)
     db.flush()
+    parse_success_rate = float((row_count - rejected_row_count) / row_count) if row_count else 0.0
 
     return NormalizedPersistResult(
         snapshot_id=snapshot.id,
@@ -211,6 +292,11 @@ def persist_normalized_rows(
         raw_row_count=row_count,
         headers=headers,
         mapping=mapping,
+        parse_success_rate=parse_success_rate,
+        duplicate_key_count=duplicate_key_count,
+        rejected_row_count=rejected_row_count,
+        missing_required_count=missing_required_count,
+        row_reject_reasons=row_reject_reasons,
     )
 
 
@@ -271,4 +357,43 @@ def process_csv_upload(
         inserted_rows=persisted.inserted_rows,
         headers=headers,
         mapping=persisted.mapping,
+        parse_success_rate=persisted.parse_success_rate,
+        duplicate_key_count=persisted.duplicate_key_count,
+        rejected_row_count=persisted.rejected_row_count,
+        missing_required_count=persisted.missing_required_count,
+        row_reject_reasons=persisted.row_reject_reasons,
     )
+
+
+def _check_completeness(
+    *,
+    source_name: str | None,
+    delivery_end: str | None,
+    delivery_label: str | None,
+    futures_month: str | None,
+    basis: Decimal | None,
+    cash_price_bu: Decimal | None,
+    cash_price_mt: Decimal | None,
+) -> list[str]:
+    reasons: list[str] = []
+    if _is_blank(source_name):
+        reasons.append("missing_source_name")
+    if _is_blank(delivery_end) and _is_blank(delivery_label):
+        reasons.append("missing_delivery_window")
+    if _is_blank(futures_month):
+        reasons.append("missing_futures_month")
+    if basis is None:
+        reasons.append("missing_basis")
+    if cash_price_bu is None:
+        reasons.append("missing_cash_price_bu")
+    if cash_price_mt is None:
+        reasons.append("missing_cash_price_mt")
+    return reasons
+
+
+def _increment_reason(counter: dict[str, int], reason: str) -> None:
+    counter[reason] = int(counter.get(reason, 0)) + 1
+
+
+def _is_blank(value: str | None) -> bool:
+    return not str(value or "").strip()

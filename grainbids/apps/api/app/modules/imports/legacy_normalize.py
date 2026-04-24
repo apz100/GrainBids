@@ -10,12 +10,12 @@ _CANDIDATE_MAP: Dict[str, List[str]] = {
     "location": ["Location", "location", "Location Name", "Site"],
     "commodity": ["Commodity", "commodity", "Name", "name"],
     "delivery_end": ["Delivery End", "delivery end", "Delivery", "Delivery Label", "delivery_end"],
-    "futures_month": ["Futures Month", "Futures Mon.", "Futures", "futures_month", "Futures Symbol"],
+    "futures_month": ["Futures Month", "Futures Mon.", "Futures", "futures_month", "Futures Symbol", "Symbol", "Month"],
     "futures_price": ["Futures Price", "Futures", "futures_price"],
     "futures_change": ["Change", "Chg", "Futures Change", "futures_change"],
     "basis": ["Basis", "basis"],
-    "cash_price_bu": ["Bushel Cash Price", "Cash Price", "cash_price_bu"],
-    "cash_price_mt": ["MT Cash Price", "Convtd. Price (Tonnes)", "cash_price_mt"],
+    "cash_price_bu": ["Bushel Cash Price", "Cash Price", "The Andersons Cash Price", "cash_price_bu"],
+    "cash_price_mt": ["MT Cash Price", "Convtd. Price (Tonnes)", "Price / (Tonnes)", "Cash Price (tonne)", "Converted Price", "cash_price_mt"],
 }
 
 

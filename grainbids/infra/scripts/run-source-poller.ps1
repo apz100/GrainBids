@@ -1,14 +1,13 @@
 param(
   [switch]$Loop,
-  [int]$SleepSeconds = 60
+  [int]$SleepSeconds = 60,
+  [string]$ApiDir = "$PSScriptRoot\..\..\apps\api",
+  [switch]$SkipPipInstall
 )
 
 $ErrorActionPreference = "Stop"
 
-$apiRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\apps\api")).Path
-if ($apiRoot.StartsWith("\\")) {
-  throw "UNC paths are not supported for runtime on this machine. Run from a drive-letter path."
-}
+$apiRoot = (Resolve-Path $ApiDir).Path
 
 Push-Location $apiRoot
 try {
@@ -16,7 +15,9 @@ try {
     python -m venv .venv
   }
   $pythonExe = Join-Path $apiRoot ".venv\Scripts\python.exe"
-  & $pythonExe -m pip install -r requirements.txt | Out-Host
+  if (-not $SkipPipInstall.IsPresent) {
+    & $pythonExe -m pip install -r requirements.txt | Out-Host
+  }
   $args = @("-m", "app.jobs.poll_sources")
   if ($Loop.IsPresent) {
     $args += "--loop"

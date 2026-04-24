@@ -45,6 +45,18 @@ type DbHealth = {
   error?: string;
 };
 
+type SlaSummary = {
+  active_sources: number;
+  fresh_sources: number;
+  stale_sources: number;
+  last_successful_ingestion_run?: {
+    id: string;
+    started_at: string | null;
+    completed_at: string | null;
+    status: string;
+  } | null;
+};
+
 function getApiBase() {
   return process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 }
@@ -84,11 +96,12 @@ export default async function DashboardPage({ searchParams = {} }: { searchParam
   const query = buildQuery(searchParams);
   const limitedQuery = buildQuery(searchParams, 100);
 
-  const [health, summary, moversData, pricesData] = await Promise.all([
+  const [health, summary, moversData, pricesData, slaSummary] = await Promise.all([
     fetchJson<DbHealth>("/api/health/db"),
     fetchJson<SummaryResponse>(`/api/normalized-prices/summary${query}`),
     fetchJson<{ rows: TopMover[] }>(`/api/normalized-prices/top-movers${buildQuery(searchParams, 8)}`),
     fetchJson<{ rows: NormalizedRow[] }>(`/api/normalized-prices${limitedQuery}`),
+    fetchJson<SlaSummary>("/api/ingestion/sla"),
   ]);
 
   const movers = moversData?.rows || [];
@@ -104,11 +117,18 @@ export default async function DashboardPage({ searchParams = {} }: { searchParam
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge health={health} />
+          <FreshnessBadge summary={slaSummary} />
           <Link href="/" className="rounded-xl border border-black/15 bg-white/70 px-4 py-2 text-sm hover:border-black/30">
             Home
           </Link>
         </div>
       </header>
+      <p className="mt-2 text-xs text-black/55">
+        Latest successful ingestion:{" "}
+        {slaSummary?.last_successful_ingestion_run?.started_at
+          ? new Date(slaSummary.last_successful_ingestion_run.started_at).toLocaleString()
+          : "-"}
+      </p>
 
       <section className="mt-8 grid gap-4 md:grid-cols-4">
         <MetricCard label="Rows" value={summary?.row_count ?? 0} />
@@ -227,6 +247,19 @@ function StatusBadge({ health }: { health: DbHealth | null }) {
   const tone = ok ? "border-emerald-700/20 bg-emerald-100/70 text-emerald-900" : "border-red-700/20 bg-red-100/70 text-red-900";
 
   return <span className={`rounded-xl border px-3 py-2 text-xs ${tone}`}>{label}</span>;
+}
+
+function FreshnessBadge({ summary }: { summary: SlaSummary | null }) {
+  if (!summary || summary.active_sources === 0) {
+    return <span className="rounded-xl border px-3 py-2 text-xs border-black/15 bg-white/80 text-black/70">No Sources</span>;
+  }
+  const isHealthy = summary.fresh_sources >= summary.active_sources;
+  const tone = isHealthy ? "border-emerald-700/20 bg-emerald-100/70 text-emerald-900" : "border-amber-700/20 bg-amber-100/70 text-amber-900";
+  return (
+    <span className={`rounded-xl border px-3 py-2 text-xs ${tone}`}>
+      Fresh {summary.fresh_sources}/{summary.active_sources}
+    </span>
+  );
 }
 
 function MetricCard({ label, value }: { label: string; value: string | number }) {
