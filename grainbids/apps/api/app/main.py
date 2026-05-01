@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.api.routes.alerts import router as alerts_router
@@ -12,25 +14,48 @@ from app.api.routes.settings import router as settings_router
 from app.api.routes.signals import router as signals_router
 from app.api.routes.sources import router as sources_router
 from app.api.routes.watchlists import router as watchlists_router
+from app.core.config import settings
 from app.db.session import get_engine
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="GrainBids API")
+    app = FastAPI(
+        title="GrainBids API",
+        docs_url="/docs" if settings.api_enable_docs else None,
+        redoc_url="/redoc" if settings.api_enable_docs else None,
+        openapi_url="/openapi.json" if settings.api_enable_docs else None,
+    )
+
+    if settings.api_cors_origins_list:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.api_cors_origins_list,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=["*"],
+        )
 
     @app.get("/health")
     def health():
-        return {"ok": True}
+        return {"ok": True, "env": settings.app_env}
+
+    @app.get("/health/live")
+    def health_live():
+        return {"ok": True, "env": settings.app_env}
+
+    @app.get("/health/ready")
+    def health_ready():
+        ok, details = _check_database()
+        if ok:
+            return {"ok": True, "env": settings.app_env, "database": details}
+        return JSONResponse(status_code=503, content={"ok": False, "env": settings.app_env, "database": details})
 
     @app.get("/api/health/db")
     def db_health():
-        try:
-            engine = get_engine()
-            with engine.connect() as conn:
-                conn.execute(text("select 1"))
-            return {"ok": True, "database": "connected"}
-        except Exception as exc:
-            return {"ok": False, "database": "error", "error": str(exc)}
+        ok, details = _check_database()
+        if ok:
+            return {"ok": True, "database": "connected", "env": settings.app_env}
+        return JSONResponse(status_code=503, content={"ok": False, "database": "error", "error": details, "env": settings.app_env})
 
     app.include_router(reference_router)
     app.include_router(bids_router)
@@ -47,5 +72,15 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+
+def _check_database() -> tuple[bool, str]:
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("select 1"))
+        return True, "connected"
+    except Exception as exc:
+        return False, str(exc)
 
 

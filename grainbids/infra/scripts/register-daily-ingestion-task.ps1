@@ -1,6 +1,6 @@
 param(
   [string]$TaskName = "GrainBids-Daily-Ingestion",
-  [string]$StartTimes = "06:00,16:00",
+  [string]$StartTimes = "08:00,15:00",
   [string]$ScriptPath = "$PSScriptRoot\run-daily-ingestion.ps1",
   [string]$ApiDir = "$PSScriptRoot\..\..\apps\api",
   [string]$LogDir = "",

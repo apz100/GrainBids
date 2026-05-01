@@ -30,6 +30,7 @@ type NormalizedRow = {
   delivery_end: string | null;
   delivery_label: string | null;
   futures_month: string | null;
+  futures_price: number | null;
   basis: number | null;
   cash_price_bu: number | null;
   cash_price_mt: number | null;
@@ -49,6 +50,12 @@ type SlaSummary = {
   active_sources: number;
   fresh_sources: number;
   stale_sources: number;
+  failing_sources: number;
+  latest_quality?: {
+    parse_success_rate: number;
+    rejected_row_count: number;
+    missing_required_count: number;
+  } | null;
   last_successful_ingestion_run?: {
     id: string;
     started_at: string | null;
@@ -113,7 +120,7 @@ export default async function DashboardPage({ searchParams = {} }: { searchParam
         <div>
           <p className="text-xs uppercase tracking-[0.16em] text-black/50">GrainBids / Bids</p>
           <h1 className="mt-1 font-[family-name:var(--font-serif)] text-4xl leading-tight">Market Dashboard</h1>
-          <p className="mt-2 text-sm text-black/65">Live snapshot of normalized bids and basis movement.</p>
+      <p className="mt-2 text-sm text-black/65">Live snapshot of normalized bids and basis movement.</p>
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge health={health} />
@@ -128,6 +135,12 @@ export default async function DashboardPage({ searchParams = {} }: { searchParam
         {slaSummary?.last_successful_ingestion_run?.started_at
           ? new Date(slaSummary.last_successful_ingestion_run.started_at).toLocaleString()
           : "-"}
+      </p>
+      <p className="mt-1 text-xs text-black/55">
+        Latest parse success:{" "}
+        {slaSummary?.latest_quality ? `${(slaSummary.latest_quality.parse_success_rate * 100).toFixed(1)}%` : "-"}{" "}
+        | rejected: {slaSummary?.latest_quality?.rejected_row_count ?? "-"} | missing required:{" "}
+        {slaSummary?.latest_quality?.missing_required_count ?? "-"}
       </p>
 
       <section className="mt-8 grid gap-4 md:grid-cols-4">
@@ -186,6 +199,7 @@ export default async function DashboardPage({ searchParams = {} }: { searchParam
                   <th className="px-2 py-2">Commodity</th>
                   <th className="px-2 py-2">Delivery</th>
                   <th className="px-2 py-2">Futures</th>
+                  <th className="px-2 py-2">Fut Px</th>
                   <th className="px-2 py-2">Basis</th>
                   <th className="px-2 py-2">Basis Chg</th>
                   <th className="px-2 py-2">Cash/Bu</th>
@@ -197,7 +211,7 @@ export default async function DashboardPage({ searchParams = {} }: { searchParam
               <tbody>
                 {prices.length === 0 ? (
                   <tr>
-                    <td className="px-2 py-4 text-sm text-black/55" colSpan={11}>
+                    <td className="px-2 py-4 text-sm text-black/55" colSpan={12}>
                       No normalized price rows yet.
                     </td>
                   </tr>
@@ -209,6 +223,7 @@ export default async function DashboardPage({ searchParams = {} }: { searchParam
                       <td className="px-2 py-2">{row.commodity_name}</td>
                       <td className="px-2 py-2">{row.delivery_label || [row.delivery_start, row.delivery_end].filter(Boolean).join(" - ") || "-"}</td>
                       <td className="px-2 py-2">{row.futures_month ?? "-"}</td>
+                      <td className="px-2 py-2">{formatNumber(row.futures_price)}</td>
                       <td className="px-2 py-2">{formatNumber(row.basis)}</td>
                       <td className="px-2 py-2">{formatSignedNumber(row.basis_change)}</td>
                       <td className="px-2 py-2">{formatNumber(row.cash_price_bu)}</td>
@@ -253,11 +268,11 @@ function FreshnessBadge({ summary }: { summary: SlaSummary | null }) {
   if (!summary || summary.active_sources === 0) {
     return <span className="rounded-xl border px-3 py-2 text-xs border-black/15 bg-white/80 text-black/70">No Sources</span>;
   }
-  const isHealthy = summary.fresh_sources >= summary.active_sources;
+  const isHealthy = summary.fresh_sources >= summary.active_sources && summary.failing_sources === 0;
   const tone = isHealthy ? "border-emerald-700/20 bg-emerald-100/70 text-emerald-900" : "border-amber-700/20 bg-amber-100/70 text-amber-900";
   return (
     <span className={`rounded-xl border px-3 py-2 text-xs ${tone}`}>
-      Fresh {summary.fresh_sources}/{summary.active_sources}
+      Fresh {summary.fresh_sources}/{summary.active_sources} | Failing {summary.failing_sources}
     </span>
   );
 }

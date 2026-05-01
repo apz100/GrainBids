@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Dict, List
 
 import pandas as pd
@@ -11,7 +12,7 @@ _CANDIDATE_MAP: Dict[str, List[str]] = {
     "commodity": ["Commodity", "commodity", "Name", "name"],
     "delivery_end": ["Delivery End", "delivery end", "Delivery", "Delivery Label", "delivery_end"],
     "futures_month": ["Futures Month", "Futures Mon.", "Futures", "futures_month", "Futures Symbol", "Symbol", "Month"],
-    "futures_price": ["Futures Price", "Futures", "futures_price"],
+    "futures_price": ["Futures Price", "Futures", "futures_price", "Futures Value", "Futures ($/bu)", "CBOT Futures"],
     "futures_change": ["Change", "Chg", "Futures Change", "futures_change"],
     "basis": ["Basis", "basis"],
     "cash_price_bu": ["Bushel Cash Price", "Cash Price", "The Andersons Cash Price", "cash_price_bu"],
@@ -19,14 +20,22 @@ _CANDIDATE_MAP: Dict[str, List[str]] = {
 }
 
 
+def _normalize_col_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.strip().lower())
+
+
 def _find_col(df: pd.DataFrame, candidates: List[str]):
     low_map = {c.lower(): c for c in df.columns}
+    normalized_map = {_normalize_col_name(str(c)): c for c in df.columns}
     for cand in candidates:
         if cand in df.columns:
             return cand
         lc = cand.lower()
         if lc in low_map:
             return low_map[lc]
+        normalized = _normalize_col_name(cand)
+        if normalized in normalized_map:
+            return normalized_map[normalized]
     return None
 
 

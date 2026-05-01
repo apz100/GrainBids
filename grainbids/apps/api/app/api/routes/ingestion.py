@@ -14,6 +14,7 @@ from app.models.commodity import Commodity
 from app.models.source import Source
 from app.services.source_orchestration import build_sla_summary
 from app.services.source_file_ingestion import ingest_source_file, list_ingestion_runs, run_scheduled_file_ingestion_cycle
+from app.services.upload_csv import summarize_quality
 
 
 router = APIRouter(prefix="/api/ingestion", tags=["ingestion"])
@@ -25,8 +26,9 @@ def get_ingestion_runs(
     _context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    return {
-        "rows": [
+    rows = []
+    for row in list_ingestion_runs(db, limit=limit, org_id=_context.org_id):
+        rows.append(
             {
                 "id": str(row.id),
                 "source_name": row.source_name,
@@ -49,10 +51,18 @@ def get_ingestion_runs(
                 "parse_success_rate": float(row.parse_success_rate) if row.parse_success_rate is not None else None,
                 "schema_drift_count": row.schema_drift_count,
                 "error_message": row.error_message,
+                "quality_summary": summarize_quality(
+                    raw_row_count=row.raw_row_count,
+                    normalized_row_count=row.normalized_row_count,
+                    duplicate_key_count=row.duplicate_key_count,
+                    rejected_row_count=row.rejected_row_count,
+                    missing_required_count=row.missing_required_count,
+                    parse_success_rate=float(row.parse_success_rate) if row.parse_success_rate is not None else None,
+                    row_reject_reasons=row.row_reject_reasons_json or {},
+                ),
             }
-            for row in list_ingestion_runs(db, limit=limit, org_id=_context.org_id)
-        ]
-    }
+        )
+    return {"rows": rows}
 
 
 @router.get("/sla")
@@ -60,7 +70,19 @@ def get_ingestion_sla(
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    return build_sla_summary(db, org_id=context.org_id)
+    summary = build_sla_summary(db, org_id=context.org_id)
+    recent_runs = list_ingestion_runs(db, limit=5, org_id=context.org_id)
+    if recent_runs:
+        summary["latest_quality"] = summarize_quality(
+            raw_row_count=recent_runs[0].raw_row_count,
+            normalized_row_count=recent_runs[0].normalized_row_count,
+            duplicate_key_count=recent_runs[0].duplicate_key_count,
+            rejected_row_count=recent_runs[0].rejected_row_count,
+            missing_required_count=recent_runs[0].missing_required_count,
+            parse_success_rate=float(recent_runs[0].parse_success_rate) if recent_runs[0].parse_success_rate is not None else None,
+            row_reject_reasons=recent_runs[0].row_reject_reasons_json or {},
+        )
+    return summary
 
 
 @router.post("/source-file/run")
@@ -93,6 +115,15 @@ def run_source_file_ingestion(
     )
 
     payload = _serialize_result(result)
+    payload["quality_summary"] = summarize_quality(
+        raw_row_count=result.raw_row_count,
+        normalized_row_count=result.normalized_row_count,
+        duplicate_key_count=result.duplicate_key_count,
+        rejected_row_count=result.rejected_row_count,
+        missing_required_count=result.missing_required_count,
+        parse_success_rate=result.parse_success_rate,
+        row_reject_reasons=result.row_reject_reasons or {},
+    )
     status_code = 500 if result.status == "failed" else 200
     if status_code >= 400:
         raise HTTPException(status_code=status_code, detail=payload)

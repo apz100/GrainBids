@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,6 +8,8 @@ class Settings(BaseSettings):
     app_env: str = "development"
     # Allow empty in early scaffolding; runtime should provide DATABASE_URL.
     database_url: str = ""
+    api_cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
+    api_enable_docs: bool = True
     allow_implicit_org: bool = True
     daily_source_file_path: str = ""
     daily_source_name: str = "daily_source_file"
@@ -21,6 +24,22 @@ class Settings(BaseSettings):
     alert_smtp_username: str | None = None
     alert_smtp_password: str | None = None
     alert_smtp_use_tls: bool = True
+
+    @property
+    def api_cors_origins_list(self) -> list[str]:
+        return [origin.strip().rstrip("/") for origin in self.api_cors_origins.split(",") if origin.strip()]
+
+    @model_validator(mode="after")
+    def validate_runtime(self) -> "Settings":
+        env = self.app_env.strip().lower()
+        if env in {"production", "prod"}:
+            if not self.database_url.strip():
+                raise ValueError("DATABASE_URL is required when APP_ENV=production")
+            if self.allow_implicit_org:
+                raise ValueError("ALLOW_IMPLICIT_ORG must be false when APP_ENV=production")
+            if not self.api_cors_origins_list:
+                raise ValueError("API_CORS_ORIGINS must include at least one origin when APP_ENV=production")
+        return self
 
 
 settings = Settings()

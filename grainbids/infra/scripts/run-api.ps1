@@ -21,7 +21,9 @@ try {
     throw "Virtual environment is incomplete. Delete apps/api/.venv and rerun."
   }
   & $pythonExe -m pip install -r requirements.txt | Out-Host
-  $env:APP_ENV = "development"
+  if ([string]::IsNullOrWhiteSpace($env:APP_ENV)) {
+    $env:APP_ENV = "development"
+  }
   if (!(Test-Path ".env") -and (Test-Path ".env.example")) {
     Copy-Item ".env.example" ".env"
   }

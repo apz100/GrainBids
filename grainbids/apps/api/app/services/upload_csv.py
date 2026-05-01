@@ -22,6 +22,17 @@ from app.services.price_comparison import apply_historical_changes, build_compos
 
 
 REQUIRED_CANONICAL_COLUMNS = {"location", "commodity"}
+REQUIRED_NORMALIZED_FIELDS = (
+    "location",
+    "commodity_name",
+    "source_name",
+    "delivery_window",
+    "futures_month",
+    "basis",
+    "cash_price_bu",
+    "cash_price_mt",
+    "composite_key",
+)
 CANONICAL_COLUMNS = {
     "location",
     "commodity",
@@ -102,6 +113,21 @@ def _parse_decimal(value: str | None) -> Decimal | None:
         return parsed
     except InvalidOperation:
         return None
+
+
+def _extract_price_from_text(value: str | None) -> Decimal | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    # Handles values like "ZCN26 @ 6.34" where the price is bundled with the symbol.
+    matches = re.findall(r"-?\d+(?:\.\d+)?", text.replace(",", ""))
+    if not matches:
+        return None
+    for token in reversed(matches):
+        parsed = _parse_decimal(token)
+        if parsed is not None:
+            return parsed
+    return None
 
 
 def _decode_payload(payload: bytes) -> str:
@@ -221,6 +247,8 @@ def persist_normalized_rows(
         cash_price_mt = _parse_decimal(str(row.get(mapping.get("cash_price_mt", ""), "") or ""))
         if _is_blank(futures_month):
             futures_month = (delivery_label or delivery_end or "").strip()
+        if futures_price is None:
+            futures_price = _extract_price_from_text(futures_month_raw)
         if futures_price is None and cash_price_bu is not None and basis is not None:
             futures_price = cash_price_bu - basis
 
@@ -389,6 +417,35 @@ def _check_completeness(
     if cash_price_mt is None:
         reasons.append("missing_cash_price_mt")
     return reasons
+
+
+def summarize_quality(
+    *,
+    raw_row_count: int | None,
+    normalized_row_count: int | None,
+    duplicate_key_count: int | None,
+    rejected_row_count: int | None,
+    missing_required_count: int | None,
+    parse_success_rate: float | None,
+    row_reject_reasons: dict[str, int] | None,
+) -> dict[str, object]:
+    raw = int(raw_row_count or 0)
+    normalized = int(normalized_row_count or 0)
+    rejected = int(rejected_row_count or 0)
+    duplicates = int(duplicate_key_count or 0)
+    missing = int(missing_required_count or 0)
+    success_rate = float(parse_success_rate) if parse_success_rate is not None else (float(normalized / raw) if raw else 0.0)
+    return {
+        "required_normalized_fields": list(REQUIRED_NORMALIZED_FIELDS),
+        "raw_row_count": raw,
+        "normalized_row_count": normalized,
+        "rejected_row_count": rejected,
+        "duplicate_key_count": duplicates,
+        "missing_required_count": missing,
+        "parse_success_rate": success_rate,
+        "rejection_rate": float(rejected / raw) if raw else 0.0,
+        "row_reject_reasons": row_reject_reasons or {},
+    }
 
 
 def _increment_reason(counter: dict[str, int], reason: str) -> None:

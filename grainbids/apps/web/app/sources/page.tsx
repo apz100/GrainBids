@@ -24,6 +24,11 @@ type IngestionRun = {
   parse_success_rate: number | null;
   schema_drift_count: number | null;
   error_message: string | null;
+  quality_summary?: {
+    parse_success_rate: number;
+    rejection_rate: number;
+    row_reject_reasons: Record<string, number>;
+  } | null;
 };
 
 type RecentAlert = {
@@ -84,6 +89,11 @@ type SlaSummary = {
     consecutive_failures: number;
     latest_error_message: string | null;
   }[];
+  latest_quality?: {
+    parse_success_rate: number;
+    rejected_row_count: number;
+    missing_required_count: number;
+  } | null;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
@@ -253,6 +263,10 @@ export default function SourcesPage() {
           ? new Date(sla.last_successful_ingestion_run.started_at).toLocaleString()
           : "-"}
       </p>
+      <p className="mt-1 text-xs text-black/55">
+        Latest quality: parse {sla?.latest_quality ? `${(sla.latest_quality.parse_success_rate * 100).toFixed(1)}%` : "-"} | rejected{" "}
+        {sla?.latest_quality?.rejected_row_count ?? "-"} | missing required {sla?.latest_quality?.missing_required_count ?? "-"}
+      </p>
 
       <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
         <div className="flex items-center justify-between gap-4">
@@ -390,6 +404,7 @@ export default function SourcesPage() {
                 <th className="px-2 py-2">Duplicates</th>
                 <th className="px-2 py-2">Rejected</th>
                 <th className="px-2 py-2">Missing req</th>
+                <th className="px-2 py-2">Reject reasons</th>
                 <th className="px-2 py-2">Parse %</th>
                 <th className="px-2 py-2">Duration</th>
                 <th className="px-2 py-2">Started</th>
@@ -399,7 +414,7 @@ export default function SourcesPage() {
             <tbody>
               {runs.length === 0 ? (
                 <tr>
-                  <td className="px-2 py-4 text-black/55" colSpan={13}>
+                  <td className="px-2 py-4 text-black/55" colSpan={14}>
                     No ingestion runs yet.
                   </td>
                 </tr>
@@ -415,6 +430,9 @@ export default function SourcesPage() {
                     <td className="px-2 py-2">{run.duplicate_key_count ?? 0}</td>
                     <td className="px-2 py-2">{run.rejected_row_count ?? 0}</td>
                     <td className="px-2 py-2">{run.missing_required_count ?? 0}</td>
+                    <td className="px-2 py-2 max-w-56 truncate" title={formatRejectReasons(run.row_reject_reasons)}>
+                      {formatRejectReasons(run.row_reject_reasons)}
+                    </td>
                     <td className="px-2 py-2">
                       {run.parse_success_rate != null ? `${(run.parse_success_rate * 100).toFixed(1)}%` : "-"}
                     </td>
@@ -513,4 +531,13 @@ function Field({ name, label, placeholder }: { name: string; label: string; plac
       <input name={name} placeholder={placeholder} className="mt-1 w-full rounded-md border border-black/15 bg-white px-3 py-2 text-sm" />
     </label>
   );
+}
+
+function formatRejectReasons(reasons: Record<string, number> | null | undefined): string {
+  if (!reasons || Object.keys(reasons).length === 0) {
+    return "-";
+  }
+  return Object.entries(reasons)
+    .map(([key, count]) => `${key}:${count}`)
+    .join(", ");
 }

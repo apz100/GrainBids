@@ -31,6 +31,8 @@ API:
 Optional API env values:
 - `ALLOW_IMPLICIT_ORG=true` allows local dev requests without `X-Org-Id`.
 - `ALERT_EMAIL_*` + `ALERT_SMTP_*` enable outbound email when alert events are created.
+- `API_CORS_ORIGINS` controls allowed frontend origins.
+- `API_ENABLE_DOCS=false` can disable Swagger/OpenAPI in production.
 
 Web:
 - `cd apps/web`
@@ -55,4 +57,23 @@ Daily ingestion (Windows Scheduled Task):
   - `infra/scripts/register-daily-ingestion-task.ps1`
 - Register task:
   - `infra/scripts/register-daily-ingestion-task.ps1 -Apply`
+- Default schedule is `08:00` and `15:00` local time. Override with `-StartTimes "HH:mm,HH:mm"`.
+
+## Production baseline (Vercel + Render + Supabase)
+API (`apps/api`) required env:
+- `APP_ENV=production`
+- `DATABASE_URL=<supabase postgres url>`
+- `ALLOW_IMPLICIT_ORG=false`
+- `API_CORS_ORIGINS=https://grainbids.com,https://www.grainbids.com,https://<your-vercel-domain>`
+
+Web (`apps/web`) required env:
+- `NEXT_PUBLIC_API_URL=https://<your-api-domain>`
+
+Health checks:
+- Liveness: `GET /health/live`
+- Readiness (DB): `GET /health/ready` (returns `503` when DB unavailable)
+
+Scheduling:
+- Use host scheduler/cron at `08:00` and `15:00` America/Toronto.
+- Job command: `python -m app.jobs.daily_source_ingestion`
 
