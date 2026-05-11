@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { API_BASE, buildApiHeaders } from "@/lib/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const headers = buildApiHeaders();
 
 async function fetchSignalsHealth() {
   try {
-    const res = await fetch(`${API_BASE}/api/signals/health`, { cache: "no-store" });
+    const res = await fetch(`${API_BASE}/api/signals/health`, { cache: "no-store", headers });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -14,7 +15,7 @@ async function fetchSignalsHealth() {
 
 async function fetchForecasts() {
   try {
-    const res = await fetch(`${API_BASE}/api/signals/forecast?limit=50`, { cache: "no-store" });
+    const res = await fetch(`${API_BASE}/api/signals/forecast?limit=50`, { cache: "no-store", headers });
     if (!res.ok) return [];
     const json = await res.json();
     return json.rows || [];

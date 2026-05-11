@@ -92,17 +92,10 @@ try {
   }
 
   Write-Output "Running fetcher profile '$Fetcher' from $fetchScript"
-  Write-Output "Fetcher output will stream live. This can take several minutes."
-  # Ignore non-fatal library warnings on stderr so PowerShell does not stop the run.
-  $fetchOutput = @()
-  & $pythonExe -W "ignore::FutureWarning" $fetchScript 2>&1 | ForEach-Object {
-    $line = "$_"
-    $fetchOutput += $line
-    $line | Out-Host
-  }
-  $fetchExitCode = $LASTEXITCODE
-  if ($fetchExitCode -ne 0) {
-    throw "Fetcher failed with exit code $fetchExitCode"
+  $fetchOutput = & $pythonExe $fetchScript 2>&1
+  $fetchOutput | Out-Host
+  if ($LASTEXITCODE -ne 0) {
+    throw "Fetcher failed with exit code $LASTEXITCODE"
   }
 
   $resolvedSourcePath = if ($SourceFilePath) {

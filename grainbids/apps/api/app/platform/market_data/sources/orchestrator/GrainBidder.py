@@ -7,7 +7,6 @@ import csv
 import datetime as _dt
 import re as _re
 import shutil
-import sys
 from typing import Optional, List, Tuple
 
 import pandas as pd

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { API_BASE, buildApiHeaders } from "@/lib/api";
 
 type QuoteRun = {
   id: string;
@@ -10,16 +11,15 @@ type QuoteRun = {
   status: string;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
 export default function QuotesPage() {
+  const headers = buildApiHeaders();
   const [runs, setRuns] = useState<QuoteRun[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   async function loadRuns() {
-    const response = await fetch(`${API_BASE}/api/quotes/runs?limit=25`, { cache: "no-store" });
+    const response = await fetch(`${API_BASE}/api/quotes/runs?limit=25`, { cache: "no-store", headers });
     if (!response.ok) {
       throw new Error("Failed to load quote runs");
     }
@@ -44,7 +44,7 @@ export default function QuotesPage() {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/api/quotes/export?${params.toString()}`, { method: "POST" });
+      const response = await fetch(`${API_BASE}/api/quotes/export?${params.toString()}`, { method: "POST", headers });
       const json = await response.json();
       if (!response.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Quote export failed");

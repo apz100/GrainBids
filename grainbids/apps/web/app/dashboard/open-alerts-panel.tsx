@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "../lib/api";
+import { API_BASE, buildApiHeaders } from "@/lib/api";
 
 type RecentAlert = {
   id: string;
@@ -15,6 +15,7 @@ type RecentAlert = {
 };
 
 export default function OpenAlertsPanel() {
+  const headers = buildApiHeaders();
   const [alerts, setAlerts] = useState<RecentAlert[]>([]);
   const [openOnly, setOpenOnly] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -27,7 +28,7 @@ export default function OpenAlertsPanel() {
     setError("");
     try {
       const openOnlyQuery = openOnly ? "&open_only=true" : "";
-      const res = await apiFetch(`/api/alerts/recent?limit=8${openOnlyQuery}`);
+      const res = await fetch(`${API_BASE}/api/alerts/recent?limit=12${openOnlyQuery}`, { cache: "no-store", headers });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Failed to load alerts");
@@ -45,7 +46,7 @@ export default function OpenAlertsPanel() {
     setMessage("");
     setError("");
     try {
-      const res = await apiFetch(`/api/alerts/${alertId}/status?status=${status}`, { method: "PATCH" });
+      const res = await fetch(`${API_BASE}/api/alerts/${alertId}/status?status=${status}`, { method: "PATCH", headers });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Failed to update alert");
@@ -64,10 +65,10 @@ export default function OpenAlertsPanel() {
   }, [openOnly]);
 
   return (
-    <section className="mt-8 rounded-2xl border border-black/10 bg-white/65 p-5 backdrop-blur">
+    <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Open Alerts</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Open Alerts</h2>
           <p className="mt-1 text-xs text-black/55">Acknowledge or resolve alerts directly from the dashboard.</p>
         </div>
         <button

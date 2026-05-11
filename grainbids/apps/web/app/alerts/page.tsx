@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { API_BASE, buildApiHeaders } from "@/lib/api";
 
 type AlertRuleRow = {
   id: string;
@@ -25,9 +26,8 @@ type RecentAlert = {
   location: string | null;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
 export default function AlertsPage() {
+  const headers = buildApiHeaders();
   const [rules, setRules] = useState<AlertRuleRow[]>([]);
   const [alerts, setAlerts] = useState<RecentAlert[]>([]);
   const [openOnly, setOpenOnly] = useState(true);
@@ -42,8 +42,8 @@ export default function AlertsPage() {
     try {
       const openOnlyQuery = openOnly ? "&open_only=true" : "";
       const [rulesRes, alertsRes] = await Promise.all([
-        fetch(`${API_BASE}/api/alerts/rules`, { cache: "no-store" }),
-        fetch(`${API_BASE}/api/alerts/recent?limit=25${openOnlyQuery}`, { cache: "no-store" }),
+        fetch(`${API_BASE}/api/alerts/rules`, { cache: "no-store", headers }),
+        fetch(`${API_BASE}/api/alerts/recent?limit=25${openOnlyQuery}`, { cache: "no-store", headers }),
       ]);
       const rulesJson = rulesRes.ok ? await rulesRes.json() : { rows: [] };
       const alertsJson = alertsRes.ok ? await alertsRes.json() : { rows: [] };
@@ -61,7 +61,7 @@ export default function AlertsPage() {
     setMessage("");
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/api/alerts/${alertId}/status?status=${status}`, { method: "PATCH" });
+      const res = await fetch(`${API_BASE}/api/alerts/${alertId}/status?status=${status}`, { method: "PATCH", headers });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Failed to update alert");
@@ -201,8 +201,8 @@ export default function AlertsPage() {
             </tbody>
           </table>
         </div>
-        <Link href="/dashboard" className="mt-4 inline-flex rounded-md border border-black/20 bg-white/80 px-3 py-2 text-sm hover:border-black/40">
-          Back to dashboard
+        <Link href="/bids" className="mt-4 inline-flex rounded-md border border-black/20 bg-white/80 px-3 py-2 text-sm hover:border-black/40">
+          Back to market
         </Link>
       </section>
     </main>

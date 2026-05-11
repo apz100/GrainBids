@@ -52,6 +52,7 @@ Daily ingestion (manual):
 - `infra/scripts/run-daily-ingestion.ps1`
 - one-step fetch + ingest (local): `infra/scripts/run-fetch-and-ingest.ps1 -Fetcher dynamic`
 - logs are written to `.runlogs/daily-ingestion-*.log`
+- one-step fetch + ingest (local): `infra/scripts/run-fetch-and-ingest.ps1 -Fetcher dynamic`
 
 Daily ingestion (Windows Scheduled Task):
 - Preview task config:

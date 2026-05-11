@@ -53,6 +53,29 @@ def _build_filters(
     return filters
 
 
+def _base_query(context: RequestContext) -> Select:
+    return (
+        select(NormalizedPrice, PriceSnapshot)
+        .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .where(Source.org_id == context.org_id)
+    )
+
+
+def _with_sorting(query: Select, sort: str) -> Select:
+    if sort == "basis_desc":
+        return query.order_by(desc(NormalizedPrice.basis), desc(PriceSnapshot.captured_at))
+    if sort == "basis_asc":
+        return query.order_by(NormalizedPrice.basis.asc(), desc(PriceSnapshot.captured_at))
+    if sort == "cash_bu_desc":
+        return query.order_by(desc(NormalizedPrice.cash_price_bu), desc(PriceSnapshot.captured_at))
+    if sort == "cash_bu_asc":
+        return query.order_by(NormalizedPrice.cash_price_bu.asc(), desc(PriceSnapshot.captured_at))
+    if sort == "basis_change_desc":
+        return query.order_by(desc(func.abs(NormalizedPrice.basis_change)), desc(PriceSnapshot.captured_at))
+    return query.order_by(desc(PriceSnapshot.captured_at), NormalizedPrice.location, NormalizedPrice.commodity_name)
+
+
 @router.get("")
 def list_normalized_prices(
     commodity: str | None = Query(None),
@@ -63,13 +86,7 @@ def list_normalized_prices(
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    query: Select = (
-        select(NormalizedPrice, PriceSnapshot)
-        .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
-        .join(Source, Source.id == PriceSnapshot.source_id)
-        .where(Source.org_id == context.org_id)
-        .order_by(desc(PriceSnapshot.captured_at), NormalizedPrice.location)
-    )
+    query: Select = _base_query(context).order_by(desc(PriceSnapshot.captured_at), NormalizedPrice.location)
 
     filters = _build_filters(commodity=commodity, location=location, source_name=source_name, captured_date=captured_date)
     if filters:
@@ -96,6 +113,99 @@ def list_normalized_prices(
                 "cash_price_mt": _to_float(price.cash_price_mt),
                 "basis_change": _to_float(price.basis_change),
                 "cash_price_bu_change": _to_float(price.cash_price_bu_change),
+                "cash_price_mt_change": _to_float(price.cash_price_mt_change),
+                "composite_key": price.composite_key,
+            }
+            for price, snapshot in rows
+        ]
+    }
+
+
+@router.get("/facets")
+def facets(
+    captured_date: date | None = Query(None),
+    context: RequestContext = Depends(get_request_context),
+    db: Session = Depends(get_db),
+):
+    filters = _build_filters(commodity=None, location=None, source_name=None, captured_date=captured_date)
+    commodity_query = (
+        select(func.distinct(NormalizedPrice.commodity_name))
+        .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .where(Source.org_id == context.org_id)
+    )
+    location_query = (
+        select(func.distinct(NormalizedPrice.location))
+        .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .where(Source.org_id == context.org_id)
+    )
+    source_query = (
+        select(func.distinct(NormalizedPrice.source_name))
+        .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .where(Source.org_id == context.org_id)
+    )
+    if filters:
+        commodity_query = commodity_query.where(*filters)
+        location_query = location_query.where(*filters)
+        source_query = source_query.where(*filters)
+
+    commodities = sorted(
+        {(name or "").strip() for name in db.execute(commodity_query).scalars().all() if (name or "").strip()}
+    )
+    locations = sorted(
+        {(name or "").strip() for name in db.execute(location_query).scalars().all() if (name or "").strip()}
+    )
+    source_names = sorted(
+        {(name or "").strip() for name in db.execute(source_query).scalars().all() if (name or "").strip()}
+    )
+
+    return {
+        "commodities": commodities,
+        "locations": locations,
+        "source_names": source_names,
+    }
+
+
+@router.get("/preview")
+def preview(
+    commodity: str | None = Query(None),
+    location: str | None = Query(None),
+    source_name: str | None = Query(None),
+    captured_date: date | None = Query(None),
+    sort: str = Query(
+        "captured_desc",
+        pattern="^(captured_desc|basis_desc|basis_asc|cash_bu_desc|cash_bu_asc|basis_change_desc)$",
+    ),
+    limit: int = Query(80, ge=1, le=250),
+    context: RequestContext = Depends(get_request_context),
+    db: Session = Depends(get_db),
+):
+    filters = _build_filters(commodity=commodity, location=location, source_name=source_name, captured_date=captured_date)
+    query: Select = _base_query(context)
+    if filters:
+        query = query.where(*filters)
+    query = _with_sorting(query, sort)
+
+    rows = db.execute(query.limit(limit)).all()
+
+    return {
+        "rows": [
+            {
+                "id": str(price.id),
+                "captured_at": snapshot.captured_at.isoformat() if snapshot.captured_at else None,
+                "location": price.location,
+                "source_name": price.source_name,
+                "commodity_name": price.commodity_name,
+                "delivery_label": price.delivery_label,
+                "futures_month": price.futures_month,
+                "futures_price": _to_float(price.futures_price),
+                "basis": _to_float(price.basis),
+                "basis_change": _to_float(price.basis_change),
+                "cash_price_bu": _to_float(price.cash_price_bu),
+                "cash_price_bu_change": _to_float(price.cash_price_bu_change),
+                "cash_price_mt": _to_float(price.cash_price_mt),
                 "cash_price_mt_change": _to_float(price.cash_price_mt_change),
                 "composite_key": price.composite_key,
             }

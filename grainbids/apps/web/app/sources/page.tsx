@@ -1,7 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { apiFetch } from "../lib/api";
+import Link from "next/link";
+import { API_BASE, buildApiHeaders, isAdminRole } from "@/lib/api";
 
 type IngestionRun = {
   id: string;
@@ -97,20 +98,9 @@ type SlaSummary = {
   } | null;
 };
 
-type QualityBreakdown = {
-  run: {
-    id: string;
-    status: string;
-    raw_row_count: number | null;
-    normalized_row_count: number | null;
-    rejected_row_count: number | null;
-    totals: Record<string, number>;
-    by_source: Record<string, Record<string, number>>;
-    by_field: Record<string, number>;
-  } | null;
-};
-
 export default function SourcesPage() {
+  const headers = buildApiHeaders();
+  const adminAllowed = isAdminRole();
   const [runs, setRuns] = useState<IngestionRun[]>([]);
   const [alerts, setAlerts] = useState<RecentAlert[]>([]);
   const [sources, setSources] = useState<SourceRow[]>([]);
@@ -126,12 +116,11 @@ export default function SourcesPage() {
 
   async function loadData() {
     const openOnlyQuery = openAlertsOnly ? "&open_only=true" : "";
-    const [runsRes, sourcesRes, slaRes, alertsRes, qualityRes] = await Promise.all([
-      apiFetch(`/api/ingestion/runs?limit=25`),
-      apiFetch(`/api/sources`),
-      apiFetch(`/api/ingestion/sla`),
-      apiFetch(`/api/alerts/recent?limit=10${openOnlyQuery}`),
-      apiFetch(`/api/ingestion/quality/latest`),
+    const [runsRes, sourcesRes, slaRes, alertsRes] = await Promise.all([
+      fetch(`${API_BASE}/api/ingestion/runs?limit=25`, { cache: "no-store", headers }),
+      fetch(`${API_BASE}/api/sources`, { cache: "no-store", headers }),
+      fetch(`${API_BASE}/api/ingestion/sla`, { cache: "no-store", headers }),
+      fetch(`${API_BASE}/api/alerts/recent?limit=10${openOnlyQuery}`, { cache: "no-store", headers }),
     ]);
     const runsJson = runsRes.ok ? await runsRes.json() : { rows: [] };
     const sourcesJson = sourcesRes.ok ? await sourcesRes.json() : { rows: [] };
@@ -147,8 +136,11 @@ export default function SourcesPage() {
   }
 
   useEffect(() => {
+    if (!adminAllowed) {
+      return;
+    }
     loadData().catch((err) => setError(String(err)));
-  }, [openAlertsOnly]);
+  }, [adminAllowed, openAlertsOnly]);
 
   async function triggerIngestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -164,7 +156,7 @@ export default function SourcesPage() {
     }
 
     try {
-      const res = await apiFetch(`/api/ingestion/source-file/run?${params.toString()}`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/ingestion/source-file/run?${params.toString()}`, { method: "POST", headers });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Ingestion failed");
@@ -183,7 +175,7 @@ export default function SourcesPage() {
     setMessage("");
     setError("");
     try {
-      const res = await apiFetch(`/api/sources/${sourceId}/refresh`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/sources/${sourceId}/refresh`, { method: "POST", headers });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Source refresh failed");
@@ -205,7 +197,7 @@ export default function SourcesPage() {
     setMessage("");
     setError("");
     try {
-      const res = await apiFetch(`/api/sources/seed?scope=pilot`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/sources/seed?scope=pilot`, { method: "POST", headers });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Seed failed");
@@ -224,7 +216,7 @@ export default function SourcesPage() {
     setMessage("");
     setError("");
     try {
-      const res = await apiFetch(`/api/ingestion/source-files/run?max_attempts=2`, { method: "POST" });
+      const res = await fetch(`${API_BASE}/api/ingestion/source-files/run?max_attempts=2`, { method: "POST", headers });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Scheduled cycle failed");
@@ -245,7 +237,7 @@ export default function SourcesPage() {
     setMessage("");
     setError("");
     try {
-      const res = await apiFetch(`/api/alerts/${alertId}/status?status=${status}`, { method: "PATCH" });
+      const res = await fetch(`${API_BASE}/api/alerts/${alertId}/status?status=${status}`, { method: "PATCH", headers });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Alert update failed");
@@ -257,6 +249,23 @@ export default function SourcesPage() {
     } finally {
       setUpdatingAlertId("");
     }
+  }
+
+  if (!adminAllowed) {
+    return (
+      <main className="mx-auto max-w-4xl px-6 py-12">
+        <div className="rounded-xl border border-black/10 bg-white/80 p-6 shadow-sm">
+          <p className="text-xs uppercase tracking-[0.16em] text-black/50">Admin route</p>
+          <h1 className="mt-2 font-[family-name:var(--font-serif)] text-3xl">Access restricted</h1>
+          <p className="mt-3 text-sm text-black/70">Sources and ingestion controls are admin-only in this phase.</p>
+          <div className="mt-5">
+            <Link href="/bids" className="rounded-md border border-black/20 bg-white px-4 py-2 text-sm">
+              Return to Market
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   return (
