@@ -44,6 +44,8 @@ type FacetsResponse = {
   commodities: string[];
   locations: string[];
   source_names: string[];
+  company_names: string[];
+  region_names: string[];
 };
 
 type SlaSummary = {
@@ -65,7 +67,8 @@ const COMMODITY_TABS = ["Corn", "Soybeans", "Wheat", "All"] as const;
 type FilterState = {
   commodity: string;
   location: string;
-  source_name: string;
+  company_name: string;
+  region: string;
   captured_date: string;
   sort: "captured_desc" | "basis_change_desc" | "basis_desc" | "cash_bu_desc";
 };
@@ -73,7 +76,8 @@ type FilterState = {
 const DEFAULT_FILTERS: FilterState = {
   commodity: "Corn",
   location: "",
-  source_name: "",
+  company_name: "",
+  region: "",
   captured_date: "",
   sort: "captured_desc",
 };
@@ -81,7 +85,13 @@ const DEFAULT_FILTERS: FilterState = {
 export default function DashboardPage() {
   const headers = useMemo(() => buildApiHeaders(), []);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
-  const [facets, setFacets] = useState<FacetsResponse>({ commodities: [], locations: [], source_names: [] });
+  const [facets, setFacets] = useState<FacetsResponse>({
+    commodities: [],
+    locations: [],
+    source_names: [],
+    company_names: [],
+    region_names: [],
+  });
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
   const [movers, setMovers] = useState<TopMover[]>([]);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
@@ -89,9 +99,6 @@ export default function DashboardPage() {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [error, setError] = useState("");
-
-  const topLocations = useMemo(() => facets.locations.slice(0, 8), [facets.locations]);
-  const topSources = useMemo(() => facets.source_names.slice(0, 8), [facets.source_names]);
 
   useEffect(() => {
     void loadMeta();
@@ -203,7 +210,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_1fr_160px_160px]">
+        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_1fr_1fr_160px_160px]">
           <select
             value={filters.location}
             onChange={(event) => setFilters((prev) => ({ ...prev, location: event.target.value }))}
@@ -217,14 +224,26 @@ export default function DashboardPage() {
             ))}
           </select>
           <select
-            value={filters.source_name}
-            onChange={(event) => setFilters((prev) => ({ ...prev, source_name: event.target.value }))}
+            value={filters.company_name}
+            onChange={(event) => setFilters((prev) => ({ ...prev, company_name: event.target.value }))}
             className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
           >
             <option value="">All companies</option>
-            {facets.source_names.map((source) => (
+            {facets.company_names.map((source) => (
               <option key={source} value={source}>
                 {source}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filters.region}
+            onChange={(event) => setFilters((prev) => ({ ...prev, region: event.target.value }))}
+            className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
+          >
+            <option value="">All regions</option>
+            {facets.region_names.map((regionName) => (
+              <option key={regionName} value={regionName}>
+                {regionName}
               </option>
             ))}
           </select>
@@ -248,25 +267,12 @@ export default function DashboardPage() {
             Reset
           </button>
         </div>
-
-        <FacetChips
-          label="Location"
-          values={topLocations}
-          activeValue={filters.location}
-          onSelect={(value) => setFilters((prev) => ({ ...prev, location: value === prev.location ? "" : value }))}
-        />
-        <FacetChips
-          label="Company"
-          values={topSources}
-          activeValue={filters.source_name}
-          onSelect={(value) => setFilters((prev) => ({ ...prev, source_name: value === prev.source_name ? "" : value }))}
-        />
       </section>
 
       <section className="mt-4 rounded-xl border border-black/10 bg-white/85 shadow-sm">
         <div className="flex items-center justify-between border-b border-black/10 px-4 py-3">
           <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Live Price Preview</h2>
-          {loadingPreview ? <span className="text-xs text-black/60">Refreshing…</span> : null}
+          {loadingPreview ? <span className="text-xs text-black/60">Refreshing...</span> : null}
         </div>
         {error ? <p className="px-4 py-2 text-sm text-red-700">{error}</p> : null}
         <div className="max-h-[520px] overflow-auto">
@@ -349,42 +355,6 @@ export default function DashboardPage() {
   );
 }
 
-function FacetChips({
-  label,
-  values,
-  activeValue,
-  onSelect,
-}: {
-  label: string;
-  values: string[];
-  activeValue: string;
-  onSelect: (value: string) => void;
-}) {
-  if (values.length === 0) {
-    return null;
-  }
-  return (
-    <div className="mt-3 flex flex-wrap items-center gap-2">
-      <span className="text-xs uppercase tracking-[0.1em] text-black/55">{label}</span>
-      {values.map((value) => {
-        const active = value === activeValue;
-        return (
-          <button
-            key={value}
-            type="button"
-            onClick={() => onSelect(value)}
-            className={`rounded-full border px-2.5 py-1 text-xs ${
-              active ? "border-black bg-black text-white" : "border-black/15 bg-white text-black/70"
-            }`}
-          >
-            {value}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 function StatusBadge({ summary }: { summary: SlaSummary | null }) {
   if (!summary || summary.active_sources === 0) {
     return <span className="rounded-md border border-black/15 bg-white px-2 py-1">No sources</span>;
@@ -402,7 +372,8 @@ function buildMarketQuery(filters: FilterState) {
   const params = new URLSearchParams();
   if (filters.commodity) params.set("commodity", filters.commodity);
   if (filters.location) params.set("location", filters.location);
-  if (filters.source_name) params.set("source_name", filters.source_name);
+  if (filters.company_name) params.set("source_name", filters.company_name);
+  if (filters.region) params.set("region", filters.region);
   if (filters.captured_date) params.set("captured_date", filters.captured_date);
   if (filters.sort) params.set("sort", filters.sort);
   const query = params.toString();

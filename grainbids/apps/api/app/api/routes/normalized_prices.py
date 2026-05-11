@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 import math
+import re
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Select, and_, desc, func, select
@@ -31,10 +32,85 @@ def _to_float(value: Decimal | float | int | None) -> float | None:
     return number
 
 
+def _normalize_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = re.sub(r"\s+", " ", value.strip())
+    if not cleaned:
+        return None
+    if cleaned.casefold() in {"nan", "none", "null", "na", "n/a", "-"}:
+        return None
+    return cleaned
+
+
+def _canonical_key(value: str | None) -> str | None:
+    normalized = _normalize_text(value)
+    if normalized is None:
+        return None
+    return normalized.casefold()
+
+
+def _canonical_source_name(source_name: str | None) -> str | None:
+    normalized = _normalize_text(source_name)
+    if normalized is None:
+        return None
+    aliases = {
+        "glg": "GLG",
+        "hensall": "Hensall",
+        "andersons": "Andersons",
+        "agricharts": "Agricharts",
+        "snobelen": "Snobelen",
+        "eastern ontario cash bids": "Eastern Ontario Cash Bids",
+        "eastern ontario daily file": "Eastern Ontario Daily File",
+        "ontario cash bids": "Ontario Cash Bids",
+        "ontario daily file": "Ontario Daily File",
+    }
+    return aliases.get(normalized.casefold(), normalized)
+
+
+def _canonical_commodity_name(commodity_name: str | None) -> str | None:
+    normalized = _normalize_text(commodity_name)
+    if normalized is None:
+        return None
+    aliases = {
+        "corn": "Corn",
+        "soybean": "Soybeans",
+        "soybeans": "Soybeans",
+        "wheat": "Wheat",
+    }
+    key = normalized.casefold()
+    return aliases.get(key, normalized)
+
+
+def _canonical_location_name(location_name: str | None) -> str | None:
+    normalized = _normalize_text(location_name)
+    if normalized is None:
+        return None
+    location = re.sub(r"\s*/\s*", " / ", normalized).strip()
+    location = re.sub(
+        r"\s+(corn|soybeans?|wheat|barley|oats|milo)$",
+        "",
+        location,
+        flags=re.IGNORECASE,
+    ).strip()
+    return _normalize_text(location)
+
+
+def _source_scope(source_name: str | None) -> tuple[str, str | None]:
+    canonical = _canonical_source_name(source_name)
+    if canonical is None:
+        return "company", None
+    lowered = canonical.casefold()
+    if "ontario" in lowered and ("cash bids" in lowered or "daily file" in lowered):
+        return "region", "Eastern Ontario" if "eastern" in lowered else "Ontario"
+    return "company", canonical
+
+
 def _build_filters(
     commodity: str | None,
     location: str | None,
     source_name: str | None,
+    region: str | None,
     captured_date: date | None,
 ):
     filters = []
@@ -45,6 +121,8 @@ def _build_filters(
         filters.append(NormalizedPrice.location.ilike(f"%{location.strip()}%"))
     if source_name:
         filters.append(NormalizedPrice.source_name.ilike(f"%{source_name.strip()}%"))
+    if region:
+        filters.append(NormalizedPrice.source_name.ilike(f"%{region.strip()}%"))
     if captured_date:
         start_dt = datetime.combine(captured_date, time.min, tzinfo=timezone.utc)
         end_dt = datetime.combine(captured_date, time.max, tzinfo=timezone.utc)
@@ -81,6 +159,7 @@ def list_normalized_prices(
     commodity: str | None = Query(None),
     location: str | None = Query(None),
     source_name: str | None = Query(None),
+    region: str | None = Query(None),
     captured_date: date | None = Query(None),
     limit: int = Query(200, ge=1, le=1000),
     context: RequestContext = Depends(get_request_context),
@@ -88,7 +167,13 @@ def list_normalized_prices(
 ):
     query: Select = _base_query(context).order_by(desc(PriceSnapshot.captured_at), NormalizedPrice.location)
 
-    filters = _build_filters(commodity=commodity, location=location, source_name=source_name, captured_date=captured_date)
+    filters = _build_filters(
+        commodity=commodity,
+        location=location,
+        source_name=source_name,
+        region=region,
+        captured_date=captured_date,
+    )
     if filters:
         query = query.where(*filters)
 
@@ -100,13 +185,13 @@ def list_normalized_prices(
                 "id": str(price.id),
                 "snapshot_id": str(price.snapshot_id),
                 "captured_at": snapshot.captured_at.isoformat() if snapshot.captured_at else None,
-                "location": price.location,
-                "commodity_name": price.commodity_name,
-                "source_name": price.source_name,
-                "delivery_start": price.delivery_start,
-                "delivery_end": price.delivery_end,
-                "delivery_label": price.delivery_label,
-                "futures_month": price.futures_month,
+                "location": _canonical_location_name(price.location) or "-",
+                "commodity_name": _canonical_commodity_name(price.commodity_name) or "-",
+                "source_name": _canonical_source_name(price.source_name),
+                "delivery_start": _normalize_text(price.delivery_start),
+                "delivery_end": _normalize_text(price.delivery_end),
+                "delivery_label": _normalize_text(price.delivery_label),
+                "futures_month": _normalize_text(price.futures_month),
                 "futures_price": _to_float(price.futures_price),
                 "basis": _to_float(price.basis),
                 "cash_price_bu": _to_float(price.cash_price_bu),
@@ -127,7 +212,7 @@ def facets(
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    filters = _build_filters(commodity=None, location=None, source_name=None, captured_date=captured_date)
+    filters = _build_filters(commodity=None, location=None, source_name=None, region=None, captured_date=captured_date)
     commodity_query = (
         select(func.distinct(NormalizedPrice.commodity_name))
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
@@ -151,20 +236,40 @@ def facets(
         location_query = location_query.where(*filters)
         source_query = source_query.where(*filters)
 
-    commodities = sorted(
-        {(name or "").strip() for name in db.execute(commodity_query).scalars().all() if (name or "").strip()}
-    )
-    locations = sorted(
-        {(name or "").strip() for name in db.execute(location_query).scalars().all() if (name or "").strip()}
-    )
-    source_names = sorted(
-        {(name or "").strip() for name in db.execute(source_query).scalars().all() if (name or "").strip()}
-    )
+    commodity_map: dict[str, str] = {}
+    for value in db.execute(commodity_query).scalars().all():
+        normalized = _canonical_commodity_name(value)
+        key = _canonical_key(normalized)
+        if key and normalized and key not in commodity_map:
+            commodity_map[key] = normalized
+
+    location_map: dict[str, str] = {}
+    for value in db.execute(location_query).scalars().all():
+        normalized = _canonical_location_name(value)
+        key = _canonical_key(normalized)
+        if key and normalized and key not in location_map:
+            location_map[key] = normalized
+
+    company_map: dict[str, str] = {}
+    region_map: dict[str, str] = {}
+    for value in db.execute(source_query).scalars().all():
+        scope, label = _source_scope(value)
+        key = _canonical_key(label)
+        if not key or not label:
+            continue
+        if scope == "region":
+            if key not in region_map:
+                region_map[key] = label
+        else:
+            if key not in company_map:
+                company_map[key] = label
 
     return {
-        "commodities": commodities,
-        "locations": locations,
-        "source_names": source_names,
+        "commodities": sorted(commodity_map.values()),
+        "locations": sorted(location_map.values()),
+        "source_names": sorted(company_map.values() + region_map.values()),
+        "company_names": sorted(company_map.values()),
+        "region_names": sorted(region_map.values()),
     }
 
 
@@ -173,6 +278,7 @@ def preview(
     commodity: str | None = Query(None),
     location: str | None = Query(None),
     source_name: str | None = Query(None),
+    region: str | None = Query(None),
     captured_date: date | None = Query(None),
     sort: str = Query(
         "captured_desc",
@@ -182,24 +288,45 @@ def preview(
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    filters = _build_filters(commodity=commodity, location=location, source_name=source_name, captured_date=captured_date)
+    filters = _build_filters(
+        commodity=commodity,
+        location=location,
+        source_name=source_name,
+        region=region,
+        captured_date=captured_date,
+    )
     query: Select = _base_query(context)
     if filters:
         query = query.where(*filters)
     query = _with_sorting(query, sort)
 
-    rows = db.execute(query.limit(limit)).all()
+    rows = db.execute(query.limit(limit * 3)).all()
+    deduped_rows: list[tuple[NormalizedPrice, PriceSnapshot]] = []
+    seen: set[str] = set()
+    for price, snapshot in rows:
+        location_key = _canonical_key(price.location) or "-"
+        source_key = _canonical_key(_canonical_source_name(price.source_name)) or "-"
+        commodity_key = _canonical_key(price.commodity_name) or "-"
+        delivery_key = _canonical_key(price.delivery_label or price.delivery_end or price.delivery_start) or "-"
+        futures_key = _canonical_key(price.futures_month) or "-"
+        dedupe_key = "|".join([location_key, source_key, commodity_key, delivery_key, futures_key])
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        deduped_rows.append((price, snapshot))
+        if len(deduped_rows) >= limit:
+            break
 
     return {
         "rows": [
             {
                 "id": str(price.id),
                 "captured_at": snapshot.captured_at.isoformat() if snapshot.captured_at else None,
-                "location": price.location,
-                "source_name": price.source_name,
-                "commodity_name": price.commodity_name,
-                "delivery_label": price.delivery_label,
-                "futures_month": price.futures_month,
+                "location": _canonical_location_name(price.location) or "-",
+                "source_name": _canonical_source_name(price.source_name),
+                "commodity_name": _canonical_commodity_name(price.commodity_name) or "-",
+                "delivery_label": _normalize_text(price.delivery_label) or _normalize_text(price.delivery_end),
+                "futures_month": _normalize_text(price.futures_month),
                 "futures_price": _to_float(price.futures_price),
                 "basis": _to_float(price.basis),
                 "basis_change": _to_float(price.basis_change),
@@ -209,7 +336,7 @@ def preview(
                 "cash_price_mt_change": _to_float(price.cash_price_mt_change),
                 "composite_key": price.composite_key,
             }
-            for price, snapshot in rows
+            for price, snapshot in deduped_rows
         ]
     }
 
@@ -219,6 +346,7 @@ def top_movers(
     commodity: str | None = Query(None),
     location: str | None = Query(None),
     source_name: str | None = Query(None),
+    region: str | None = Query(None),
     captured_date: date | None = Query(None),
     limit: int = Query(10, ge=1, le=100),
     context: RequestContext = Depends(get_request_context),
@@ -233,7 +361,13 @@ def top_movers(
         .order_by(desc(func.abs(NormalizedPrice.basis_change)), desc(PriceSnapshot.captured_at))
     )
 
-    filters = _build_filters(commodity=commodity, location=location, source_name=source_name, captured_date=captured_date)
+    filters = _build_filters(
+        commodity=commodity,
+        location=location,
+        source_name=source_name,
+        region=region,
+        captured_date=captured_date,
+    )
     if filters:
         query = query.where(*filters)
 
@@ -245,9 +379,9 @@ def top_movers(
                 "id": str(price.id),
                 "snapshot_id": str(price.snapshot_id),
                 "captured_at": snapshot.captured_at.isoformat() if snapshot.captured_at else None,
-                "location": price.location,
-                "commodity_name": price.commodity_name,
-                "source_name": price.source_name,
+                "location": _canonical_location_name(price.location) or "-",
+                "commodity_name": _canonical_commodity_name(price.commodity_name) or "-",
+                "source_name": _canonical_source_name(price.source_name),
                 "basis": _to_float(price.basis),
                 "basis_change": _to_float(price.basis_change),
                 "cash_price_bu": _to_float(price.cash_price_bu),
@@ -265,11 +399,18 @@ def summary(
     commodity: str | None = Query(None),
     location: str | None = Query(None),
     source_name: str | None = Query(None),
+    region: str | None = Query(None),
     captured_date: date | None = Query(None),
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    filters = _build_filters(commodity=commodity, location=location, source_name=source_name, captured_date=captured_date)
+    filters = _build_filters(
+        commodity=commodity,
+        location=location,
+        source_name=source_name,
+        region=region,
+        captured_date=captured_date,
+    )
 
     basis_query = (
         select(func.avg(NormalizedPrice.basis), func.count(NormalizedPrice.id))
