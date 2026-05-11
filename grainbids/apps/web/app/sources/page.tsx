@@ -112,7 +112,6 @@ export default function SourcesPage() {
   const [updatingAlertId, setUpdatingAlertId] = useState("");
   const [openAlertsOnly, setOpenAlertsOnly] = useState(true);
   const [runningScheduledCycle, setRunningScheduledCycle] = useState(false);
-  const [qualityBreakdown, setQualityBreakdown] = useState<QualityBreakdown["run"]>(null);
 
   async function loadData() {
     const openOnlyQuery = openAlertsOnly ? "&open_only=true" : "";
@@ -126,13 +125,10 @@ export default function SourcesPage() {
     const sourcesJson = sourcesRes.ok ? await sourcesRes.json() : { rows: [] };
     const slaJson = slaRes.ok ? await slaRes.json() : null;
     const alertsJson = alertsRes.ok ? await alertsRes.json() : { rows: [] };
-    const qualityJson = qualityRes.ok ? ((await qualityRes.json()) as QualityBreakdown) : { run: null };
-
     setRuns(runsJson.rows || []);
     setSources(sourcesJson.rows || []);
     setSla(slaJson);
     setAlerts(alertsJson.rows || []);
-    setQualityBreakdown(qualityJson.run || null);
   }
 
   useEffect(() => {
@@ -285,42 +281,9 @@ export default function SourcesPage() {
 
       <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
         <h2 className="text-lg font-semibold">Latest rejection diagnostics</h2>
-        {qualityBreakdown ? (
-          <div className="mt-4 grid gap-5 md:grid-cols-2">
-            <div>
-              <h3 className="text-sm font-medium text-black/80">By field</h3>
-              <ul className="mt-2 space-y-1 text-sm text-black/70">
-                {Object.entries(qualityBreakdown.by_field || {}).length === 0 ? (
-                  <li>No field-level rejects.</li>
-                ) : (
-                  Object.entries(qualityBreakdown.by_field)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 8)
-                    .map(([field, count]) => <li key={field}>{field}: {count}</li>)
-                )}
-              </ul>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-black/80">Top source sheets by rejects</h3>
-              <ul className="mt-2 space-y-1 text-sm text-black/70">
-                {Object.entries(qualityBreakdown.by_source || {}).length === 0 ? (
-                  <li>No source-level rejects.</li>
-                ) : (
-                  Object.entries(qualityBreakdown.by_source)
-                    .map(([source, reasons]) => [
-                      source,
-                      Object.values(reasons).reduce((sum, value) => sum + Number(value || 0), 0),
-                    ] as const)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 8)
-                    .map(([source, total]) => <li key={source}>{source}: {total}</li>)
-                )}
-              </ul>
-            </div>
-          </div>
-        ) : (
-          <p className="mt-2 text-sm text-black/60">No run data available yet.</p>
-        )}
+        <div className="mt-3 text-sm text-black/70">
+          <p>Use the latest ingestion run table below for reject counts and reason breakdown.</p>
+        </div>
       </section>
       <p className="mt-3 text-xs text-black/55">
         Last successful ingestion:{" "}
