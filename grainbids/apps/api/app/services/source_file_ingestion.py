@@ -286,6 +286,7 @@ def ingest_source_file(
                     "commodity_id": str(commodity.id),
                     "commodity_name": commodity.name,
                 },
+                fail_on_empty=False,
             )
             snapshot_ids.append(persisted.snapshot_id)
             total_raw_rows += persisted.raw_row_count

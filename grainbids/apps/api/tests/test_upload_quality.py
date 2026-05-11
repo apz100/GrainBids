@@ -8,7 +8,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services.upload_csv import _check_completeness, _extract_price_from_text, _parse_decimal, summarize_quality  # noqa: E402
+from app.services.upload_csv import (  # noqa: E402
+    _check_completeness,
+    _extract_price_from_text,
+    _infer_cash_price_mt,
+    _parse_decimal,
+    summarize_quality,
+)
 
 
 class UploadQualityTests(unittest.TestCase):
@@ -28,6 +34,10 @@ class UploadQualityTests(unittest.TestCase):
     def test_extract_price_from_text(self) -> None:
         value = _extract_price_from_text("ZCN26 @ 6.34")
         self.assertEqual(value, Decimal("6.34"))
+
+    def test_infer_cash_price_mt_from_bushel(self) -> None:
+        value = _infer_cash_price_mt(commodity_name="Corn", cash_price_bu=Decimal("6.16"))
+        self.assertEqual(value, Decimal("242.51"))
 
     def test_completeness_requires_delivery_window(self) -> None:
         reasons = _check_completeness(

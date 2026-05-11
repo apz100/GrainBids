@@ -47,6 +47,14 @@ CANONICAL_COLUMNS = {
     "cash_price_mt",
 }
 
+BUSHELS_PER_METRIC_TONNE = {
+    "corn": Decimal("39.368"),
+    "soybean": Decimal("36.744"),
+    "soybeans": Decimal("36.744"),
+    "wheat": Decimal("36.744"),
+    "canola": Decimal("44.092"),
+}
+
 COLUMN_ALIASES = {
     "location": ["location", "site", "location_name", "elevator"],
     "commodity": ["commodity", "crop", "grain", "name"],
@@ -130,6 +138,16 @@ def _extract_price_from_text(value: str | None) -> Decimal | None:
     return None
 
 
+def _infer_cash_price_mt(*, commodity_name: str, cash_price_bu: Decimal | None) -> Decimal | None:
+    if cash_price_bu is None:
+        return None
+    key = str(commodity_name or "").strip().lower()
+    factor = BUSHELS_PER_METRIC_TONNE.get(key)
+    if factor is None:
+        return None
+    return (cash_price_bu * factor).quantize(Decimal("0.01"))
+
+
 def _decode_payload(payload: bytes) -> str:
     for encoding in ("utf-8-sig", "utf-8", "latin-1"):
         try:
@@ -196,6 +214,7 @@ def persist_normalized_rows(
     captured_at: datetime | None = None,
     column_mapping_override: dict[str, str] | None = None,
     raw_payload_json: dict | None = None,
+    fail_on_empty: bool = True,
 ) -> NormalizedPersistResult:
     if not headers:
         raise ValueError("source file has no header row")
@@ -245,6 +264,8 @@ def persist_normalized_rows(
         basis = _parse_decimal(str(row.get(mapping.get("basis", ""), "") or ""))
         cash_price_bu = _parse_decimal(str(row.get(mapping.get("cash_price_bu", ""), "") or ""))
         cash_price_mt = _parse_decimal(str(row.get(mapping.get("cash_price_mt", ""), "") or ""))
+        if cash_price_mt is None:
+            cash_price_mt = _infer_cash_price_mt(commodity_name=commodity_name, cash_price_bu=cash_price_bu)
         if _is_blank(futures_month):
             futures_month = (delivery_label or delivery_end or "").strip()
         if futures_price is None:
@@ -306,8 +327,22 @@ def persist_normalized_rows(
 
     normalized_rows = list(normalized_by_key.values())
     if not normalized_rows:
-        detail = ", ".join(f"{key}:{value}" for key, value in sorted(row_reject_reasons.items()))
-        raise ValueError(f"No valid data rows found after normalization ({detail or 'all rows rejected'})")
+        if fail_on_empty:
+            detail = ", ".join(f"{key}:{value}" for key, value in sorted(row_reject_reasons.items()))
+            raise ValueError(f"No valid data rows found after normalization ({detail or 'all rows rejected'})")
+        parse_success_rate = float((row_count - rejected_row_count) / row_count) if row_count else 0.0
+        return NormalizedPersistResult(
+            snapshot_id=snapshot.id,
+            inserted_rows=0,
+            raw_row_count=row_count,
+            headers=headers,
+            mapping=mapping,
+            parse_success_rate=parse_success_rate,
+            duplicate_key_count=duplicate_key_count,
+            rejected_row_count=rejected_row_count,
+            missing_required_count=missing_required_count,
+            row_reject_reasons=row_reject_reasons,
+        )
 
     apply_historical_changes(db, normalized_rows=normalized_rows, captured_at=captured)
     db.add_all(normalized_rows)
