@@ -202,6 +202,7 @@ class NormalizedPersistResult:
     rejected_row_count: int
     missing_required_count: int
     row_reject_reasons: dict[str, int]
+    row_reject_breakdown: dict[str, dict]
 
 
 def persist_normalized_rows(
@@ -237,6 +238,8 @@ def persist_normalized_rows(
     rejected_row_count = 0
     missing_required_count = 0
     row_reject_reasons: dict[str, int] = {}
+    row_reject_by_source: dict[str, dict[str, int]] = {}
+    row_reject_by_field: dict[str, int] = {}
 
     for row in rows:
         row_count += 1
@@ -284,8 +287,11 @@ def persist_normalized_rows(
         )
         if reject_reasons:
             rejected_row_count += 1
+            source_key = source_name.strip() or "unknown_source"
             for reason in reject_reasons:
                 _increment_reason(row_reject_reasons, reason)
+                _increment_nested_reason(row_reject_by_source, source_key, reason)
+                _increment_reason(row_reject_by_field, _field_name_from_reason(reason))
                 if reason.startswith("missing_"):
                     missing_required_count += 1
             continue
@@ -342,6 +348,10 @@ def persist_normalized_rows(
             rejected_row_count=rejected_row_count,
             missing_required_count=missing_required_count,
             row_reject_reasons=row_reject_reasons,
+            row_reject_breakdown={
+                "by_source": row_reject_by_source,
+                "by_field": row_reject_by_field,
+            },
         )
 
     apply_historical_changes(db, normalized_rows=normalized_rows, captured_at=captured)
@@ -360,6 +370,10 @@ def persist_normalized_rows(
         rejected_row_count=rejected_row_count,
         missing_required_count=missing_required_count,
         row_reject_reasons=row_reject_reasons,
+        row_reject_breakdown={
+            "by_source": row_reject_by_source,
+            "by_field": row_reject_by_field,
+        },
     )
 
 
@@ -485,6 +499,20 @@ def summarize_quality(
 
 def _increment_reason(counter: dict[str, int], reason: str) -> None:
     counter[reason] = int(counter.get(reason, 0)) + 1
+
+
+def _increment_nested_reason(counter: dict[str, dict[str, int]], bucket: str, reason: str) -> None:
+    section = counter.get(bucket)
+    if section is None:
+        section = {}
+        counter[bucket] = section
+    section[reason] = int(section.get(reason, 0)) + 1
+
+
+def _field_name_from_reason(reason: str) -> str:
+    if reason.startswith("missing_"):
+        return reason[len("missing_") :]
+    return reason
 
 
 def _is_blank(value: str | None) -> bool:

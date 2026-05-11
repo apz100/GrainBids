@@ -58,7 +58,7 @@ def get_ingestion_runs(
                     rejected_row_count=row.rejected_row_count,
                     missing_required_count=row.missing_required_count,
                     parse_success_rate=float(row.parse_success_rate) if row.parse_success_rate is not None else None,
-                    row_reject_reasons=row.row_reject_reasons_json or {},
+                    row_reject_reasons=_reject_totals(row.row_reject_reasons_json),
                 ),
             }
         )
@@ -80,9 +80,36 @@ def get_ingestion_sla(
             rejected_row_count=recent_runs[0].rejected_row_count,
             missing_required_count=recent_runs[0].missing_required_count,
             parse_success_rate=float(recent_runs[0].parse_success_rate) if recent_runs[0].parse_success_rate is not None else None,
-            row_reject_reasons=recent_runs[0].row_reject_reasons_json or {},
+            row_reject_reasons=_reject_totals(recent_runs[0].row_reject_reasons_json),
         )
     return summary
+
+
+@router.get("/quality/latest")
+def get_latest_rejection_breakdown(
+    context: RequestContext = Depends(get_request_context),
+    db: Session = Depends(get_db),
+):
+    runs = list_ingestion_runs(db, limit=1, org_id=context.org_id)
+    if not runs:
+        return {"run": None}
+    run = runs[0]
+    totals, by_source, by_field = _split_reject_breakdown(run.row_reject_reasons_json)
+    return {
+        "run": {
+            "id": str(run.id),
+            "source_name": run.source_name,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+            "status": run.status,
+            "raw_row_count": run.raw_row_count,
+            "normalized_row_count": run.normalized_row_count,
+            "rejected_row_count": run.rejected_row_count,
+            "totals": totals,
+            "by_source": by_source,
+            "by_field": by_field,
+        }
+    }
 
 
 @router.post("/source-file/run")
@@ -205,3 +232,40 @@ def _serialize_result(result):
         if isinstance(value, uuid.UUID):
             payload[key] = str(value)
     return payload
+
+
+def _reject_totals(payload: dict | None) -> dict[str, int]:
+    totals, _, _ = _split_reject_breakdown(payload)
+    return totals
+
+
+def _split_reject_breakdown(payload: dict | None) -> tuple[dict[str, int], dict[str, dict[str, int]], dict[str, int]]:
+    if not isinstance(payload, dict):
+        return {}, {}, {}
+
+    totals: dict[str, int] = {}
+    by_source: dict[str, dict[str, int]] = {}
+    by_field: dict[str, int] = {}
+
+    nested_source = payload.get("_by_source")
+    if isinstance(nested_source, dict):
+        for source_name, reason_counts in nested_source.items():
+            if not isinstance(reason_counts, dict):
+                continue
+            bucket: dict[str, int] = {}
+            for reason, count in reason_counts.items():
+                bucket[str(reason)] = int(count)
+            by_source[str(source_name)] = bucket
+
+    nested_field = payload.get("_by_field")
+    if isinstance(nested_field, dict):
+        for field_name, count in nested_field.items():
+            by_field[str(field_name)] = int(count)
+
+    for key, value in payload.items():
+        if str(key).startswith("_"):
+            continue
+        if isinstance(value, (int, float)):
+            totals[str(key)] = int(value)
+
+    return totals, by_source, by_field

@@ -269,6 +269,8 @@ def ingest_source_file(
         total_missing_required_count = 0
         total_success_rows = 0.0
         merged_reject_reasons: dict[str, int] = {}
+        merged_reject_by_source: dict[str, dict[str, int]] = {}
+        merged_reject_by_field: dict[str, int] = {}
         snapshot_ids: list[uuid.UUID] = []
 
         for commodity, grouped_rows in row_groups:
@@ -297,13 +299,31 @@ def ingest_source_file(
             total_success_rows += persisted.parse_success_rate * persisted.raw_row_count
             for reason, count in (persisted.row_reject_reasons or {}).items():
                 merged_reject_reasons[reason] = int(merged_reject_reasons.get(reason, 0)) + int(count)
+            breakdown = persisted.row_reject_breakdown or {}
+            by_source = breakdown.get("by_source", {}) if isinstance(breakdown, dict) else {}
+            by_field = breakdown.get("by_field", {}) if isinstance(breakdown, dict) else {}
+            if isinstance(by_source, dict):
+                for source_label, reasons in by_source.items():
+                    if not isinstance(reasons, dict):
+                        continue
+                    bucket = merged_reject_by_source.get(str(source_label))
+                    if bucket is None:
+                        bucket = {}
+                        merged_reject_by_source[str(source_label)] = bucket
+                    for reason, count in reasons.items():
+                        bucket[str(reason)] = int(bucket.get(str(reason), 0)) + int(count)
+            if isinstance(by_field, dict):
+                for field_name, count in by_field.items():
+                    merged_reject_by_field[str(field_name)] = int(merged_reject_by_field.get(str(field_name), 0)) + int(count)
 
         latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
         parse_success_rate = float(total_success_rows / total_raw_rows) if total_raw_rows else 0.0
         duplicate_key_count = total_duplicate_key_count
         rejected_row_count = total_rejected_row_count
         missing_required_count = total_missing_required_count
-        row_reject_reasons = merged_reject_reasons
+        row_reject_reasons = dict(merged_reject_reasons)
+        row_reject_reasons["_by_source"] = merged_reject_by_source
+        row_reject_reasons["_by_field"] = merged_reject_by_field
 
         run.raw_row_count = total_raw_rows
         run.normalized_row_count = total_inserted_rows
