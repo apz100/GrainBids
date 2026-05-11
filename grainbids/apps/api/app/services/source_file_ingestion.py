@@ -17,7 +17,7 @@ from app.models.source import Source
 from app.modules.imports.legacy_normalize import normalize_legacy_dataframe
 from app.services.alert_evaluator import evaluate_alert_rules_for_snapshot
 from app.services.source_health import record_source_health_snapshot, update_source_health_state
-from app.services.upload_csv import persist_normalized_rows
+from app.services.upload_csv import infer_column_mapping, persist_normalized_rows
 
 
 @dataclass
@@ -40,6 +40,16 @@ class SourceFileIngestionResult:
     parse_success_rate: float | None
     row_reject_reasons: dict | None
     error_message: str | None
+
+
+COMMODITY_ALIASES: dict[str, str] = {
+    "corn": "Corn",
+    "maize": "Corn",
+    "soybean": "Soybeans",
+    "soybeans": "Soybeans",
+    "soy": "Soybeans",
+    "wheat": "Wheat",
+}
 
 
 def _read_source_file(path: Path) -> tuple[list[dict[str, object]], list[str]]:
@@ -120,13 +130,97 @@ def _get_commodity(db: Session, commodity_id: uuid.UUID) -> Commodity:
     return commodity
 
 
+def _commodity_key(name: str) -> str:
+    return " ".join(str(name or "").strip().lower().split())
+
+
+def _display_commodity_name(raw_name: str) -> str:
+    key = _commodity_key(raw_name)
+    if key in COMMODITY_ALIASES:
+        return COMMODITY_ALIASES[key]
+    if not raw_name.strip():
+        return ""
+    return " ".join(part.capitalize() for part in raw_name.strip().split())
+
+
+def _load_commodity_cache(db: Session) -> dict[str, Commodity]:
+    cache: dict[str, Commodity] = {}
+    for commodity in db.execute(select(Commodity).order_by(Commodity.name.asc())).scalars().all():
+        cache[_commodity_key(commodity.name)] = commodity
+    return cache
+
+
+def _resolve_commodity_for_row(
+    db: Session,
+    *,
+    cache: dict[str, Commodity],
+    raw_name: str,
+    fallback_commodity: Commodity | None,
+) -> Commodity:
+    display_name = _display_commodity_name(raw_name)
+    if display_name:
+        key = _commodity_key(display_name)
+        existing = cache.get(key)
+        if existing:
+            return existing
+        created = Commodity(name=display_name, unit="bu", conversion_factor=1)
+        db.add(created)
+        db.flush()
+        cache[key] = created
+        return created
+
+    if fallback_commodity is not None:
+        return fallback_commodity
+
+    if cache:
+        return next(iter(cache.values()))
+
+    created = Commodity(name="Unknown", unit="bu", conversion_factor=1)
+    db.add(created)
+    db.flush()
+    cache[_commodity_key(created.name)] = created
+    return created
+
+
+def _group_rows_by_commodity(
+    db: Session,
+    *,
+    rows: list[dict[str, object]],
+    headers: list[str],
+    fallback_commodity: Commodity | None,
+) -> list[tuple[Commodity, list[dict[str, object]]]]:
+    mapping: dict[str, str] = {}
+    try:
+        mapping = infer_column_mapping(headers)
+    except Exception:
+        mapping = {}
+    commodity_column = mapping.get("commodity")
+
+    cache = _load_commodity_cache(db)
+    grouped: dict[uuid.UUID, tuple[Commodity, list[dict[str, object]]]] = {}
+    for row in rows:
+        raw_commodity = str(row.get(commodity_column, "") or "").strip() if commodity_column else ""
+        commodity = _resolve_commodity_for_row(
+            db,
+            cache=cache,
+            raw_name=raw_commodity,
+            fallback_commodity=fallback_commodity,
+        )
+        group = grouped.get(commodity.id)
+        if group is None:
+            grouped[commodity.id] = (commodity, [row])
+        else:
+            group[1].append(row)
+    return list(grouped.values())
+
+
 def ingest_source_file(
     db: Session,
     *,
     source_file_path: str,
     source_name: str,
     source_id: uuid.UUID,
-    commodity_id: uuid.UUID,
+    commodity_id: uuid.UUID | None,
     trigger_type: str = "manual",
     attempt_number: int = 1,
     max_attempts: int = 1,
@@ -159,32 +253,59 @@ def ingest_source_file(
 
     try:
         started = datetime.now(timezone.utc)
-        commodity = _get_commodity(db, commodity_id)
         rows, headers = _read_source_file(Path(source_file_path))
-
-        persisted = persist_normalized_rows(
+        fallback_commodity = _get_commodity(db, commodity_id) if commodity_id else None
+        row_groups = _group_rows_by_commodity(
             db,
-            source=source,
-            commodity=commodity,
             rows=rows,
             headers=headers,
-            captured_at=captured_at,
-            raw_payload_json={
-                "source_file_path": source_identifier,
-                "headers": headers,
-                "ingestion_run_id": str(run.id),
-            },
+            fallback_commodity=fallback_commodity,
         )
 
-        latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
-        parse_success_rate = persisted.parse_success_rate
-        duplicate_key_count = persisted.duplicate_key_count
-        rejected_row_count = persisted.rejected_row_count
-        missing_required_count = persisted.missing_required_count
-        row_reject_reasons = persisted.row_reject_reasons
+        total_raw_rows = 0
+        total_inserted_rows = 0
+        total_duplicate_key_count = 0
+        total_rejected_row_count = 0
+        total_missing_required_count = 0
+        total_success_rows = 0.0
+        merged_reject_reasons: dict[str, int] = {}
+        snapshot_ids: list[uuid.UUID] = []
 
-        run.raw_row_count = persisted.raw_row_count
-        run.normalized_row_count = persisted.inserted_rows
+        for commodity, grouped_rows in row_groups:
+            persisted = persist_normalized_rows(
+                db,
+                source=source,
+                commodity=commodity,
+                rows=grouped_rows,
+                headers=headers,
+                captured_at=captured_at,
+                raw_payload_json={
+                    "source_file_path": source_identifier,
+                    "headers": headers,
+                    "ingestion_run_id": str(run.id),
+                    "commodity_id": str(commodity.id),
+                    "commodity_name": commodity.name,
+                },
+            )
+            snapshot_ids.append(persisted.snapshot_id)
+            total_raw_rows += persisted.raw_row_count
+            total_inserted_rows += persisted.inserted_rows
+            total_duplicate_key_count += persisted.duplicate_key_count
+            total_rejected_row_count += persisted.rejected_row_count
+            total_missing_required_count += persisted.missing_required_count
+            total_success_rows += persisted.parse_success_rate * persisted.raw_row_count
+            for reason, count in (persisted.row_reject_reasons or {}).items():
+                merged_reject_reasons[reason] = int(merged_reject_reasons.get(reason, 0)) + int(count)
+
+        latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+        parse_success_rate = float(total_success_rows / total_raw_rows) if total_raw_rows else 0.0
+        duplicate_key_count = total_duplicate_key_count
+        rejected_row_count = total_rejected_row_count
+        missing_required_count = total_missing_required_count
+        row_reject_reasons = merged_reject_reasons
+
+        run.raw_row_count = total_raw_rows
+        run.normalized_row_count = total_inserted_rows
         run.duration_ms = latency_ms
         run.parse_success_rate = parse_success_rate
         run.schema_drift_count = schema_drift_count
@@ -193,9 +314,10 @@ def ingest_source_file(
         run.missing_required_count = missing_required_count
         run.row_reject_reasons_json = row_reject_reasons
 
-        alert_eval = evaluate_alert_rules_for_snapshot(db, snapshot_id=persisted.snapshot_id)
-        created_alert_count = alert_eval.created_alerts
-        deduped_alert_count = alert_eval.deduped_alerts
+        for snapshot_id in snapshot_ids:
+            alert_eval = evaluate_alert_rules_for_snapshot(db, snapshot_id=snapshot_id)
+            created_alert_count += alert_eval.created_alerts
+            deduped_alert_count += alert_eval.deduped_alerts
         run.created_alert_count = created_alert_count
         run.deduped_alert_count = deduped_alert_count
 

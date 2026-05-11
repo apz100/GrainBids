@@ -97,7 +97,7 @@ def run_source_file_ingestion(
     file_path = source_file_path or settings.daily_source_file_path
     name = source_name or settings.daily_source_name
     resolved_source_id = source_id or _parse_uuid(settings.daily_source_id, "DAILY_SOURCE_ID")
-    resolved_commodity_id = commodity_id or _parse_uuid(settings.daily_commodity_id, "DAILY_COMMODITY_ID")
+    resolved_commodity_id = commodity_id or _parse_optional_uuid(settings.daily_commodity_id, "DAILY_COMMODITY_ID")
     _assert_source_org_scope(db, source_id=resolved_source_id, org_id=context.org_id)
 
     if not file_path:
@@ -171,6 +171,15 @@ def _assert_source_org_scope(db: Session, *, source_id: uuid.UUID, org_id: uuid.
 def _parse_uuid(value: str, setting_name: str) -> uuid.UUID:
     if not value:
         raise HTTPException(status_code=400, detail=f"{setting_name} is required")
+    try:
+        return uuid.UUID(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"{setting_name} must be a valid UUID") from exc
+
+
+def _parse_optional_uuid(value: str, setting_name: str) -> uuid.UUID | None:
+    if not value:
+        return None
     try:
         return uuid.UUID(value)
     except ValueError as exc:

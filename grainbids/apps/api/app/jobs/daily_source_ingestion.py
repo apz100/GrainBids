@@ -48,15 +48,14 @@ def _run_single_source(db) -> int:
         raise RuntimeError("DAILY_SOURCE_FILE_PATH is required for --single-source mode")
     if not settings.daily_source_id:
         raise RuntimeError("DAILY_SOURCE_ID is required for --single-source mode")
-    if not settings.daily_commodity_id:
-        raise RuntimeError("DAILY_COMMODITY_ID is required for --single-source mode")
+    commodity_id = uuid.UUID(settings.daily_commodity_id) if settings.daily_commodity_id else None
 
     result = ingest_source_file(
         db,
         source_file_path=settings.daily_source_file_path,
         source_name=settings.daily_source_name,
         source_id=uuid.UUID(settings.daily_source_id),
-        commodity_id=uuid.UUID(settings.daily_commodity_id),
+        commodity_id=commodity_id,
         trigger_type="scheduled",
         attempt_number=1,
         max_attempts=1,
