@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiFetch } from "../lib/api";
 
 type RecentAlert = {
   id: string;
@@ -12,8 +13,6 @@ type RecentAlert = {
   threshold_value: number;
   location: string | null;
 };
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export default function OpenAlertsPanel() {
   const [alerts, setAlerts] = useState<RecentAlert[]>([]);
@@ -28,7 +27,7 @@ export default function OpenAlertsPanel() {
     setError("");
     try {
       const openOnlyQuery = openOnly ? "&open_only=true" : "";
-      const res = await fetch(`${API_BASE}/api/alerts/recent?limit=8${openOnlyQuery}`, { cache: "no-store" });
+      const res = await apiFetch(`/api/alerts/recent?limit=8${openOnlyQuery}`);
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Failed to load alerts");
@@ -46,7 +45,7 @@ export default function OpenAlertsPanel() {
     setMessage("");
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/api/alerts/${alertId}/status?status=${status}`, { method: "PATCH" });
+      const res = await apiFetch(`/api/alerts/${alertId}/status?status=${status}`, { method: "PATCH" });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Failed to update alert");

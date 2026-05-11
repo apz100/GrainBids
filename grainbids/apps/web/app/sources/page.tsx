@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { apiFetch } from "../lib/api";
 
 type IngestionRun = {
   id: string;
@@ -96,7 +97,18 @@ type SlaSummary = {
   } | null;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+type QualityBreakdown = {
+  run: {
+    id: string;
+    status: string;
+    raw_row_count: number | null;
+    normalized_row_count: number | null;
+    rejected_row_count: number | null;
+    totals: Record<string, number>;
+    by_source: Record<string, Record<string, number>>;
+    by_field: Record<string, number>;
+  } | null;
+};
 
 export default function SourcesPage() {
   const [runs, setRuns] = useState<IngestionRun[]>([]);
@@ -110,24 +122,28 @@ export default function SourcesPage() {
   const [updatingAlertId, setUpdatingAlertId] = useState("");
   const [openAlertsOnly, setOpenAlertsOnly] = useState(true);
   const [runningScheduledCycle, setRunningScheduledCycle] = useState(false);
+  const [qualityBreakdown, setQualityBreakdown] = useState<QualityBreakdown["run"]>(null);
 
   async function loadData() {
     const openOnlyQuery = openAlertsOnly ? "&open_only=true" : "";
-    const [runsRes, sourcesRes, slaRes, alertsRes] = await Promise.all([
-      fetch(`${API_BASE}/api/ingestion/runs?limit=25`, { cache: "no-store" }),
-      fetch(`${API_BASE}/api/sources`, { cache: "no-store" }),
-      fetch(`${API_BASE}/api/ingestion/sla`, { cache: "no-store" }),
-      fetch(`${API_BASE}/api/alerts/recent?limit=10${openOnlyQuery}`, { cache: "no-store" }),
+    const [runsRes, sourcesRes, slaRes, alertsRes, qualityRes] = await Promise.all([
+      apiFetch(`/api/ingestion/runs?limit=25`),
+      apiFetch(`/api/sources`),
+      apiFetch(`/api/ingestion/sla`),
+      apiFetch(`/api/alerts/recent?limit=10${openOnlyQuery}`),
+      apiFetch(`/api/ingestion/quality/latest`),
     ]);
     const runsJson = runsRes.ok ? await runsRes.json() : { rows: [] };
     const sourcesJson = sourcesRes.ok ? await sourcesRes.json() : { rows: [] };
     const slaJson = slaRes.ok ? await slaRes.json() : null;
     const alertsJson = alertsRes.ok ? await alertsRes.json() : { rows: [] };
+    const qualityJson = qualityRes.ok ? ((await qualityRes.json()) as QualityBreakdown) : { run: null };
 
     setRuns(runsJson.rows || []);
     setSources(sourcesJson.rows || []);
     setSla(slaJson);
     setAlerts(alertsJson.rows || []);
+    setQualityBreakdown(qualityJson.run || null);
   }
 
   useEffect(() => {
@@ -148,7 +164,7 @@ export default function SourcesPage() {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/api/ingestion/source-file/run?${params.toString()}`, { method: "POST" });
+      const res = await apiFetch(`/api/ingestion/source-file/run?${params.toString()}`, { method: "POST" });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Ingestion failed");
@@ -167,7 +183,7 @@ export default function SourcesPage() {
     setMessage("");
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/api/sources/${sourceId}/refresh`, { method: "POST" });
+      const res = await apiFetch(`/api/sources/${sourceId}/refresh`, { method: "POST" });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Source refresh failed");
@@ -189,7 +205,7 @@ export default function SourcesPage() {
     setMessage("");
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/api/sources/seed?scope=pilot`, { method: "POST" });
+      const res = await apiFetch(`/api/sources/seed?scope=pilot`, { method: "POST" });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Seed failed");
@@ -208,7 +224,7 @@ export default function SourcesPage() {
     setMessage("");
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/api/ingestion/source-files/run?max_attempts=2`, { method: "POST" });
+      const res = await apiFetch(`/api/ingestion/source-files/run?max_attempts=2`, { method: "POST" });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Scheduled cycle failed");
@@ -229,7 +245,7 @@ export default function SourcesPage() {
     setMessage("");
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/api/alerts/${alertId}/status?status=${status}`, { method: "PATCH" });
+      const res = await apiFetch(`/api/alerts/${alertId}/status?status=${status}`, { method: "PATCH" });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(typeof json.detail === "string" ? json.detail : "Alert update failed");
@@ -256,6 +272,46 @@ export default function SourcesPage() {
         <MetricCard label="Fresh Sources" value={sla?.fresh_sources ?? 0} />
         <MetricCard label="Stale Sources" value={sla?.stale_sources ?? 0} />
         <MetricCard label="Failing Sources" value={sla?.failing_sources ?? 0} />
+      </section>
+
+      <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
+        <h2 className="text-lg font-semibold">Latest rejection diagnostics</h2>
+        {qualityBreakdown ? (
+          <div className="mt-4 grid gap-5 md:grid-cols-2">
+            <div>
+              <h3 className="text-sm font-medium text-black/80">By field</h3>
+              <ul className="mt-2 space-y-1 text-sm text-black/70">
+                {Object.entries(qualityBreakdown.by_field || {}).length === 0 ? (
+                  <li>No field-level rejects.</li>
+                ) : (
+                  Object.entries(qualityBreakdown.by_field)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 8)
+                    .map(([field, count]) => <li key={field}>{field}: {count}</li>)
+                )}
+              </ul>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-black/80">Top source sheets by rejects</h3>
+              <ul className="mt-2 space-y-1 text-sm text-black/70">
+                {Object.entries(qualityBreakdown.by_source || {}).length === 0 ? (
+                  <li>No source-level rejects.</li>
+                ) : (
+                  Object.entries(qualityBreakdown.by_source)
+                    .map(([source, reasons]) => [
+                      source,
+                      Object.values(reasons).reduce((sum, value) => sum + Number(value || 0), 0),
+                    ] as const)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 8)
+                    .map(([source, total]) => <li key={source}>{source}: {total}</li>)
+                )}
+              </ul>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-black/60">No run data available yet.</p>
+        )}
       </section>
       <p className="mt-3 text-xs text-black/55">
         Last successful ingestion:{" "}

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import OpenAlertsPanel from "./open-alerts-panel";
+import { fetchApiJsonServer } from "../lib/api";
 
 type SummaryResponse = {
   average_basis: number | null;
@@ -64,23 +65,6 @@ type SlaSummary = {
   } | null;
 };
 
-function getApiBase() {
-  return process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-}
-
-async function fetchJson<T>(path: string): Promise<T | null> {
-  const base = getApiBase();
-  try {
-    const res = await fetch(`${base}${path}`, { cache: "no-store" });
-    if (!res.ok) {
-      return null;
-    }
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
-}
-
 type DashboardSearchParams = {
   commodity?: string;
   location?: string;
@@ -104,23 +88,23 @@ export default async function DashboardPage({ searchParams = {} }: { searchParam
   const limitedQuery = buildQuery(searchParams, 100);
 
   const [health, summary, moversData, pricesData, slaSummary] = await Promise.all([
-    fetchJson<DbHealth>("/api/health/db"),
-    fetchJson<SummaryResponse>(`/api/normalized-prices/summary${query}`),
-    fetchJson<{ rows: TopMover[] }>(`/api/normalized-prices/top-movers${buildQuery(searchParams, 8)}`),
-    fetchJson<{ rows: NormalizedRow[] }>(`/api/normalized-prices${limitedQuery}`),
-    fetchJson<SlaSummary>("/api/ingestion/sla"),
+    fetchApiJsonServer<DbHealth>("/api/health/db"),
+    fetchApiJsonServer<SummaryResponse>(`/api/normalized-prices/summary${query}`),
+    fetchApiJsonServer<{ rows: TopMover[] }>(`/api/normalized-prices/top-movers${buildQuery(searchParams, 8)}`),
+    fetchApiJsonServer<{ rows: NormalizedRow[] }>(`/api/normalized-prices${limitedQuery}`),
+    fetchApiJsonServer<SlaSummary>("/api/ingestion/sla"),
   ]);
 
   const movers = moversData?.rows || [];
   const prices = pricesData?.rows || [];
 
   return (
-    <main className="mx-auto max-w-7xl px-6 py-10">
+    <main className="mx-auto max-w-7xl px-6 py-8">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.16em] text-black/50">GrainBids / Bids</p>
-          <h1 className="mt-1 font-[family-name:var(--font-serif)] text-4xl leading-tight">Market Dashboard</h1>
-      <p className="mt-2 text-sm text-black/65">Live snapshot of normalized bids and basis movement.</p>
+          <p className="text-xs uppercase tracking-[0.16em] text-black/50">GrainBids / Market</p>
+          <h1 className="mt-1 font-[family-name:var(--font-serif)] text-4xl leading-tight">Bid Intelligence Dashboard</h1>
+          <p className="mt-2 text-sm text-black/65">Track local cash bids, basis changes, and alert pressure in one view.</p>
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge health={health} />
@@ -128,8 +112,16 @@ export default async function DashboardPage({ searchParams = {} }: { searchParam
           <Link href="/" className="rounded-xl border border-black/15 bg-white/70 px-4 py-2 text-sm hover:border-black/30">
             Home
           </Link>
+          <Link href="/sources" className="rounded-xl border border-black/15 bg-white/70 px-4 py-2 text-sm hover:border-black/30">
+            Sources
+          </Link>
         </div>
       </header>
+      {!summary ? (
+        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Missing API context. Set <code>NEXT_PUBLIC_ORG_ID</code> in <code>apps/web/.env.local</code> and redeploy.
+        </div>
+      ) : null}
       <p className="mt-2 text-xs text-black/55">
         Latest successful ingestion:{" "}
         {slaSummary?.last_successful_ingestion_run?.started_at
@@ -290,7 +282,7 @@ function formatNumber(value: number | null | undefined) {
   if (value === null || value === undefined) {
     return "-";
   }
-  return Number(value).toFixed(2);
+  return Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatSignedNumber(value: number | null | undefined) {
