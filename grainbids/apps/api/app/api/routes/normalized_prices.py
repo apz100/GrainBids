@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
+import math
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Select, and_, desc, func, select
@@ -22,7 +23,12 @@ router = APIRouter(prefix="/api/normalized-prices", tags=["normalized-prices"])
 def _to_float(value: Decimal | float | int | None) -> float | None:
     if value is None:
         return None
-    return float(value)
+    if isinstance(value, Decimal) and not value.is_finite():
+        return None
+    number = float(value)
+    if not math.isfinite(number):
+        return None
+    return number
 
 
 def _build_filters(
