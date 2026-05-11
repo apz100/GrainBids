@@ -365,6 +365,7 @@ def main():
     fetch_date = now.strftime("%Y-%m-%d")
     fetch_ts = now.isoformat(timespec="seconds")
     out_path = OUTPUT_DIR / f"EasternOntario_CashBids_{fetch_date}.csv"
+    latest_path = OUTPUT_DIR / "EasternOntario_CashBids_latest.csv"
 
     rows = []
     with sync_playwright() as p:
@@ -428,6 +429,8 @@ def main():
 
     out.to_csv(out_path, index=False, header=True, quoting=csv.QUOTE_MINIMAL, encoding="utf-8")
     print(f"Wrote {len(out)} rows to {out_path}")
+    out.to_csv(latest_path, index=False, header=True, quoting=csv.QUOTE_MINIMAL, encoding="utf-8")
+    print(f"Updated latest file at {latest_path}")
     try:
         print(out.head(12).to_string(index=False))
     except Exception:

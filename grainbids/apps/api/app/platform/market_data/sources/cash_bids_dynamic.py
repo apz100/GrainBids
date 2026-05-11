@@ -117,6 +117,10 @@ for d in CANDIDATES:
 if OUTPUT_DIR is None:
     raise RuntimeError(f"Could not create any output directory from {CANDIDATES}: {last_err}")
 
+
+def _latest_csv_path() -> Path:
+    return OUTPUT_DIR / "Ontario_CashBids_latest.csv"
+
 # ---------- NORMALIZATION ----------
 MONTH_MAP = {
     "Jan":"January", "Feb":"February", "Mar":"March", "Apr":"April", "May":"May", "Jun":"June",
@@ -440,6 +444,9 @@ def main():
 
     out.to_csv(out_path, index=False, header=True, quoting=csv.QUOTE_MINIMAL, encoding="utf-8")
     print(f"Wrote {len(out)} rows to {out_path}")
+    latest_path = _latest_csv_path()
+    out.to_csv(latest_path, index=False, header=True, quoting=csv.QUOTE_MINIMAL, encoding="utf-8")
+    print(f"Updated latest file at {latest_path}")
     try:
         print(out.head(12).to_string(index=False))
     except Exception:

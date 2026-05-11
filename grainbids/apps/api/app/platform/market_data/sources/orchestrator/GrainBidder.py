@@ -6,6 +6,7 @@ from datetime import datetime
 import csv
 import datetime as _dt
 import re as _re
+import shutil
 from typing import Optional, List, Tuple
 
 import pandas as pd
@@ -177,6 +178,8 @@ def main():
 
     output_dir = config.output_dir
     out_path   = output_dir / f"Ontario_CashBids_{fetch_date}.csv"
+    latest_csv_path = output_dir / "Ontario_CashBids_latest.csv"
+    latest_xlsx_path = output_dir / "Ontario_CashBids_latest.xlsx"
 
     with sync_playwright() as p:
         source_dfs = _gather_source_data(p)
@@ -231,6 +234,8 @@ def main():
     # Save to CSV as before
     out.to_csv(out_path, index=False, header=True, quoting=csv.QUOTE_MINIMAL, encoding="utf-8")
     print(f"Wrote {len(out)} rows to {out_path}")
+    out.to_csv(latest_csv_path, index=False, header=True, quoting=csv.QUOTE_MINIMAL, encoding="utf-8")
+    print(f"Updated latest CSV at {latest_csv_path}")
 
     # Save to SQLite database for the web app
     try:
@@ -255,6 +260,8 @@ def main():
                 safe_name = src_name.replace("/", "-")[:31] or "Sheet"
                 df_sheet.to_excel(writer, sheet_name=safe_name, index=False)
         print(f"Wrote Excel workbook to {excel_path}")
+        shutil.copyfile(excel_path, latest_xlsx_path)
+        print(f"Updated latest Excel workbook at {latest_xlsx_path}")
     except ModuleNotFoundError:
         print("openpyxl not installed; skipped Excel output. Run: pip install openpyxl")
 
