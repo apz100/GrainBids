@@ -92,7 +92,8 @@ try {
   }
 
   Write-Output "Running fetcher profile '$Fetcher' from $fetchScript"
-  $fetchOutput = & $pythonExe $fetchScript 2>&1
+  # Ignore non-fatal library warnings on stderr so PowerShell does not stop the run.
+  $fetchOutput = & $pythonExe -W "ignore::FutureWarning" $fetchScript 2>&1
   $fetchOutput | Out-Host
   if ($LASTEXITCODE -ne 0) {
     throw "Fetcher failed with exit code $LASTEXITCODE"
