@@ -123,7 +123,17 @@ export default function DashboardPage() {
       if (!facetsRes.ok) throw new Error(await readFailure(facetsRes));
 
       setSla(await slaRes.json());
-      setFacets(await facetsRes.json());
+      const rawFacets = await facetsRes.json();
+      const sourceNames = normalizeFacetValues(rawFacets?.source_names);
+      const companyNames = normalizeFacetValues(rawFacets?.company_names?.length ? rawFacets.company_names : sourceNames);
+      const regionNames = normalizeFacetValues(rawFacets?.region_names);
+      setFacets({
+        commodities: normalizeFacetValues(rawFacets?.commodities),
+        locations: normalizeFacetValues(rawFacets?.locations),
+        source_names: sourceNames,
+        company_names: companyNames,
+        region_names: regionNames,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -146,7 +156,8 @@ export default function DashboardPage() {
       if (!moversRes.ok) throw new Error(await readFailure(moversRes));
       if (!summaryRes.ok) throw new Error(await readFailure(summaryRes));
 
-      setPreviewRows((await previewRes.json()).rows ?? []);
+      const preview = (await previewRes.json()).rows ?? [];
+      setPreviewRows(sortPreviewRowsForDisplay(preview));
       setMovers((await moversRes.json()).rows ?? []);
       setSummary(await summaryRes.json());
     } catch (err) {
@@ -366,6 +377,105 @@ function StatusBadge({ summary }: { summary: SlaSummary | null }) {
       Fresh {summary.fresh_sources}/{summary.active_sources} | Fail {summary.failing_sources}
     </span>
   );
+}
+
+function normalizeFacetValues(values: unknown): string[] {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  const unique = new Map<string, string>();
+  for (const raw of values) {
+    if (typeof raw !== "string") {
+      continue;
+    }
+    const cleaned = raw.trim().replace(/\s+/g, " ");
+    if (!cleaned || cleaned.toLowerCase() === "nan") {
+      continue;
+    }
+    const key = cleaned.toLowerCase();
+    if (!unique.has(key)) {
+      unique.set(key, cleaned);
+    }
+  }
+  return Array.from(unique.values()).sort((a, b) => a.localeCompare(b));
+}
+
+function sortPreviewRowsForDisplay(rows: PreviewRow[]): PreviewRow[] {
+  return [...rows].sort((a, b) => {
+    const locationCompare = compareString(a.location, b.location);
+    if (locationCompare !== 0) return locationCompare;
+    const commodityCompare = compareString(a.commodity_name, b.commodity_name);
+    if (commodityCompare !== 0) return commodityCompare;
+    const deliveryCompare = compareMonthLabel(a.delivery_label, b.delivery_label);
+    if (deliveryCompare !== 0) return deliveryCompare;
+    const futuresCompare = compareMonthLabel(a.futures_month, b.futures_month);
+    if (futuresCompare !== 0) return futuresCompare;
+    return compareString(a.source_name ?? "", b.source_name ?? "");
+  });
+}
+
+function compareString(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { sensitivity: "base" });
+}
+
+function compareMonthLabel(a: string | null, b: string | null): number {
+  const aKey = monthSortKey(a);
+  const bKey = monthSortKey(b);
+  if (aKey == null && bKey == null) return 0;
+  if (aKey == null) return 1;
+  if (bKey == null) return -1;
+  return aKey - bKey;
+}
+
+function monthSortKey(value: string | null): number | null {
+  if (!value) return null;
+  const label = value.trim();
+  if (!label) return null;
+  const monthMap: Record<string, number> = {
+    jan: 1,
+    january: 1,
+    feb: 2,
+    february: 2,
+    mar: 3,
+    march: 3,
+    apr: 4,
+    april: 4,
+    may: 5,
+    jun: 6,
+    june: 6,
+    jul: 7,
+    july: 7,
+    aug: 8,
+    august: 8,
+    sep: 9,
+    sept: 9,
+    september: 9,
+    oct: 10,
+    october: 10,
+    nov: 11,
+    november: 11,
+    dec: 12,
+    december: 12,
+  };
+  const normalized = label.toLowerCase();
+  const match = normalized.match(
+    /\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b[^0-9]*(\d{2,4})?/
+  );
+  if (!match) return null;
+  const month = monthMap[match[1]];
+  if (!month) return null;
+  let year = 0;
+  if (match[2]) {
+    const rawYear = Number.parseInt(match[2], 10);
+    if (Number.isNaN(rawYear)) {
+      year = 0;
+    } else if (rawYear < 100) {
+      year = 2000 + rawYear;
+    } else {
+      year = rawYear;
+    }
+  }
+  return year * 12 + month;
 }
 
 function buildMarketQuery(filters: FilterState) {
