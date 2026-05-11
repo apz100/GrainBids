@@ -69,12 +69,16 @@ try {
   }
 
   Write-RunLog "Running ingestion job ($($jobArgs -join ' '))"
+  $jobOutput = @()
   & $pythonExe @jobArgs 2>&1 | ForEach-Object {
-    $_ | Out-Host
-    $_ | Out-File -LiteralPath $script:LogPath -Append -Encoding utf8
+    $line = "$_"
+    $jobOutput += $line
+    $line | Out-Host
+    $line | Out-File -LiteralPath $script:LogPath -Append -Encoding utf8
   }
-  if ($LASTEXITCODE -ne 0) {
-    throw "Ingestion job failed with exit code $LASTEXITCODE"
+  $jobExitCode = $LASTEXITCODE
+  if ($jobExitCode -ne 0) {
+    throw "Ingestion job failed with exit code $jobExitCode"
   }
 
   Write-RunLog "Daily ingestion completed successfully"
