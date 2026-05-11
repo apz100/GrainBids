@@ -267,7 +267,7 @@ def facets(
     return {
         "commodities": sorted(commodity_map.values()),
         "locations": sorted(location_map.values()),
-        "source_names": sorted(company_map.values() + region_map.values()),
+        "source_names": sorted([*company_map.values(), *region_map.values()]),
         "company_names": sorted(company_map.values()),
         "region_names": sorted(region_map.values()),
     }
