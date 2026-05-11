@@ -7,11 +7,23 @@ import csv
 import datetime as _dt
 import re as _re
 import shutil
+import sys
 from typing import Optional, List, Tuple
 
 import pandas as pd
-from app.db_utils import save_df_to_db
 from playwright.sync_api import sync_playwright
+
+CURRENT_DIR = Path(__file__).resolve().parent
+SOURCES_DIR = CURRENT_DIR.parent
+for p in (CURRENT_DIR, SOURCES_DIR):
+    p_str = str(p)
+    if p_str not in sys.path:
+        sys.path.insert(0, p_str)
+
+try:
+    from app.db_utils import save_df_to_db  # legacy optional hook
+except Exception:
+    save_df_to_db = None
 
 from grain_bids.config import config
 from processing import excel_protect
@@ -237,12 +249,13 @@ def main():
     out.to_csv(latest_csv_path, index=False, header=True, quoting=csv.QUOTE_MINIMAL, encoding="utf-8")
     print(f"Updated latest CSV at {latest_csv_path}")
 
-    # Save to SQLite database for the web app
-    try:
-        save_df_to_db(out)
-        print(f"Saved {len(out)} rows to grain_bids.db for web app.")
-    except Exception as e:
-        print(f"[ERR] Failed to save to DB: {e}")
+    # Save to SQLite database only when the legacy hook is available.
+    if save_df_to_db is not None:
+        try:
+            save_df_to_db(out)
+            print(f"Saved {len(out)} rows to grain_bids.db for web app.")
+        except Exception as e:
+            print(f"[ERR] Failed to save to DB: {e}")
 
     # Excel workbook: one sheet per source + Combined
     excel_path = output_dir / f"Ontario_CashBids_{fetch_date}.xlsx"
