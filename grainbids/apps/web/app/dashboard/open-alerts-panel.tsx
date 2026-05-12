@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { API_BASE, buildApiHeaders } from "@/lib/api";
+import { API_BASE, buildApiHeaders, getApiConfigError } from "@/lib/api";
 
 type RecentAlert = {
   id: string;
@@ -16,6 +16,7 @@ type RecentAlert = {
 
 export default function OpenAlertsPanel() {
   const headers = buildApiHeaders();
+  const configError = getApiConfigError({ requireOrg: true });
   const [alerts, setAlerts] = useState<RecentAlert[]>([]);
   const [openOnly, setOpenOnly] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -24,6 +25,10 @@ export default function OpenAlertsPanel() {
   const [activeAlertId, setActiveAlertId] = useState("");
 
   async function loadAlerts() {
+    if (configError) {
+      setError(configError);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -61,8 +66,12 @@ export default function OpenAlertsPanel() {
   }
 
   useEffect(() => {
+    if (configError) {
+      setError(configError);
+      return;
+    }
     loadAlerts().catch((err) => setError(String(err)));
-  }, [openOnly]);
+  }, [openOnly, configError]);
 
   return (
     <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">

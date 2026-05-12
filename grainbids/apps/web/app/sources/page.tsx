@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
-import { API_BASE, buildApiHeaders, isAdminRole } from "@/lib/api";
+import { API_BASE, buildApiHeaders, getApiConfigError, isAdminRole } from "@/lib/api";
 
 type IngestionRun = {
   id: string;
@@ -101,6 +101,7 @@ type SlaSummary = {
 export default function SourcesPage() {
   const headers = buildApiHeaders();
   const adminAllowed = isAdminRole();
+  const configError = getApiConfigError({ requireOrg: true });
   const [runs, setRuns] = useState<IngestionRun[]>([]);
   const [alerts, setAlerts] = useState<RecentAlert[]>([]);
   const [sources, setSources] = useState<SourceRow[]>([]);
@@ -135,8 +136,12 @@ export default function SourcesPage() {
     if (!adminAllowed) {
       return;
     }
+    if (configError) {
+      setError(configError);
+      return;
+    }
     loadData().catch((err) => setError(String(err)));
-  }, [adminAllowed, openAlertsOnly]);
+  }, [adminAllowed, openAlertsOnly, configError]);
 
   async function triggerIngestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

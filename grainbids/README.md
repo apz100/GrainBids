@@ -74,7 +74,7 @@ Web (`apps/web`) required env:
 Health checks:
 - Liveness: `GET /health/live`
 - Readiness (DB): `GET /health/ready` (returns `503` when DB unavailable)
-- Scripted smoke test: `infra/scripts/smoke-test.ps1 -ApiBaseUrl https://<api-domain> -WebBaseUrl https://<web-domain> -CheckWeb`
+- Scripted smoke test: `infra/scripts/smoke-test.ps1 -ApiBaseUrl https://<api-domain> -WebBaseUrl https://<web-domain> -CheckWeb -OrgId <org-uuid> -UserRole admin`
 
 Scheduling:
 - Use host scheduler/cron at `08:00` and `15:00` America/Toronto.

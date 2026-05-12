@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 import OpenAlertsPanel from "./open-alerts-panel";
-import { API_BASE, buildApiHeaders } from "@/lib/api";
+import { API_BASE, buildApiHeaders, getApiConfigError } from "@/lib/api";
 
 type SummaryResponse = {
   average_basis: number | null;
@@ -84,6 +84,7 @@ const DEFAULT_FILTERS: FilterState = {
 
 export default function DashboardPage() {
   const headers = useMemo(() => buildApiHeaders(), []);
+  const configError = useMemo(() => getApiConfigError({ requireOrg: true }), []);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [facets, setFacets] = useState<FacetsResponse>({
     commodities: [],
@@ -101,14 +102,21 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (configError) {
+      setError(configError);
+      return;
+    }
     void loadMeta();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [configError]);
 
   useEffect(() => {
+    if (configError) {
+      return;
+    }
     void loadMarketData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+  }, [filters, configError]);
 
   async function loadMeta() {
     setLoadingMeta(true);

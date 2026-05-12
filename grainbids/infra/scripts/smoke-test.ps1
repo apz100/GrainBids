@@ -2,7 +2,10 @@ param(
   [Parameter(Mandatory=$true)]
   [string]$ApiBaseUrl,
   [string]$WebBaseUrl = "",
-  [switch]$CheckWeb
+  [switch]$CheckWeb,
+  [string]$OrgId = "",
+  [string]$UserRole = "admin",
+  [string]$UserEmail = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,11 +14,12 @@ function Invoke-HealthCheck {
   param(
     [Parameter(Mandatory=$true)]
     [string]$Url,
-    [int]$ExpectedStatus = 200
+    [int]$ExpectedStatus = 200,
+    [hashtable]$Headers = @{}
   )
 
   try {
-    $response = Invoke-WebRequest -Uri $Url -Method GET -UseBasicParsing
+    $response = Invoke-WebRequest -Uri $Url -Method GET -UseBasicParsing -Headers $Headers
     if ($response.StatusCode -ne $ExpectedStatus) {
       throw "Expected $ExpectedStatus, got $($response.StatusCode)"
     }
@@ -27,11 +31,30 @@ function Invoke-HealthCheck {
 }
 
 $api = $ApiBaseUrl.TrimEnd("/")
+
+$scopedHeaders = @{}
+if ($OrgId.Trim() -ne "") {
+  $scopedHeaders["X-Org-Id"] = $OrgId.Trim()
+}
+if ($UserRole.Trim() -ne "") {
+  $scopedHeaders["X-User-Role"] = $UserRole.Trim()
+}
+if ($UserEmail.Trim() -ne "") {
+  $scopedHeaders["X-User-Email"] = $UserEmail.Trim()
+}
+
 Invoke-HealthCheck -Url "$api/health/live"
 Invoke-HealthCheck -Url "$api/health/ready"
 Invoke-HealthCheck -Url "$api/api/health/db"
-Invoke-HealthCheck -Url "$api/api/ingestion/sla"
-Invoke-HealthCheck -Url "$api/api/normalized-prices/summary"
+
+if ($scopedHeaders.ContainsKey("X-Org-Id")) {
+  Invoke-HealthCheck -Url "$api/api/ingestion/sla" -Headers $scopedHeaders
+  Invoke-HealthCheck -Url "$api/api/normalized-prices/summary" -Headers $scopedHeaders
+  Invoke-HealthCheck -Url "$api/api/normalized-prices/facets" -Headers $scopedHeaders
+  Invoke-HealthCheck -Url "$api/api/normalized-prices/preview?limit=10" -Headers $scopedHeaders
+} else {
+  Write-Output "SKIP org-scoped endpoints (missing -OrgId)"
+}
 
 if ($CheckWeb.IsPresent -and $WebBaseUrl.Trim() -ne "") {
   $web = $WebBaseUrl.TrimEnd("/")
