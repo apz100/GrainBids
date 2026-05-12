@@ -120,28 +120,31 @@ export default function DashboardPage() {
 
   async function loadMeta() {
     setLoadingMeta(true);
-    setError("");
+    setError((prev) => (prev.startsWith("Missing NEXT_PUBLIC_") ? prev : ""));
     try {
-      const [slaRes, facetsRes] = await Promise.all([
-        fetch(`${API_BASE}/api/ingestion/sla`, { cache: "no-store", headers }),
-        fetch(`${API_BASE}/api/normalized-prices/facets`, { cache: "no-store", headers }),
-      ]);
+      const slaRes = await fetch(`${API_BASE}/api/ingestion/sla`, { cache: "no-store", headers });
+      if (slaRes.ok) {
+        setSla(await slaRes.json());
+      } else {
+        setError(`SLA unavailable: ${await readFailure(slaRes)}`);
+      }
 
-      if (!slaRes.ok) throw new Error(await readFailure(slaRes));
-      if (!facetsRes.ok) throw new Error(await readFailure(facetsRes));
-
-      setSla(await slaRes.json());
-      const rawFacets = await facetsRes.json();
-      const sourceNames = normalizeFacetValues(rawFacets?.source_names);
-      const companyNames = normalizeFacetValues(rawFacets?.company_names?.length ? rawFacets.company_names : sourceNames);
-      const regionNames = normalizeFacetValues(rawFacets?.region_names);
-      setFacets({
-        commodities: normalizeFacetValues(rawFacets?.commodities),
-        locations: normalizeFacetValues(rawFacets?.locations),
-        source_names: sourceNames,
-        company_names: companyNames,
-        region_names: regionNames,
-      });
+      const facetsRes = await fetch(`${API_BASE}/api/normalized-prices/facets`, { cache: "no-store", headers });
+      if (!facetsRes.ok) {
+        setError(`Facets unavailable: ${await readFailure(facetsRes)}`);
+      } else {
+        const rawFacets = await facetsRes.json();
+        const sourceNames = normalizeFacetValues(rawFacets?.source_names);
+        const companyNames = normalizeFacetValues(rawFacets?.company_names?.length ? rawFacets.company_names : sourceNames);
+        const regionNames = normalizeFacetValues(rawFacets?.region_names);
+        setFacets({
+          commodities: normalizeFacetValues(rawFacets?.commodities),
+          locations: normalizeFacetValues(rawFacets?.locations),
+          source_names: sourceNames,
+          company_names: companyNames,
+          region_names: regionNames,
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -151,23 +154,28 @@ export default function DashboardPage() {
 
   async function loadMarketData() {
     setLoadingPreview(true);
-    setError("");
+    setError((prev) => (prev.startsWith("Missing NEXT_PUBLIC_") ? prev : ""));
     try {
       const query = buildMarketQuery(filters);
-      const [previewRes, moversRes, summaryRes] = await Promise.all([
-        fetch(`${API_BASE}/api/normalized-prices/preview${query}&limit=120`, { cache: "no-store", headers }),
+      const previewRes = await fetch(`${API_BASE}/api/normalized-prices/preview${query}&limit=120`, { cache: "no-store", headers });
+      if (!previewRes.ok) throw new Error(await readFailure(previewRes));
+      const preview = (await previewRes.json()).rows ?? [];
+      setPreviewRows(sortPreviewRowsForDisplay(preview));
+
+      const [moversRes, summaryRes] = await Promise.all([
         fetch(`${API_BASE}/api/normalized-prices/top-movers${query}&limit=8`, { cache: "no-store", headers }),
         fetch(`${API_BASE}/api/normalized-prices/summary${query}`, { cache: "no-store", headers }),
       ]);
-
-      if (!previewRes.ok) throw new Error(await readFailure(previewRes));
-      if (!moversRes.ok) throw new Error(await readFailure(moversRes));
-      if (!summaryRes.ok) throw new Error(await readFailure(summaryRes));
-
-      const preview = (await previewRes.json()).rows ?? [];
-      setPreviewRows(sortPreviewRowsForDisplay(preview));
-      setMovers((await moversRes.json()).rows ?? []);
-      setSummary(await summaryRes.json());
+      if (moversRes.ok) {
+        setMovers((await moversRes.json()).rows ?? []);
+      } else {
+        setError(`Top movers unavailable: ${await readFailure(moversRes)}`);
+      }
+      if (summaryRes.ok) {
+        setSummary(await summaryRes.json());
+      } else {
+        setError(`Summary unavailable: ${await readFailure(summaryRes)}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

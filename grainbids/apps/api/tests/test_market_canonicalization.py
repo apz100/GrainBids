@@ -1,0 +1,44 @@
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.services.market_canonicalization import (  # noqa: E402
+    canonical_commodity_name,
+    canonical_location_name,
+    canonical_source_name,
+    source_scope,
+)
+
+
+class MarketCanonicalizationTests(unittest.TestCase):
+    def test_source_aliases(self) -> None:
+        self.assertEqual(canonical_source_name("glg"), "GLG")
+        self.assertEqual(canonical_source_name("The Andersons"), "Andersons")
+        self.assertEqual(canonical_source_name("Ontario Daily File"), "Ontario Daily File")
+
+    def test_location_normalizes_any_branch(self) -> None:
+        self.assertEqual(canonical_location_name("Any Wanstead Branch"), "Wanstead Branch")
+        self.assertEqual(canonical_location_name("Any   Wanstead   Branch"), "Wanstead Branch")
+
+    def test_location_strips_trailing_commodity(self) -> None:
+        self.assertEqual(canonical_location_name("Blenheim Corn"), "Blenheim")
+        self.assertEqual(canonical_location_name("Brinston Soybeans"), "Brinston")
+
+    def test_commodity_aliases(self) -> None:
+        self.assertEqual(canonical_commodity_name("soybean"), "Soybeans")
+        self.assertEqual(canonical_commodity_name("corn"), "Corn")
+
+    def test_source_scope_region_vs_company(self) -> None:
+        self.assertEqual(source_scope("Ontario Cash Bids"), ("region", "Ontario"))
+        self.assertEqual(source_scope("Eastern Ontario Daily File"), ("region", "Eastern Ontario"))
+        self.assertEqual(source_scope("GLG"), ("company", "GLG"))
+
+
+if __name__ == "__main__":
+    unittest.main()
+

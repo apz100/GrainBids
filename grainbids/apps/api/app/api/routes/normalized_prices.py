@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 import math
-import re
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Select, and_, desc, func, select
@@ -16,6 +15,14 @@ from app.models.alert_rule import AlertRule
 from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
 from app.models.source import Source
+from app.services.market_canonicalization import (
+    canonical_commodity_name,
+    canonical_key,
+    canonical_location_name,
+    canonical_source_name,
+    normalize_text,
+    source_scope,
+)
 
 
 router = APIRouter(prefix="/api/normalized-prices", tags=["normalized-prices"])
@@ -30,80 +37,6 @@ def _to_float(value: Decimal | float | int | None) -> float | None:
     if not math.isfinite(number):
         return None
     return number
-
-
-def _normalize_text(value: str | None) -> str | None:
-    if value is None:
-        return None
-    cleaned = re.sub(r"\s+", " ", value.strip())
-    if not cleaned:
-        return None
-    if cleaned.casefold() in {"nan", "none", "null", "na", "n/a", "-"}:
-        return None
-    return cleaned
-
-
-def _canonical_key(value: str | None) -> str | None:
-    normalized = _normalize_text(value)
-    if normalized is None:
-        return None
-    return normalized.casefold()
-
-
-def _canonical_source_name(source_name: str | None) -> str | None:
-    normalized = _normalize_text(source_name)
-    if normalized is None:
-        return None
-    aliases = {
-        "glg": "GLG",
-        "hensall": "Hensall",
-        "andersons": "Andersons",
-        "agricharts": "Agricharts",
-        "snobelen": "Snobelen",
-        "eastern ontario cash bids": "Eastern Ontario Cash Bids",
-        "eastern ontario daily file": "Eastern Ontario Daily File",
-        "ontario cash bids": "Ontario Cash Bids",
-        "ontario daily file": "Ontario Daily File",
-    }
-    return aliases.get(normalized.casefold(), normalized)
-
-
-def _canonical_commodity_name(commodity_name: str | None) -> str | None:
-    normalized = _normalize_text(commodity_name)
-    if normalized is None:
-        return None
-    aliases = {
-        "corn": "Corn",
-        "soybean": "Soybeans",
-        "soybeans": "Soybeans",
-        "wheat": "Wheat",
-    }
-    key = normalized.casefold()
-    return aliases.get(key, normalized)
-
-
-def _canonical_location_name(location_name: str | None) -> str | None:
-    normalized = _normalize_text(location_name)
-    if normalized is None:
-        return None
-    location = re.sub(r"\s*/\s*", " / ", normalized).strip()
-    location = re.sub(
-        r"\s+(corn|soybeans?|wheat|barley|oats|milo)$",
-        "",
-        location,
-        flags=re.IGNORECASE,
-    ).strip()
-    return _normalize_text(location)
-
-
-def _source_scope(source_name: str | None) -> tuple[str, str | None]:
-    canonical = _canonical_source_name(source_name)
-    if canonical is None:
-        return "company", None
-    lowered = canonical.casefold()
-    if "ontario" in lowered and ("cash bids" in lowered or "daily file" in lowered):
-        return "region", "Eastern Ontario" if "eastern" in lowered else "Ontario"
-    return "company", canonical
 
 
 def _build_filters(
@@ -185,13 +118,13 @@ def list_normalized_prices(
                 "id": str(price.id),
                 "snapshot_id": str(price.snapshot_id),
                 "captured_at": snapshot.captured_at.isoformat() if snapshot.captured_at else None,
-                "location": _canonical_location_name(price.location) or "-",
-                "commodity_name": _canonical_commodity_name(price.commodity_name) or "-",
-                "source_name": _canonical_source_name(price.source_name),
-                "delivery_start": _normalize_text(price.delivery_start),
-                "delivery_end": _normalize_text(price.delivery_end),
-                "delivery_label": _normalize_text(price.delivery_label),
-                "futures_month": _normalize_text(price.futures_month),
+                "location": canonical_location_name(price.location) or "-",
+                "commodity_name": canonical_commodity_name(price.commodity_name) or "-",
+                "source_name": canonical_source_name(price.source_name),
+                "delivery_start": normalize_text(price.delivery_start),
+                "delivery_end": normalize_text(price.delivery_end),
+                "delivery_label": normalize_text(price.delivery_label),
+                "futures_month": normalize_text(price.futures_month),
                 "futures_price": _to_float(price.futures_price),
                 "basis": _to_float(price.basis),
                 "cash_price_bu": _to_float(price.cash_price_bu),
@@ -238,23 +171,23 @@ def facets(
 
     commodity_map: dict[str, str] = {}
     for value in db.execute(commodity_query).scalars().all():
-        normalized = _canonical_commodity_name(value)
-        key = _canonical_key(normalized)
+        normalized = canonical_commodity_name(value)
+        key = canonical_key(normalized)
         if key and normalized and key not in commodity_map:
             commodity_map[key] = normalized
 
     location_map: dict[str, str] = {}
     for value in db.execute(location_query).scalars().all():
-        normalized = _canonical_location_name(value)
-        key = _canonical_key(normalized)
+        normalized = canonical_location_name(value)
+        key = canonical_key(normalized)
         if key and normalized and key not in location_map:
             location_map[key] = normalized
 
     company_map: dict[str, str] = {}
     region_map: dict[str, str] = {}
     for value in db.execute(source_query).scalars().all():
-        scope, label = _source_scope(value)
-        key = _canonical_key(label)
+        scope, label = source_scope(value)
+        key = canonical_key(label)
         if not key or not label:
             continue
         if scope == "region":
@@ -304,11 +237,11 @@ def preview(
     deduped_rows: list[tuple[NormalizedPrice, PriceSnapshot]] = []
     seen: set[str] = set()
     for price, snapshot in rows:
-        location_key = _canonical_key(price.location) or "-"
-        source_key = _canonical_key(_canonical_source_name(price.source_name)) or "-"
-        commodity_key = _canonical_key(price.commodity_name) or "-"
-        delivery_key = _canonical_key(price.delivery_label or price.delivery_end or price.delivery_start) or "-"
-        futures_key = _canonical_key(price.futures_month) or "-"
+        location_key = canonical_key(price.location) or "-"
+        source_key = canonical_key(canonical_source_name(price.source_name)) or "-"
+        commodity_key = canonical_key(price.commodity_name) or "-"
+        delivery_key = canonical_key(price.delivery_label or price.delivery_end or price.delivery_start) or "-"
+        futures_key = canonical_key(price.futures_month) or "-"
         dedupe_key = "|".join([location_key, source_key, commodity_key, delivery_key, futures_key])
         if dedupe_key in seen:
             continue
@@ -322,11 +255,11 @@ def preview(
             {
                 "id": str(price.id),
                 "captured_at": snapshot.captured_at.isoformat() if snapshot.captured_at else None,
-                "location": _canonical_location_name(price.location) or "-",
-                "source_name": _canonical_source_name(price.source_name),
-                "commodity_name": _canonical_commodity_name(price.commodity_name) or "-",
-                "delivery_label": _normalize_text(price.delivery_label) or _normalize_text(price.delivery_end),
-                "futures_month": _normalize_text(price.futures_month),
+                "location": canonical_location_name(price.location) or "-",
+                "source_name": canonical_source_name(price.source_name),
+                "commodity_name": canonical_commodity_name(price.commodity_name) or "-",
+                "delivery_label": normalize_text(price.delivery_label) or normalize_text(price.delivery_end),
+                "futures_month": normalize_text(price.futures_month),
                 "futures_price": _to_float(price.futures_price),
                 "basis": _to_float(price.basis),
                 "basis_change": _to_float(price.basis_change),
@@ -379,9 +312,9 @@ def top_movers(
                 "id": str(price.id),
                 "snapshot_id": str(price.snapshot_id),
                 "captured_at": snapshot.captured_at.isoformat() if snapshot.captured_at else None,
-                "location": _canonical_location_name(price.location) or "-",
-                "commodity_name": _canonical_commodity_name(price.commodity_name) or "-",
-                "source_name": _canonical_source_name(price.source_name),
+                "location": canonical_location_name(price.location) or "-",
+                "commodity_name": canonical_commodity_name(price.commodity_name) or "-",
+                "source_name": canonical_source_name(price.source_name),
                 "basis": _to_float(price.basis),
                 "basis_change": _to_float(price.basis_change),
                 "cash_price_bu": _to_float(price.cash_price_bu),

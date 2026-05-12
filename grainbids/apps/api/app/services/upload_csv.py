@@ -18,6 +18,12 @@ from app.models.price_snapshot import PriceSnapshot
 from app.models.raw_upload import RawUpload
 from app.models.source import Source
 from app.modules.imports.legacy_helpers import symbol_to_month_extended
+from app.services.market_canonicalization import (
+    canonical_commodity_name,
+    canonical_location_name,
+    canonical_source_name,
+    normalize_text,
+)
 from app.services.price_comparison import apply_historical_changes, build_composite_key
 
 
@@ -233,8 +239,8 @@ def persist_normalized_rows(
 
     for row in rows:
         row_count += 1
-        location = str(row.get(mapping["location"], "") or "").strip()
-        commodity_name = str(row.get(mapping["commodity"], "") or "").strip() or commodity.name
+        location = canonical_location_name(str(row.get(mapping["location"], "") or "").strip()) or ""
+        commodity_name = canonical_commodity_name(str(row.get(mapping["commodity"], "") or "").strip()) or canonical_commodity_name(commodity.name) or ""
         if _is_blank(location):
             rejected_row_count += 1
             missing_required_count += 1
@@ -246,12 +252,12 @@ def persist_normalized_rows(
             _increment_reason(row_reject_reasons, "missing_commodity_name")
             continue
 
-        source_name = str(row.get(mapping.get("source_name", ""), "") or "").strip() or source.name
-        delivery_start = str(row.get(mapping.get("delivery_start", ""), "") or "").strip()
-        delivery_end = str(row.get(mapping.get("delivery_end", ""), "") or "").strip()
-        delivery_label = str(row.get(mapping.get("delivery_label", ""), "") or "").strip()
+        source_name = canonical_source_name(str(row.get(mapping.get("source_name", ""), "") or "").strip()) or canonical_source_name(source.name) or source.name
+        delivery_start = normalize_text(str(row.get(mapping.get("delivery_start", ""), "") or "").strip()) or ""
+        delivery_end = normalize_text(str(row.get(mapping.get("delivery_end", ""), "") or "").strip()) or ""
+        delivery_label = normalize_text(str(row.get(mapping.get("delivery_label", ""), "") or "").strip()) or ""
         futures_month_raw = str(row.get(mapping.get("futures_month", ""), "") or "").strip()
-        futures_month = symbol_to_month_extended(futures_month_raw) or futures_month_raw
+        futures_month = normalize_text(symbol_to_month_extended(futures_month_raw) or futures_month_raw) or ""
 
         futures_price = _parse_decimal(str(row.get(mapping.get("futures_price", ""), "") or ""))
         basis = _parse_decimal(str(row.get(mapping.get("basis", ""), "") or ""))
@@ -260,7 +266,7 @@ def persist_normalized_rows(
         if cash_price_mt is None:
             cash_price_mt = _infer_cash_price_mt(commodity_name=commodity_name, cash_price_bu=cash_price_bu)
         if _is_blank(futures_month):
-            futures_month = (delivery_label or delivery_end or "").strip()
+            futures_month = normalize_text(delivery_label or delivery_end or "") or ""
         if futures_price is None:
             futures_price = _extract_price_from_text(futures_month_raw)
         if futures_price is None and cash_price_bu is not None and basis is not None:
