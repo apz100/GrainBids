@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timezone
 from decimal import Decimal
 import math
+import uuid
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Select, and_, desc, func, select
@@ -12,6 +13,8 @@ from app.core.request_context import RequestContext, get_request_context
 from app.db.session import get_db
 from app.models.alert import Alert
 from app.models.alert_rule import AlertRule
+from app.models.company import Company
+from app.models.location import Location
 from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
 from app.models.source import Source
@@ -45,6 +48,8 @@ def _build_filters(
     source_name: str | None,
     region: str | None,
     captured_date: date | None,
+    company_id: uuid.UUID | None = None,
+    location_id: uuid.UUID | None = None,
 ):
     filters = []
 
@@ -56,6 +61,10 @@ def _build_filters(
         filters.append(NormalizedPrice.source_name.ilike(f"%{source_name.strip()}%"))
     if region:
         filters.append(NormalizedPrice.source_name.ilike(f"%{region.strip()}%"))
+    if company_id:
+        filters.append(NormalizedPrice.company_id == company_id)
+    if location_id:
+        filters.append(NormalizedPrice.location_id == location_id)
     if captured_date:
         start_dt = datetime.combine(captured_date, time.min, tzinfo=timezone.utc)
         end_dt = datetime.combine(captured_date, time.max, tzinfo=timezone.utc)
@@ -93,6 +102,8 @@ def list_normalized_prices(
     location: str | None = Query(None),
     source_name: str | None = Query(None),
     region: str | None = Query(None),
+    company_id: uuid.UUID | None = Query(None),
+    location_id: uuid.UUID | None = Query(None),
     captured_date: date | None = Query(None),
     limit: int = Query(200, ge=1, le=1000),
     context: RequestContext = Depends(get_request_context),
@@ -106,6 +117,8 @@ def list_normalized_prices(
         source_name=source_name,
         region=region,
         captured_date=captured_date,
+        company_id=company_id,
+        location_id=location_id,
     )
     if filters:
         query = query.where(*filters)
@@ -117,6 +130,8 @@ def list_normalized_prices(
             {
                 "id": str(price.id),
                 "snapshot_id": str(price.snapshot_id),
+                "company_id": str(price.company_id) if price.company_id else None,
+                "location_id": str(price.location_id) if price.location_id else None,
                 "captured_at": snapshot.captured_at.isoformat() if snapshot.captured_at else None,
                 "location": canonical_location_name(price.location) or "-",
                 "commodity_name": canonical_commodity_name(price.commodity_name) or "-",
@@ -145,7 +160,13 @@ def facets(
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    filters = _build_filters(commodity=None, location=None, source_name=None, region=None, captured_date=captured_date)
+    filters = _build_filters(
+        commodity=None,
+        location=None,
+        source_name=None,
+        region=None,
+        captured_date=captured_date,
+    )
     commodity_query = (
         select(func.distinct(NormalizedPrice.commodity_name))
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
@@ -197,12 +218,27 @@ def facets(
             if key not in company_map:
                 company_map[key] = label
 
+    company_rows = db.execute(
+        select(Company.id, Company.name).where(Company.org_id == context.org_id).order_by(Company.name.asc())
+    ).all()
+    location_rows = db.execute(
+        select(Location.id, Location.name, Location.region).where(Location.org_id == context.org_id).order_by(Location.name.asc())
+    ).all()
+
     return {
         "commodities": sorted(commodity_map.values()),
         "locations": sorted(location_map.values()),
         "source_names": sorted([*company_map.values(), *region_map.values()]),
         "company_names": sorted(company_map.values()),
         "region_names": sorted(region_map.values()),
+        "company_rows": [
+            {"id": str(company_id), "name": name}
+            for company_id, name in company_rows
+        ],
+        "location_rows": [
+            {"id": str(location_id), "name": name, "region": region}
+            for location_id, name, region in location_rows
+        ],
     }
 
 
@@ -212,6 +248,8 @@ def preview(
     location: str | None = Query(None),
     source_name: str | None = Query(None),
     region: str | None = Query(None),
+    company_id: uuid.UUID | None = Query(None),
+    location_id: uuid.UUID | None = Query(None),
     captured_date: date | None = Query(None),
     sort: str = Query(
         "captured_desc",
@@ -227,6 +265,8 @@ def preview(
         source_name=source_name,
         region=region,
         captured_date=captured_date,
+        company_id=company_id,
+        location_id=location_id,
     )
     query: Select = _base_query(context)
     if filters:
@@ -254,6 +294,8 @@ def preview(
         "rows": [
             {
                 "id": str(price.id),
+                "company_id": str(price.company_id) if price.company_id else None,
+                "location_id": str(price.location_id) if price.location_id else None,
                 "captured_at": snapshot.captured_at.isoformat() if snapshot.captured_at else None,
                 "location": canonical_location_name(price.location) or "-",
                 "source_name": canonical_source_name(price.source_name),
@@ -280,6 +322,8 @@ def top_movers(
     location: str | None = Query(None),
     source_name: str | None = Query(None),
     region: str | None = Query(None),
+    company_id: uuid.UUID | None = Query(None),
+    location_id: uuid.UUID | None = Query(None),
     captured_date: date | None = Query(None),
     limit: int = Query(10, ge=1, le=100),
     context: RequestContext = Depends(get_request_context),
@@ -300,6 +344,8 @@ def top_movers(
         source_name=source_name,
         region=region,
         captured_date=captured_date,
+        company_id=company_id,
+        location_id=location_id,
     )
     if filters:
         query = query.where(*filters)
@@ -333,6 +379,8 @@ def summary(
     location: str | None = Query(None),
     source_name: str | None = Query(None),
     region: str | None = Query(None),
+    company_id: uuid.UUID | None = Query(None),
+    location_id: uuid.UUID | None = Query(None),
     captured_date: date | None = Query(None),
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
@@ -343,6 +391,8 @@ def summary(
         source_name=source_name,
         region=region,
         captured_date=captured_date,
+        company_id=company_id,
+        location_id=location_id,
     )
 
     basis_query = (

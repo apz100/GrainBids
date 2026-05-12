@@ -1,7 +1,9 @@
 from app.models.alert import Alert
 from app.models.alert_rule import AlertRule
+from app.models.company import Company
 from app.models.commodity import Commodity
 from app.models.ingestion_run import IngestionRun
+from app.models.location import Location
 from app.models.normalized_price import NormalizedPrice
 from app.models.organization import Organization
 from app.models.price_snapshot import PriceSnapshot
@@ -16,8 +18,10 @@ from app.models.watchlist import Watchlist
 __all__ = [
     "Alert",
     "AlertRule",
+    "Company",
     "Commodity",
     "IngestionRun",
+    "Location",
     "NormalizedPrice",
     "Organization",
     "PriceSnapshot",

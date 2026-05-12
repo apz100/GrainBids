@@ -46,6 +46,8 @@ type FacetsResponse = {
   source_names: string[];
   company_names: string[];
   region_names: string[];
+  company_rows?: { id: string; name: string }[];
+  location_rows?: { id: string; name: string; region: string | null }[];
 };
 
 type SlaSummary = {
@@ -66,8 +68,8 @@ const COMMODITY_TABS = ["Corn", "Soybeans", "Wheat", "All"] as const;
 
 type FilterState = {
   commodity: string;
-  location: string;
-  company_name: string;
+  location_id: string;
+  company_id: string;
   region: string;
   captured_date: string;
   sort: "captured_desc" | "basis_change_desc" | "basis_desc" | "cash_bu_desc";
@@ -75,8 +77,8 @@ type FilterState = {
 
 const DEFAULT_FILTERS: FilterState = {
   commodity: "Corn",
-  location: "",
-  company_name: "",
+  location_id: "",
+  company_id: "",
   region: "",
   captured_date: "",
   sort: "captured_desc",
@@ -92,6 +94,8 @@ export default function DashboardPage() {
     source_names: [],
     company_names: [],
     region_names: [],
+    company_rows: [],
+    location_rows: [],
   });
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
   const [movers, setMovers] = useState<TopMover[]>([]);
@@ -143,6 +147,8 @@ export default function DashboardPage() {
           source_names: sourceNames,
           company_names: companyNames,
           region_names: regionNames,
+          company_rows: Array.isArray(rawFacets?.company_rows) ? rawFacets.company_rows : [],
+          location_rows: Array.isArray(rawFacets?.location_rows) ? rawFacets.location_rows : [],
         });
       }
     } catch (err) {
@@ -239,26 +245,26 @@ export default function DashboardPage() {
 
         <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_1fr_1fr_160px_160px]">
           <select
-            value={filters.location}
-            onChange={(event) => setFilters((prev) => ({ ...prev, location: event.target.value }))}
+            value={filters.location_id}
+            onChange={(event) => setFilters((prev) => ({ ...prev, location_id: event.target.value }))}
             className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
           >
             <option value="">All locations</option>
-            {facets.locations.map((location) => (
-              <option key={location} value={location}>
-                {location}
+            {(facets.location_rows || []).map((location) => (
+              <option key={location.id} value={location.id}>
+                {location.name}
               </option>
             ))}
           </select>
           <select
-            value={filters.company_name}
-            onChange={(event) => setFilters((prev) => ({ ...prev, company_name: event.target.value }))}
+            value={filters.company_id}
+            onChange={(event) => setFilters((prev) => ({ ...prev, company_id: event.target.value }))}
             className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
           >
             <option value="">All companies</option>
-            {facets.company_names.map((source) => (
-              <option key={source} value={source}>
-                {source}
+            {(facets.company_rows || []).map((source) => (
+              <option key={source.id} value={source.id}>
+                {source.name}
               </option>
             ))}
           </select>
@@ -497,8 +503,8 @@ function monthSortKey(value: string | null): number | null {
 function buildMarketQuery(filters: FilterState) {
   const params = new URLSearchParams();
   if (filters.commodity) params.set("commodity", filters.commodity);
-  if (filters.location) params.set("location", filters.location);
-  if (filters.company_name) params.set("source_name", filters.company_name);
+  if (filters.location_id) params.set("location_id", filters.location_id);
+  if (filters.company_id) params.set("company_id", filters.company_id);
   if (filters.region) params.set("region", filters.region);
   if (filters.captured_date) params.set("captured_date", filters.captured_date);
   if (filters.sort) params.set("sort", filters.sort);

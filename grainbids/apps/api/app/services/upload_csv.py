@@ -12,7 +12,9 @@ from typing import Mapping
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.company import Company
 from app.models.commodity import Commodity
+from app.models.location import Location
 from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
 from app.models.raw_upload import RawUpload
@@ -229,6 +231,8 @@ def persist_normalized_rows(
     db.flush()
 
     normalized_by_key: dict[str, NormalizedPrice] = {}
+    company_cache: dict[tuple[uuid.UUID, str], uuid.UUID] = {}
+    location_cache: dict[tuple[uuid.UUID, str], uuid.UUID] = {}
     row_count = 0
     duplicate_key_count = 0
     rejected_row_count = 0
@@ -305,11 +309,28 @@ def persist_normalized_rows(
             _increment_reason(row_reject_reasons, "missing_composite_key")
             continue
 
+        company_id = _resolve_company_id(
+            db,
+            org_id=source.org_id,
+            source_name=source_name,
+            cache=company_cache,
+        )
+        location_id = _resolve_location_id(
+            db,
+            org_id=source.org_id,
+            company_id=company_id,
+            location_name=location,
+            region=source.region,
+            cache=location_cache,
+        )
+
         # If a source file repeats the same market key, keep the last row from that file.
         if composite_key in normalized_by_key:
             duplicate_key_count += 1
         normalized_by_key[composite_key] = NormalizedPrice(
             snapshot_id=snapshot.id,
+            company_id=company_id,
+            location_id=location_id,
             location=location,
             commodity_name=commodity_name,
             source_name=source_name,
@@ -513,3 +534,74 @@ def _field_name_from_reason(reason: str) -> str:
 
 def _is_blank(value: str | None) -> bool:
     return not str(value or "").strip()
+
+
+def _resolve_company_id(
+    db: Session,
+    *,
+    org_id: uuid.UUID,
+    source_name: str,
+    cache: dict[tuple[uuid.UUID, str], uuid.UUID],
+) -> uuid.UUID | None:
+    normalized = normalize_text(source_name)
+    if not normalized:
+        return None
+    key = normalized.casefold()
+    cache_key = (org_id, key)
+    if cache_key in cache:
+        return cache[cache_key]
+
+    row = db.execute(
+        select(Company).where(
+            Company.org_id == org_id,
+            Company.canonical_key == key,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = Company(org_id=org_id, name=normalized, canonical_key=key)
+        db.add(row)
+        db.flush()
+    cache[cache_key] = row.id
+    return row.id
+
+
+def _resolve_location_id(
+    db: Session,
+    *,
+    org_id: uuid.UUID,
+    company_id: uuid.UUID | None,
+    location_name: str,
+    region: str | None,
+    cache: dict[tuple[uuid.UUID, str], uuid.UUID],
+) -> uuid.UUID | None:
+    normalized = normalize_text(location_name)
+    if not normalized:
+        return None
+    key = normalized.casefold()
+    cache_key = (org_id, key)
+    if cache_key in cache:
+        return cache[cache_key]
+
+    row = db.execute(
+        select(Location).where(
+            Location.org_id == org_id,
+            Location.canonical_key == key,
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = Location(
+            org_id=org_id,
+            company_id=company_id,
+            name=normalized,
+            canonical_key=key,
+            region=normalize_text(region),
+        )
+        db.add(row)
+        db.flush()
+    else:
+        if row.company_id is None and company_id is not None:
+            row.company_id = company_id
+        if row.region is None and normalize_text(region):
+            row.region = normalize_text(region)
+    cache[cache_key] = row.id
+    return row.id
