@@ -146,6 +146,16 @@ def _extract_price_from_text(value: str | None) -> Decimal | None:
     return None
 
 
+def _infer_cash_price_mt(*, commodity_name: str, cash_price_bu: Decimal | None) -> Decimal | None:
+    if cash_price_bu is None:
+        return None
+    key = commodity_name.strip().lower()
+    factor = BUSHELS_PER_METRIC_TONNE.get(key)
+    if factor is None:
+        factor = BUSHELS_PER_METRIC_TONNE.get(key.rstrip("s"), BUSHELS_PER_METRIC_TONNE["corn"])
+    return (cash_price_bu * factor).quantize(Decimal("0.01"))
+
+
 def _decode_payload(payload: bytes) -> str:
     for encoding in ("utf-8-sig", "utf-8", "latin-1"):
         try:

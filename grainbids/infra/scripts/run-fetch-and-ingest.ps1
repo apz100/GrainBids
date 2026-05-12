@@ -92,7 +92,8 @@ try {
   }
 
   Write-Output "Running fetcher profile '$Fetcher' from $fetchScript"
-  $fetchOutput = & $pythonExe $fetchScript 2>&1
+  # Run via cmd to avoid PowerShell treating Python stderr warnings as terminating errors.
+  $fetchOutput = & cmd /c "`"$pythonExe`" `"$fetchScript`" 2>&1"
   $fetchOutput | Out-Host
   if ($LASTEXITCODE -ne 0) {
     throw "Fetcher failed with exit code $LASTEXITCODE"

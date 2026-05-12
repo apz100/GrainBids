@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 import time
+from io import StringIO
 from typing import Optional
 
 import pandas as pd
@@ -88,7 +89,7 @@ def _parse_cash_table(html: str, company_name: str) -> pd.DataFrame:
     all_rows: list[pd.DataFrame] = []
     for tbl in tables:
         try:
-            df = pd.read_html(str(tbl), flavor="lxml")[0]
+            df = pd.read_html(StringIO(str(tbl)), flavor="lxml")[0]
         except Exception:
             continue
         if df.empty or len(df.columns) < 3:
