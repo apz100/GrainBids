@@ -4,6 +4,21 @@ import re
 
 
 NULL_LIKE = {"nan", "none", "null", "na", "n/a", "-"}
+REGION_SOURCE_LABELS = {
+    "eastern ontario cash bids": "Eastern Ontario",
+    "eastern ontario daily file": "Eastern Ontario",
+    "ontario cash bids": "Ontario",
+    "ontario daily file": "Ontario",
+}
+LOCATION_CANONICAL_OVERRIDES = {
+    # Known deterministic typo/variant cleanups
+    "starffordville": "Straffordville",
+    "staffordville": "Straffordville",
+    # Source-emitted variants that should map to one market location label
+    "toledo": "Toledo Elevator",
+    "toledo corn": "Toledo Elevator",
+    "toledo soybeans": "Toledo Elevator",
+}
 
 
 def normalize_text(value: str | None) -> str | None:
@@ -78,7 +93,11 @@ def canonical_location_name(location_name: str | None) -> str | None:
     # Normalize "Any <X> Branch" into "<X> Branch" so filter facets do not duplicate.
     value = re.sub(r"^any\s+(.+?)\s+branch$", r"\1 Branch", value, flags=re.IGNORECASE).strip()
     # Normalize duplicate separators/spaces again after substitutions.
-    return normalize_text(value)
+    value = normalize_text(value)
+    if value is None:
+        return None
+    override = LOCATION_CANONICAL_OVERRIDES.get(value.casefold())
+    return override or value
 
 
 def source_scope(source_name: str | None) -> tuple[str, str | None]:
@@ -86,7 +105,7 @@ def source_scope(source_name: str | None) -> tuple[str, str | None]:
     if canonical is None:
         return "company", None
     lowered = canonical.casefold()
-    if "ontario" in lowered and ("cash bids" in lowered or "daily file" in lowered):
-        region_name = "Eastern Ontario" if "eastern" in lowered else "Ontario"
+    region_name = REGION_SOURCE_LABELS.get(lowered)
+    if region_name:
         return "region", region_name
     return "company", canonical
