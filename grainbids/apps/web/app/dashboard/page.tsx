@@ -426,13 +426,15 @@ function sortPreviewRowsForDisplay(rows: PreviewRow[]): PreviewRow[] {
   return [...rows].sort((a, b) => {
     const locationCompare = compareString(a.location, b.location);
     if (locationCompare !== 0) return locationCompare;
+    const companyCompare = compareString(a.source_name ?? "", b.source_name ?? "");
+    if (companyCompare !== 0) return companyCompare;
     const commodityCompare = compareString(a.commodity_name, b.commodity_name);
     if (commodityCompare !== 0) return commodityCompare;
     const deliveryCompare = compareMonthLabel(a.delivery_label, b.delivery_label);
     if (deliveryCompare !== 0) return deliveryCompare;
     const futuresCompare = compareMonthLabel(a.futures_month, b.futures_month);
     if (futuresCompare !== 0) return futuresCompare;
-    return compareString(a.source_name ?? "", b.source_name ?? "");
+    return compareString(a.id, b.id);
   });
 }
 
@@ -480,24 +482,52 @@ function monthSortKey(value: string | null): number | null {
     december: 12,
   };
   const normalized = label.toLowerCase();
+
+  // Handle season labels often used in bids (example: "Harvest 26 Farm").
+  const harvestMatch = normalized.match(/\bharvest\b[^0-9]*(\d{2,4})?/);
+  if (harvestMatch) {
+    const year = parseYearToken(harvestMatch[1]);
+    if (year != null) return year * 12 + 10; // Oct as harvest proxy month
+  }
+
+  // Handle futures contract codes (e.g. ZCN26, ZSX27).
+  const futuresCodeMatch = normalized.match(/\b([fghjkmnquvxz])(?:c|s|w)?(\d{1,2})\b/);
+  if (futuresCodeMatch) {
+    const codeMonthMap: Record<string, number> = {
+      f: 1,
+      g: 2,
+      h: 3,
+      j: 4,
+      k: 5,
+      m: 6,
+      n: 7,
+      q: 8,
+      u: 9,
+      v: 10,
+      x: 11,
+      z: 12,
+    };
+    const month = codeMonthMap[futuresCodeMatch[1]];
+    const year = parseYearToken(futuresCodeMatch[2]);
+    if (month && year != null) return year * 12 + month;
+  }
+
   const match = normalized.match(
     /\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b[^0-9]*(\d{2,4})?/
   );
   if (!match) return null;
   const month = monthMap[match[1]];
   if (!month) return null;
-  let year = 0;
-  if (match[2]) {
-    const rawYear = Number.parseInt(match[2], 10);
-    if (Number.isNaN(rawYear)) {
-      year = 0;
-    } else if (rawYear < 100) {
-      year = 2000 + rawYear;
-    } else {
-      year = rawYear;
-    }
-  }
+  const year = parseYearToken(match[2]) ?? 0;
   return year * 12 + month;
+}
+
+function parseYearToken(token?: string): number | null {
+  if (!token) return null;
+  const rawYear = Number.parseInt(token, 10);
+  if (Number.isNaN(rawYear)) return null;
+  if (rawYear < 100) return 2000 + rawYear;
+  return rawYear;
 }
 
 function buildMarketQuery(filters: FilterState) {
