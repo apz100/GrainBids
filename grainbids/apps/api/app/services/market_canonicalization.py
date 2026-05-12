@@ -68,6 +68,13 @@ def canonical_location_name(location_name: str | None) -> str | None:
     # but keep explicit crop-condition labels like "Wet Corn".
     if not re.search(r"\bwet\s+corn$", value, flags=re.IGNORECASE):
         value = re.sub(r"\s+(corn|soybeans?|wheat|barley|oats|milo)$", "", value, flags=re.IGNORECASE).strip()
+    # Drop trailing ", <company>" artifacts from sheet labels (e.g. "Thamesford, GLG").
+    value = re.sub(
+        r",\s*(glg|g\.l\.g\.|agricharts|andersons|the andersons|hensall|snobelen|wanstead)$",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    ).strip()
     # Normalize "Any <X> Branch" into "<X> Branch" so filter facets do not duplicate.
     value = re.sub(r"^any\s+(.+?)\s+branch$", r"\1 Branch", value, flags=re.IGNORECASE).strip()
     # Normalize duplicate separators/spaces again after substitutions.
