@@ -104,6 +104,7 @@ export default function DashboardPage() {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [error, setError] = useState("");
+  const monthlyPreview = useMemo(() => buildMonthlyPreview(previewRows), [previewRows]);
 
   useEffect(() => {
     if (configError) {
@@ -357,6 +358,36 @@ export default function DashboardPage() {
       </section>
 
       <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Top Bids by Delivery Month</h2>
+        <p className="mt-1 text-xs text-black/55">Best cash bids after filters, grouped by delivery month.</p>
+        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {monthlyPreview.length === 0 ? (
+            <p className="text-sm text-black/55">No monthly preview data available.</p>
+          ) : (
+            monthlyPreview.map((group) => (
+              <article key={group.label} className="rounded-md border border-black/10 bg-white p-3">
+                <h3 className="text-sm font-semibold">{group.label}</h3>
+                <div className="mt-2 space-y-2">
+                  {group.rows.map((row) => (
+                    <div key={`${group.label}-${row.id}`} className="flex items-start justify-between gap-2 text-xs">
+                      <div>
+                        <p className="font-medium">{row.location}</p>
+                        <p className="text-black/60">{row.source_name || "-"} / {row.commodity_name}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold">{formatNumber(row.cash_price_bu)}</p>
+                        <p className="text-black/60">basis {formatSigned(row.basis)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">
         <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Top Basis Movers</h2>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {movers.length === 0 ? (
@@ -540,6 +571,34 @@ function buildMarketQuery(filters: FilterState) {
   if (filters.sort) params.set("sort", filters.sort);
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+function buildMonthlyPreview(rows: PreviewRow[]): { label: string; rows: PreviewRow[] }[] {
+  const groups = new Map<string, PreviewRow[]>();
+  for (const row of rows) {
+    const label = row.delivery_label || row.futures_month || "Unspecified";
+    const bucket = groups.get(label);
+    if (bucket) {
+      bucket.push(row);
+    } else {
+      groups.set(label, [row]);
+    }
+  }
+
+  const sortedLabels = Array.from(groups.keys()).sort((a, b) => compareMonthLabel(a, b));
+  return sortedLabels.map((label) => {
+    const items = (groups.get(label) || [])
+      .slice()
+      .sort((a, b) => {
+        const cashCompare = (b.cash_price_bu ?? Number.NEGATIVE_INFINITY) - (a.cash_price_bu ?? Number.NEGATIVE_INFINITY);
+        if (cashCompare !== 0) return cashCompare;
+        const basisCompare = (b.basis ?? Number.NEGATIVE_INFINITY) - (a.basis ?? Number.NEGATIVE_INFINITY);
+        if (basisCompare !== 0) return basisCompare;
+        return compareString(a.location, b.location);
+      })
+      .slice(0, 8);
+    return { label, rows: items };
+  });
 }
 
 async function readFailure(res: Response): Promise<string> {
