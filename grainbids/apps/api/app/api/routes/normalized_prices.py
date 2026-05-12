@@ -218,12 +218,52 @@ def facets(
             if key not in company_map:
                 company_map[key] = label
 
-    company_rows = db.execute(
-        select(Company.id, Company.name).where(Company.org_id == context.org_id).order_by(Company.name.asc())
-    ).all()
-    location_rows = db.execute(
-        select(Location.id, Location.name, Location.region).where(Location.org_id == context.org_id).order_by(Location.name.asc())
-    ).all()
+    company_rows_query = (
+        select(Company.id, Company.name)
+        .join(NormalizedPrice, NormalizedPrice.company_id == Company.id)
+        .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .where(Source.org_id == context.org_id)
+        .distinct()
+        .order_by(Company.name.asc())
+    )
+    location_rows_query = (
+        select(Location.id, Location.name, Location.region)
+        .join(NormalizedPrice, NormalizedPrice.location_id == Location.id)
+        .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .where(Source.org_id == context.org_id)
+        .distinct()
+        .order_by(Location.name.asc())
+    )
+    if filters:
+        company_rows_query = company_rows_query.where(*filters)
+        location_rows_query = location_rows_query.where(*filters)
+
+    company_rows = db.execute(company_rows_query).all()
+    location_rows = db.execute(location_rows_query).all()
+
+    deduped_companies: dict[str, dict[str, str]] = {}
+    for company_id, name in company_rows:
+        display_name = canonical_source_name(name) or (name or "").strip()
+        key = canonical_key(display_name)
+        if not key or not display_name:
+            continue
+        if key not in deduped_companies:
+            deduped_companies[key] = {"id": str(company_id), "name": display_name}
+
+    deduped_locations: dict[str, dict[str, str | None]] = {}
+    for location_id, name, region in location_rows:
+        display_name = canonical_location_name(name) or (name or "").strip()
+        key = canonical_key(display_name)
+        if not key or not display_name:
+            continue
+        if key not in deduped_locations:
+            deduped_locations[key] = {
+                "id": str(location_id),
+                "name": display_name,
+                "region": normalize_text(region),
+            }
 
     return {
         "commodities": sorted(commodity_map.values()),
@@ -231,14 +271,8 @@ def facets(
         "source_names": sorted([*company_map.values(), *region_map.values()]),
         "company_names": sorted(company_map.values()),
         "region_names": sorted(region_map.values()),
-        "company_rows": [
-            {"id": str(company_id), "name": name}
-            for company_id, name in company_rows
-        ],
-        "location_rows": [
-            {"id": str(location_id), "name": name, "region": region}
-            for location_id, name, region in location_rows
-        ],
+        "company_rows": sorted(deduped_companies.values(), key=lambda row: row["name"]),
+        "location_rows": sorted(deduped_locations.values(), key=lambda row: row["name"]),
     }
 
 
