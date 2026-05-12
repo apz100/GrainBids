@@ -64,7 +64,10 @@ def canonical_location_name(location_name: str | None) -> str | None:
     if normalized is None:
         return None
     value = re.sub(r"\s*/\s*", " / ", normalized).strip()
-    value = re.sub(r"\s+(corn|soybeans?|wheat|barley|oats|milo)$", "", value, flags=re.IGNORECASE).strip()
+    # Drop trailing commodity suffixes when they are just labeling rows (e.g. "Blenheim Corn"),
+    # but keep explicit crop-condition labels like "Wet Corn".
+    if not re.search(r"\bwet\s+corn$", value, flags=re.IGNORECASE):
+        value = re.sub(r"\s+(corn|soybeans?|wheat|barley|oats|milo)$", "", value, flags=re.IGNORECASE).strip()
     # Normalize "Any <X> Branch" into "<X> Branch" so filter facets do not duplicate.
     value = re.sub(r"^any\s+(.+?)\s+branch$", r"\1 Branch", value, flags=re.IGNORECASE).strip()
     # Normalize duplicate separators/spaces again after substitutions.
@@ -80,4 +83,3 @@ def source_scope(source_name: str | None) -> tuple[str, str | None]:
         region_name = "Eastern Ontario" if "eastern" in lowered else "Ontario"
         return "region", region_name
     return "company", canonical
-

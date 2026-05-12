@@ -584,7 +584,7 @@ def _resolve_location_id(
     region: str | None,
     cache: dict[tuple[uuid.UUID, str], uuid.UUID],
 ) -> uuid.UUID | None:
-    normalized = normalize_text(location_name)
+    normalized = canonical_location_name(location_name)
     if not normalized:
         return None
     key = normalized.casefold()
