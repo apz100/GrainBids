@@ -98,27 +98,39 @@ def upgrade() -> None:
     # Link normalized rows to canonical company and location entities.
     op.execute(
         """
-        UPDATE normalized_prices np
-        SET company_id = c.id
-        FROM price_snapshots ps
-        JOIN sources s ON s.id = ps.source_id
-        JOIN companies c ON c.org_id = s.org_id AND c.canonical_key = lower(trim(np.source_name))
-        WHERE np.snapshot_id = ps.id
-          AND np.source_name IS NOT NULL
-          AND trim(np.source_name) <> ''
+        UPDATE normalized_prices AS np
+        SET company_id = m.company_id
+        FROM (
+            SELECT np2.id AS normalized_price_id, c.id AS company_id
+            FROM normalized_prices np2
+            JOIN price_snapshots ps ON ps.id = np2.snapshot_id
+            JOIN sources s ON s.id = ps.source_id
+            JOIN companies c
+              ON c.org_id = s.org_id
+             AND c.canonical_key = lower(trim(np2.source_name))
+            WHERE np2.source_name IS NOT NULL
+              AND trim(np2.source_name) <> ''
+        ) AS m
+        WHERE np.id = m.normalized_price_id
           AND np.company_id IS NULL
         """
     )
     op.execute(
         """
-        UPDATE normalized_prices np
-        SET location_id = l.id
-        FROM price_snapshots ps
-        JOIN sources s ON s.id = ps.source_id
-        JOIN locations l ON l.org_id = s.org_id AND l.canonical_key = lower(trim(np.location))
-        WHERE np.snapshot_id = ps.id
-          AND np.location IS NOT NULL
-          AND trim(np.location) <> ''
+        UPDATE normalized_prices AS np
+        SET location_id = m.location_id
+        FROM (
+            SELECT np2.id AS normalized_price_id, l.id AS location_id
+            FROM normalized_prices np2
+            JOIN price_snapshots ps ON ps.id = np2.snapshot_id
+            JOIN sources s ON s.id = ps.source_id
+            JOIN locations l
+              ON l.org_id = s.org_id
+             AND l.canonical_key = lower(trim(np2.location))
+            WHERE np2.location IS NOT NULL
+              AND trim(np2.location) <> ''
+        ) AS m
+        WHERE np.id = m.normalized_price_id
           AND np.location_id IS NULL
         """
     )
