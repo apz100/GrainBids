@@ -59,7 +59,7 @@ def symbol_to_month(sym):
         return f"{month_name} {year}"
     return ''
 
-EXCEL_PATH = 'P:/Adam/Code/GrainBidsFrankenstine/Ontario_CashBids_2026-04-10.xlsx'
+EXCEL_PATH = 'P:/Adam/Code/GrainBids/Ontario_CashBids_2026-04-10.xlsx'
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'grain_bids.db'))
 
 STANDARD_COLUMNS = [

@@ -1,6 +1,6 @@
 import pandas as pd
 
-excel_path = 'P:/Adam/Code/GrainBidsFrankenstine/Ontario_CashBids_2026-04-10.xlsx'
+excel_path = 'P:/Adam/Code/GrainBids/Ontario_CashBids_2026-04-10.xlsx'
 
 excel = pd.ExcelFile(excel_path)
 print('Sheets:', excel.sheet_names)
