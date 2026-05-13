@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 import OpenAlertsPanel from "./open-alerts-panel";
-import { API_BASE, buildApiHeaders, getApiConfigError } from "@/lib/api";
+import { API_BASE, buildApiHeaders, getApiConfigError, isAdminRole } from "@/lib/api";
 
 type SummaryResponse = {
   average_basis: number | null;
@@ -25,6 +25,8 @@ type TopMover = {
 
 type PreviewRow = {
   id: string;
+  company_id?: string | null;
+  location_id?: string | null;
   captured_at: string | null;
   location: string;
   source_name: string | null;
@@ -105,6 +107,19 @@ export default function DashboardPage() {
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [error, setError] = useState("");
   const monthlyPreview = useMemo(() => buildMonthlyPreview(previewRows), [previewRows]);
+  const [selectedRowId, setSelectedRowId] = useState<string>("");
+  const selectedRow = useMemo(
+    () => previewRows.find((row) => row.id === selectedRowId) ?? previewRows[0] ?? null,
+    [previewRows, selectedRowId]
+  );
+  const [watchlistName, setWatchlistName] = useState("");
+  const [alertMetric, setAlertMetric] = useState<"cash_price_bu" | "basis">("cash_price_bu");
+  const [alertOperator, setAlertOperator] = useState(">=");
+  const [alertThreshold, setAlertThreshold] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const canManageAlerts = useMemo(() => isAdminRole(), []);
 
   useEffect(() => {
     if (configError) {
@@ -122,6 +137,13 @@ export default function DashboardPage() {
     void loadMarketData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, configError]);
+
+  useEffect(() => {
+    if (!selectedRow) return;
+    setWatchlistName(`${selectedRow.location} ${selectedRow.commodity_name}`.trim());
+    const preferredThreshold = selectedRow.cash_price_bu ?? selectedRow.basis ?? null;
+    setAlertThreshold(preferredThreshold == null ? "" : preferredThreshold.toFixed(2));
+  }, [selectedRow]);
 
   async function loadMeta() {
     setLoadingMeta(true);
@@ -336,7 +358,11 @@ export default function DashboardPage() {
                 </tr>
               ) : (
                 previewRows.map((row) => (
-                  <tr key={row.id} className="border-b border-black/5">
+                  <tr
+                    key={row.id}
+                    className={`cursor-pointer border-b border-black/5 ${selectedRow?.id === row.id ? "bg-amber-50/50" : ""}`}
+                    onClick={() => setSelectedRowId(row.id)}
+                  >
                     <td className="px-3 py-2">{row.location}</td>
                     <td className="px-3 py-2">{row.source_name || "-"}</td>
                     <td className="px-3 py-2">{row.commodity_name}</td>
@@ -385,6 +411,147 @@ export default function DashboardPage() {
             ))
           )}
         </div>
+      </section>
+
+      <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Selected Bid Actions</h2>
+        {!selectedRow ? (
+          <p className="mt-2 text-sm text-black/55">Pick a row from Live Price Preview to create watchlists and alerts.</p>
+        ) : (
+          <div className="mt-3 grid gap-4 lg:grid-cols-2">
+            <article className="rounded-md border border-black/10 bg-white p-3 text-sm">
+              <p className="font-semibold">{selectedRow.location}</p>
+              <p className="text-black/60">{selectedRow.source_name || "-"} / {selectedRow.commodity_name}</p>
+              <p className="mt-1 text-black/60">Delivery: {selectedRow.delivery_label || "-"}</p>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                <p>Cash/Bu: <span className="font-semibold">{formatNumber(selectedRow.cash_price_bu)}</span></p>
+                <p>Basis: <span className="font-semibold">{formatNumber(selectedRow.basis)}</span></p>
+                <p>Futures: <span className="font-semibold">{selectedRow.futures_month || "-"}</span></p>
+                <p>Fut Px: <span className="font-semibold">{formatNumber(selectedRow.futures_price)}</span></p>
+              </div>
+            </article>
+
+            <div className="space-y-3">
+              <div className="rounded-md border border-black/10 bg-white p-3">
+                <h3 className="text-sm font-medium">Add to watchlist</h3>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    value={watchlistName}
+                    onChange={(event) => setWatchlistName(event.target.value)}
+                    placeholder="Watchlist name"
+                    className="w-full rounded-md border border-black/15 px-3 py-2 text-sm"
+                  />
+                  <button
+                    type="button"
+                    disabled={submitting || !watchlistName.trim()}
+                    onClick={async () => {
+                      if (!selectedRow) return;
+                      setSubmitting(true);
+                      setActionError("");
+                      setActionMessage("");
+                      try {
+                        const params = new URLSearchParams({
+                          name: watchlistName.trim(),
+                          location: selectedRow.location,
+                          commodity_name: selectedRow.commodity_name,
+                          source_name: selectedRow.source_name || "",
+                        });
+                        const res = await fetch(`${API_BASE}/api/watchlists?${params.toString()}`, {
+                          method: "POST",
+                          headers,
+                        });
+                        if (!res.ok) throw new Error(await readFailure(res));
+                        setActionMessage(`Watchlist created: ${watchlistName.trim()}`);
+                      } catch (err) {
+                        setActionError(err instanceof Error ? err.message : String(err));
+                      } finally {
+                        setSubmitting(false);
+                      }
+                    }}
+                    className="rounded-md border border-black bg-black px-3 py-2 text-sm text-white disabled:opacity-60"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-black/10 bg-white p-3">
+                <h3 className="text-sm font-medium">Create alert rule from this bid</h3>
+                {!canManageAlerts ? (
+                  <p className="mt-2 text-xs text-black/55">Admin role required to create alert rules.</p>
+                ) : (
+                  <div className="mt-2 grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
+                    <select
+                      value={alertMetric}
+                      onChange={(event) => {
+                        const metric = event.target.value as "cash_price_bu" | "basis";
+                        setAlertMetric(metric);
+                        const base = metric === "cash_price_bu" ? selectedRow.cash_price_bu : selectedRow.basis;
+                        setAlertThreshold(base == null ? "" : base.toFixed(2));
+                      }}
+                      className="rounded-md border border-black/15 px-2 py-2 text-sm"
+                    >
+                      <option value="cash_price_bu">Cash/Bu</option>
+                      <option value="basis">Basis</option>
+                    </select>
+                    <select
+                      value={alertOperator}
+                      onChange={(event) => setAlertOperator(event.target.value)}
+                      className="rounded-md border border-black/15 px-2 py-2 text-sm"
+                    >
+                      <option value=">=">&gt;=</option>
+                      <option value=">">&gt;</option>
+                      <option value="<=">&lt;=</option>
+                      <option value="<">&lt;</option>
+                    </select>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={alertThreshold}
+                      onChange={(event) => setAlertThreshold(event.target.value)}
+                      placeholder="Threshold"
+                      className="rounded-md border border-black/15 px-2 py-2 text-sm"
+                    />
+                    <button
+                      type="button"
+                      disabled={submitting || !alertThreshold.trim()}
+                      onClick={async () => {
+                        if (!selectedRow) return;
+                        setSubmitting(true);
+                        setActionError("");
+                        setActionMessage("");
+                        try {
+                          const params = new URLSearchParams({
+                            rule_type: alertMetric,
+                            threshold_value: Number(alertThreshold).toString(),
+                            comparison_operator: alertOperator,
+                            location: selectedRow.location,
+                          });
+                          const res = await fetch(`${API_BASE}/api/alerts/rules?${params.toString()}`, {
+                            method: "POST",
+                            headers,
+                          });
+                          if (!res.ok) throw new Error(await readFailure(res));
+                          setActionMessage(`Alert rule created: ${alertMetric} ${alertOperator} ${alertThreshold}`);
+                        } catch (err) {
+                          setActionError(err instanceof Error ? err.message : String(err));
+                        } finally {
+                          setSubmitting(false);
+                        }
+                      }}
+                      className="rounded-md border border-black bg-black px-3 py-2 text-sm text-white disabled:opacity-60"
+                    >
+                      Create
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {actionMessage ? <p className="text-xs text-emerald-700">{actionMessage}</p> : null}
+              {actionError ? <p className="text-xs text-rose-700">{actionError}</p> : null}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">
