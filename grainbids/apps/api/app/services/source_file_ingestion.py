@@ -4,9 +4,11 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 import time
 
 import pandas as pd
+import requests
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
@@ -69,9 +71,34 @@ def _read_source_file(path: Path) -> tuple[list[dict[str, object]], list[str]]:
     else:
         raise ValueError("source file must be .csv, .xlsx, or .xls")
 
-    
-def _read_multi_sheet_workbook(path: Path) -> tuple[list[dict[str, object]], list[str]]:
-    workbook = pd.read_excel(path, sheet_name=None)
+
+def _is_http_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _read_source_url(url: str) -> tuple[list[dict[str, object]], list[str]]:
+    response = requests.get(url, timeout=120)
+    response.raise_for_status()
+    payload = response.content
+    suffix = Path(urlparse(url).path).suffix.lower()
+    if suffix == ".csv":
+        text = payload.decode("utf-8-sig", errors="replace")
+        df = pd.read_csv(io.StringIO(text))
+        headers = [str(column) for column in df.columns.tolist()]
+        rows = df.where(pd.notnull(df), None).to_dict(orient="records")
+        return rows, headers
+    if suffix in {".xlsx", ".xls"}:
+        workbook = pd.read_excel(io.BytesIO(payload), sheet_name=None)
+        return _read_multi_sheet_workbook_from_dataframes(workbook, source_label=url)
+    raise ValueError("source URL must end with .csv, .xlsx, or .xls")
+
+
+def _read_multi_sheet_workbook_from_dataframes(
+    workbook: dict[str, pd.DataFrame],
+    *,
+    source_label: str,
+) -> tuple[list[dict[str, object]], list[str]]:
     canonical_headers = [
         "location",
         "commodity",
@@ -112,8 +139,19 @@ def _read_multi_sheet_workbook(path: Path) -> tuple[list[dict[str, object]], lis
             )
 
     if not merged_rows:
-        raise ValueError(f"workbook has no readable rows: {path}")
+        raise ValueError(f"workbook has no readable rows: {source_label}")
     return merged_rows, canonical_headers
+
+    
+def _read_multi_sheet_workbook(path: Path) -> tuple[list[dict[str, object]], list[str]]:
+    workbook = pd.read_excel(path, sheet_name=None)
+    return _read_multi_sheet_workbook_from_dataframes(workbook, source_label=str(path))
+
+
+def _read_source_input(source_identifier: str) -> tuple[list[dict[str, object]], list[str]]:
+    if _is_http_url(source_identifier):
+        return _read_source_url(source_identifier)
+    return _read_source_file(Path(source_identifier))
 
 
 def _get_source(db: Session, source_id: uuid.UUID) -> Source:
@@ -253,7 +291,7 @@ def ingest_source_file(
 
     try:
         started = datetime.now(timezone.utc)
-        rows, headers = _read_source_file(Path(source_file_path))
+        rows, headers = _read_source_input(source_file_path)
         fallback_commodity = _get_commodity(db, commodity_id) if commodity_id else None
         row_groups = _group_rows_by_commodity(
             db,
