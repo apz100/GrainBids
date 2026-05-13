@@ -53,6 +53,10 @@ Daily ingestion (manual):
 - one-step fetch + ingest (local): `infra/scripts/run-fetch-and-ingest.ps1 -Fetcher dynamic`
 - logs are written to `.runlogs/daily-ingestion-*.log`
 - one-step fetch + ingest (local): `infra/scripts/run-fetch-and-ingest.ps1 -Fetcher dynamic`
+- optional cloud-safe upload + ingest trigger:
+  - set env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GRAINBIDS_API_URL`, `NEXT_PUBLIC_ORG_ID`
+  - run:
+    - `infra/scripts/run-fetch-and-ingest.ps1 -Fetcher grainbidder -UploadToSupabase -SupabaseBucket ingestion -SupabasePrefix ontario -TriggerCloudIngestion`
 
 Daily ingestion (Windows Scheduled Task):
 - Preview task config:
@@ -79,4 +83,5 @@ Health checks:
 Scheduling:
 - Use host scheduler/cron at `08:00` and `15:00` America/Toronto.
 - Job command: `python -m app.jobs.daily_source_ingestion`
+- For Render-hosted ingestion, set `sources.url` to stable public HTTPS file URLs (not local `P:\...` paths).
 

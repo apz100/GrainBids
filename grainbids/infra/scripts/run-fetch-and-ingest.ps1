@@ -5,7 +5,16 @@ param(
   [string]$SourceFilePath = "",
   [string]$CommodityId = "",
   [int]$MaxAttempts = 0,
-  [switch]$SkipPipInstall
+  [switch]$SkipPipInstall,
+  [switch]$UploadToSupabase,
+  [string]$SupabaseUrl = $env:SUPABASE_URL,
+  [string]$SupabaseServiceRoleKey = $env:SUPABASE_SERVICE_ROLE_KEY,
+  [string]$SupabaseBucket = "ingestion",
+  [string]$SupabasePrefix = "ontario",
+  [switch]$TriggerCloudIngestion,
+  [string]$CloudApiBaseUrl = $env:GRAINBIDS_API_URL,
+  [string]$CloudOrgId = $env:NEXT_PUBLIC_ORG_ID,
+  [string]$CloudUserRole = "admin"
 )
 
 $ErrorActionPreference = "Stop"
@@ -70,6 +79,73 @@ function Resolve-LatestOutputPath {
   }
 }
 
+function Join-ObjectKey {
+  param(
+    [string]$Prefix,
+    [string]$FileName
+  )
+  if ([string]::IsNullOrWhiteSpace($Prefix)) {
+    return $FileName
+  }
+  return ($Prefix.TrimEnd("/") + "/" + $FileName)
+}
+
+function Get-ObjectUrlPath {
+  param(
+    [string]$ObjectKey
+  )
+  $segments = $ObjectKey -split "/"
+  $encoded = $segments | ForEach-Object { [System.Uri]::EscapeDataString($_) }
+  return ($encoded -join "/")
+}
+
+function Upload-ToSupabaseStorage {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$LocalPath,
+    [Parameter(Mandatory = $true)]
+    [string]$ObjectKey,
+    [Parameter(Mandatory = $true)]
+    [string]$BaseUrl,
+    [Parameter(Mandatory = $true)]
+    [string]$ServiceRoleKey,
+    [Parameter(Mandatory = $true)]
+    [string]$Bucket
+  )
+
+  if (!(Test-Path $LocalPath)) {
+    throw "File not found for upload: $LocalPath"
+  }
+
+  $objectUrlPath = Get-ObjectUrlPath -ObjectKey $ObjectKey
+  $uploadUrl = "$($BaseUrl.TrimEnd('/'))/storage/v1/object/$Bucket/$objectUrlPath"
+  $publicUrl = "$($BaseUrl.TrimEnd('/'))/storage/v1/object/public/$Bucket/$objectUrlPath"
+  $bytes = [System.IO.File]::ReadAllBytes($LocalPath)
+  $headers = @{
+    "apikey"        = $ServiceRoleKey
+    "Authorization" = "Bearer $ServiceRoleKey"
+    "x-upsert"      = "true"
+  }
+  Invoke-RestMethod -Method Post -Uri $uploadUrl -Headers $headers -ContentType "application/octet-stream" -Body $bytes | Out-Null
+  return $publicUrl
+}
+
+function Invoke-CloudIngestionRun {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$ApiBaseUrl,
+    [Parameter(Mandatory = $true)]
+    [string]$OrgId,
+    [string]$UserRole = "admin"
+  )
+  $headers = @{
+    "X-Org-Id" = $OrgId
+    "X-User-Role" = $UserRole
+  }
+  $uri = "$($ApiBaseUrl.TrimEnd('/'))/api/ingestion/source-files/run"
+  return Invoke-RestMethod -Method Post -Uri $uri -Headers $headers
+}
+
 $apiRoot = (Resolve-Path $ApiDir).Path
 Push-Location $apiRoot
 try {
@@ -109,6 +185,46 @@ try {
     throw "Resolved latest source file does not exist: $resolvedSourcePath"
   }
 
+  if ($UploadToSupabase.IsPresent) {
+    if ([string]::IsNullOrWhiteSpace($SupabaseUrl)) {
+      throw "SUPABASE_URL is required when -UploadToSupabase is set."
+    }
+    if ([string]::IsNullOrWhiteSpace($SupabaseServiceRoleKey)) {
+      throw "SUPABASE_SERVICE_ROLE_KEY is required when -UploadToSupabase is set."
+    }
+
+    $resolvedItem = Get-Item -LiteralPath $resolvedSourcePath
+    $baseDir = $resolvedItem.DirectoryName
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($resolvedItem.Name)
+    if ($baseName.EndsWith("_latest")) {
+      $rootName = $baseName.Substring(0, $baseName.Length - "_latest".Length)
+    } else {
+      $rootName = $baseName
+    }
+    $csvPath = Join-Path $baseDir "$rootName`_latest.csv"
+    $xlsxPath = Join-Path $baseDir "$rootName`_latest.xlsx"
+    $uploadTargets = @()
+    if (Test-Path $csvPath) { $uploadTargets += $csvPath }
+    if (Test-Path $xlsxPath) { $uploadTargets += $xlsxPath }
+    if ($uploadTargets.Count -eq 0) {
+      $uploadTargets += $resolvedSourcePath
+    }
+
+    Write-Output "Uploading latest source files to Supabase bucket '$SupabaseBucket'..."
+    foreach ($target in $uploadTargets) {
+      $fileName = [System.IO.Path]::GetFileName($target)
+      $objectKey = Join-ObjectKey -Prefix $SupabasePrefix -FileName $fileName
+      $publicUrl = Upload-ToSupabaseStorage `
+        -LocalPath $target `
+        -ObjectKey $objectKey `
+        -BaseUrl $SupabaseUrl `
+        -ServiceRoleKey $SupabaseServiceRoleKey `
+        -Bucket $SupabaseBucket
+      Write-Output "UPLOADED_FILE=$target"
+      Write-Output "PUBLIC_URL=$publicUrl"
+    }
+  }
+
   $env:DAILY_SOURCE_FILE_PATH = $resolvedSourcePath
   Write-Output "Using DAILY_SOURCE_FILE_PATH=$resolvedSourcePath"
 
@@ -130,6 +246,25 @@ try {
   }
 
   & $dailyScript @dailyArgs
+
+  if ($TriggerCloudIngestion.IsPresent) {
+    if ([string]::IsNullOrWhiteSpace($CloudApiBaseUrl)) {
+      throw "GRAINBIDS_API_URL is required when -TriggerCloudIngestion is set."
+    }
+    if ([string]::IsNullOrWhiteSpace($CloudOrgId)) {
+      throw "NEXT_PUBLIC_ORG_ID is required when -TriggerCloudIngestion is set."
+    }
+    Write-Output "Triggering cloud ingestion cycle on $CloudApiBaseUrl ..."
+    $cloudResult = Invoke-CloudIngestionRun -ApiBaseUrl $CloudApiBaseUrl -OrgId $CloudOrgId -UserRole $CloudUserRole
+    $summary = $cloudResult.summary
+    if ($summary) {
+      Write-Output "CLOUD_TOTAL_SOURCES=$($summary.total_sources)"
+      Write-Output "CLOUD_COMPLETED_SOURCES=$($summary.completed_sources)"
+      Write-Output "CLOUD_FAILED_SOURCES=$($summary.failed_sources)"
+    } else {
+      Write-Output "CLOUD_RESULT=completed"
+    }
+  }
 } finally {
   Pop-Location
 }
