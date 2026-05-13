@@ -6,7 +6,7 @@ import math
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Select, and_, desc, func, select
+from sqlalchemy import Select, and_, case, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.core.request_context import RequestContext, get_request_context
@@ -41,7 +41,14 @@ def _to_float(value: Decimal | float | int | None) -> float | None:
         return None
     return number
 
-
+def _to_basis_float(value: Decimal | float | int | None) -> float | None:
+    number = _to_float(value)
+    if number is None:
+        return None
+    # Some legacy rows were loaded as cents-per-bu (140) instead of dollars (1.40).
+    if abs(number) >= 10:
+        return number / 100.0
+    return number
 def _build_filters(
     commodity: str | None,
     location: str | None,
@@ -141,10 +148,10 @@ def list_normalized_prices(
                 "delivery_label": normalize_text(price.delivery_label),
                 "futures_month": normalize_text(price.futures_month),
                 "futures_price": _to_float(price.futures_price),
-                "basis": _to_float(price.basis),
+                "basis": _to_basis_float(price.basis),
                 "cash_price_bu": _to_float(price.cash_price_bu),
                 "cash_price_mt": _to_float(price.cash_price_mt),
-                "basis_change": _to_float(price.basis_change),
+                "basis_change": _to_basis_float(price.basis_change),
                 "cash_price_bu_change": _to_float(price.cash_price_bu_change),
                 "cash_price_mt_change": _to_float(price.cash_price_mt_change),
                 "composite_key": price.composite_key,
@@ -337,8 +344,8 @@ def preview(
                 "delivery_label": normalize_text(price.delivery_label) or normalize_text(price.delivery_end),
                 "futures_month": normalize_text(price.futures_month),
                 "futures_price": _to_float(price.futures_price),
-                "basis": _to_float(price.basis),
-                "basis_change": _to_float(price.basis_change),
+                "basis": _to_basis_float(price.basis),
+                "basis_change": _to_basis_float(price.basis_change),
                 "cash_price_bu": _to_float(price.cash_price_bu),
                 "cash_price_bu_change": _to_float(price.cash_price_bu_change),
                 "cash_price_mt": _to_float(price.cash_price_mt),
@@ -395,8 +402,8 @@ def top_movers(
                 "location": canonical_location_name(price.location) or "-",
                 "commodity_name": canonical_commodity_name(price.commodity_name) or "-",
                 "source_name": canonical_source_name(price.source_name),
-                "basis": _to_float(price.basis),
-                "basis_change": _to_float(price.basis_change),
+                "basis": _to_basis_float(price.basis),
+                "basis_change": _to_basis_float(price.basis_change),
                 "cash_price_bu": _to_float(price.cash_price_bu),
                 "cash_price_bu_change": _to_float(price.cash_price_bu_change),
                 "cash_price_mt": _to_float(price.cash_price_mt),
@@ -429,8 +436,12 @@ def summary(
         location_id=location_id,
     )
 
+    normalized_basis_expr = case(
+        (func.abs(NormalizedPrice.basis) >= 10, NormalizedPrice.basis / 100),
+        else_=NormalizedPrice.basis,
+    )
     basis_query = (
-        select(func.avg(NormalizedPrice.basis), func.count(NormalizedPrice.id))
+        select(func.avg(normalized_basis_expr), func.count(NormalizedPrice.id))
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
         .join(Source, Source.id == PriceSnapshot.source_id)
         .where(Source.org_id == context.org_id)

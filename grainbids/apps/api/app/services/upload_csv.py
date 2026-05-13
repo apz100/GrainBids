@@ -156,6 +156,15 @@ def _infer_cash_price_mt(*, commodity_name: str, cash_price_bu: Decimal | None) 
     return (cash_price_bu * factor).quantize(Decimal("0.01"))
 
 
+def _normalize_basis_value(value: Decimal | None) -> Decimal | None:
+    if value is None:
+        return None
+    # Some source boards publish basis in cents (e.g., 140 == $1.40/bu).
+    if abs(value) >= Decimal("10"):
+        return value / Decimal("100")
+    return value
+
+
 def _decode_payload(payload: bytes) -> str:
     for encoding in ("utf-8-sig", "utf-8", "latin-1"):
         try:
@@ -274,7 +283,7 @@ def persist_normalized_rows(
         futures_month = normalize_text(symbol_to_month_extended(futures_month_raw) or futures_month_raw) or ""
 
         futures_price = _parse_decimal(str(row.get(mapping.get("futures_price", ""), "") or ""))
-        basis = _parse_decimal(str(row.get(mapping.get("basis", ""), "") or ""))
+        basis = _normalize_basis_value(_parse_decimal(str(row.get(mapping.get("basis", ""), "") or "")))
         cash_price_bu = _parse_decimal(str(row.get(mapping.get("cash_price_bu", ""), "") or ""))
         cash_price_mt = _parse_decimal(str(row.get(mapping.get("cash_price_mt", ""), "") or ""))
         if cash_price_mt is None:
