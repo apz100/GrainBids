@@ -13,6 +13,8 @@ from app.services.alert_evaluator import (  # noqa: E402
     _compare,
     _extract_metric_value,
     _location_matches,
+    _month_scope_matches,
+    _saved_search_matches,
 )
 
 
@@ -62,6 +64,43 @@ class AlertEvaluatorHelperTests(unittest.TestCase):
             cash_price_mt_change=None,
         )
         self.assertIsNone(_extract_metric_value("basis", row))
+
+    def test_saved_search_match(self) -> None:
+        saved_search = SimpleNamespace(
+            filters_json={
+                "location": "Brinston",
+                "commodity_name": "Corn",
+                "source_name": "Agricharts",
+                "company_id": "11111111-1111-1111-1111-111111111111",
+            }
+        )
+        matching_row = SimpleNamespace(
+            location="Brinston Corn",
+            commodity_name="Corn",
+            source_name="Agricharts",
+            company_id="11111111-1111-1111-1111-111111111111",
+            location_id=None,
+        )
+        non_matching_row = SimpleNamespace(
+            location="Hensall",
+            commodity_name="Corn",
+            source_name="Agricharts",
+            company_id="11111111-1111-1111-1111-111111111111",
+            location_id=None,
+        )
+        self.assertTrue(_saved_search_matches(saved_search, matching_row))
+        self.assertFalse(_saved_search_matches(saved_search, non_matching_row))
+
+    def test_month_scope_match(self) -> None:
+        row = SimpleNamespace(
+            delivery_label="May 26 Elev",
+            delivery_end=None,
+            delivery_start=None,
+            futures_month="Jul 2026",
+        )
+        self.assertTrue(_month_scope_matches(["jul 2026"], row))
+        self.assertTrue(_month_scope_matches(["may 26"], row))
+        self.assertFalse(_month_scope_matches(["dec 2027"], row))
 
 
 if __name__ == "__main__":

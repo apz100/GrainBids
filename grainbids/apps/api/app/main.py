@@ -10,6 +10,7 @@ from app.api.routes.market_data import router as market_data_router
 from app.api.routes.normalized_prices import router as normalized_prices_router
 from app.api.routes.quotes import router as quotes_router
 from app.api.routes.reference import router as reference_router
+from app.api.routes.saved_searches import router as saved_searches_router
 from app.api.routes.settings import router as settings_router
 from app.api.routes.signals import router as signals_router
 from app.api.routes.sources import router as sources_router
@@ -66,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(alerts_router)
     app.include_router(quotes_router)
     app.include_router(watchlists_router)
+    app.include_router(saved_searches_router)
     app.include_router(signals_router)
     app.include_router(settings_router)
     return app

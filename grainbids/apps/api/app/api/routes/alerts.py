@@ -10,6 +10,7 @@ from app.core.request_context import RequestContext, get_request_context, requir
 from app.db.session import get_db
 from app.models.alert import Alert
 from app.models.alert_rule import AlertRule
+from app.models.saved_search import SavedSearch
 
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
@@ -48,6 +49,8 @@ def list_alert_rules(
                 "threshold_value": float(rule.threshold_value),
                 "comparison_operator": rule.comparison_operator,
                 "location": rule.location,
+                "saved_search_id": str(rule.saved_search_id) if rule.saved_search_id else None,
+                "delivery_months": rule.delivery_months_json or [],
                 "is_active": rule.is_active,
                 "last_triggered_at": last_trigger.isoformat() if last_trigger else None,
                 "open_alert_count": int(open_count or 0),
@@ -83,6 +86,8 @@ def list_recent_alerts(
                 "comparison_operator": rule.comparison_operator,
                 "threshold_value": float(rule.threshold_value),
                 "location": rule.location,
+                "saved_search_id": str(rule.saved_search_id) if rule.saved_search_id else None,
+                "delivery_months": rule.delivery_months_json or [],
             }
             for alert, rule in rows
         ]
@@ -123,6 +128,8 @@ def update_alert_status(
         "comparison_operator": rule.comparison_operator,
         "threshold_value": float(rule.threshold_value),
         "location": rule.location,
+        "saved_search_id": str(rule.saved_search_id) if rule.saved_search_id else None,
+        "delivery_months": rule.delivery_months_json or [],
     }
 
 
@@ -147,16 +154,29 @@ def create_alert_rule(
     comparison_operator: str = Query(">", pattern="^(>|<|>=|<=|=)$"),
     location: str | None = Query(None),
     commodity_id: uuid.UUID | None = Query(None),
+    saved_search_id: uuid.UUID | None = Query(None),
+    delivery_months: str | None = Query(None, description="Comma-separated month labels"),
     context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
+    saved_search: SavedSearch | None = None
+    if saved_search_id is not None:
+        saved_search = db.execute(
+            select(SavedSearch).where(SavedSearch.id == saved_search_id, SavedSearch.org_id == context.org_id)
+        ).scalar_one_or_none()
+        if saved_search is None:
+            raise HTTPException(status_code=404, detail="saved search not found")
+
+    month_scope = _parse_delivery_months(delivery_months)
     row = AlertRule(
         org_id=context.org_id,
         commodity_id=commodity_id,
+        saved_search_id=saved_search.id if saved_search else None,
         rule_type=rule_type.strip(),
         threshold_value=threshold_value,
         comparison_operator=comparison_operator,
         location=location.strip() if location else None,
+        delivery_months_json=month_scope,
         is_active=True,
     )
     db.add(row)
@@ -172,6 +192,8 @@ def update_alert_rule(
     comparison_operator: str | None = Query(None, pattern="^(>|<|>=|<=|=)$"),
     is_active: bool | None = Query(None),
     location: str | None = Query(None),
+    saved_search_id: uuid.UUID | None = Query(None),
+    delivery_months: str | None = Query(None, description="Comma-separated month labels"),
     context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -188,6 +210,15 @@ def update_alert_rule(
         row.is_active = is_active
     if location is not None:
         row.location = location.strip() or None
+    if saved_search_id is not None:
+        saved_search = db.execute(
+            select(SavedSearch).where(SavedSearch.id == saved_search_id, SavedSearch.org_id == context.org_id)
+        ).scalar_one_or_none()
+        if saved_search is None:
+            raise HTTPException(status_code=404, detail="saved search not found")
+        row.saved_search_id = saved_search.id
+    if delivery_months is not None:
+        row.delivery_months_json = _parse_delivery_months(delivery_months)
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -208,3 +239,11 @@ def delete_alert_rule(
     db.delete(row)
     db.commit()
     return {"deleted": str(rule_id)}
+
+
+def _parse_delivery_months(raw: str | None) -> list[str] | None:
+    if raw is None:
+        return None
+    values = [chunk.strip() for chunk in raw.split(",")]
+    normalized = [value for value in values if value]
+    return normalized or None

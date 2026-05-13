@@ -11,6 +11,7 @@ from app.models.alert import Alert
 from app.models.alert_rule import AlertRule
 from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
+from app.models.saved_search import SavedSearch
 from app.models.source import Source
 
 
@@ -54,6 +55,7 @@ def evaluate_alert_rules_for_snapshot(
     rows = db.execute(
         select(NormalizedPrice).where(NormalizedPrice.snapshot_id == snapshot.id)
     ).scalars().all()
+    saved_search_map = _load_saved_search_map(db, rules)
 
     created_alerts = 0
     deduped_alerts = 0
@@ -69,6 +71,10 @@ def evaluate_alert_rules_for_snapshot(
 
         for row in rows:
             if not _location_matches(rule.location, row.location):
+                continue
+            if not _saved_search_matches(saved_search_map.get(rule.saved_search_id), row):
+                continue
+            if not _month_scope_matches(rule.delivery_months_json, row):
                 continue
 
             metric_value = _extract_metric_value(rule.rule_type, row)
@@ -180,3 +186,60 @@ def _build_alert_message(
         f"Rule {rule.id} triggered: {rule.rule_type} {rule.comparison_operator} {threshold} "
         f"(actual={metric_value}) at {location} / {commodity} / {delivery}"
     )
+
+
+def _load_saved_search_map(db: Session, rules: list[AlertRule]) -> dict[uuid.UUID, SavedSearch]:
+    ids = [rule.saved_search_id for rule in rules if rule.saved_search_id is not None]
+    if not ids:
+        return {}
+    rows = db.execute(select(SavedSearch).where(SavedSearch.id.in_(ids), SavedSearch.is_active.is_(True))).scalars().all()
+    return {row.id: row for row in rows}
+
+
+def _saved_search_matches(saved_search: SavedSearch | None, row: NormalizedPrice) -> bool:
+    if saved_search is None:
+        return True
+    filters = saved_search.filters_json or {}
+    location_filter = str(filters.get("location", "") or "").strip().lower()
+    commodity_filter = str(filters.get("commodity_name", "") or "").strip().lower()
+    source_filter = str(filters.get("source_name", "") or "").strip().lower()
+    region_filter = str(filters.get("region", "") or "").strip().lower()
+    location_id_filter = str(filters.get("location_id", "") or "").strip()
+    company_id_filter = str(filters.get("company_id", "") or "").strip()
+
+    if location_filter and not _contains_casefold(row.location, location_filter):
+        return False
+    if commodity_filter and not _contains_casefold(row.commodity_name, commodity_filter):
+        return False
+    if source_filter and not _contains_casefold(row.source_name, source_filter):
+        return False
+    if region_filter and not _contains_casefold(row.source_name, region_filter):
+        return False
+    if location_id_filter and (row.location_id is None or str(row.location_id) != location_id_filter):
+        return False
+    if company_id_filter and (row.company_id is None or str(row.company_id) != company_id_filter):
+        return False
+    return True
+
+
+def _month_scope_matches(month_scope: list[str] | None, row: NormalizedPrice) -> bool:
+    values = [token.strip().lower() for token in (month_scope or []) if token and token.strip()]
+    if not values:
+        return True
+    row_tokens = " ".join(
+        [
+            (row.delivery_label or "").lower(),
+            (row.delivery_end or "").lower(),
+            (row.delivery_start or "").lower(),
+            (row.futures_month or "").lower(),
+        ]
+    )
+    if not row_tokens.strip():
+        return False
+    return any(token in row_tokens for token in values)
+
+
+def _contains_casefold(value: str | None, needle: str) -> bool:
+    if not value:
+        return False
+    return needle in value.strip().lower()

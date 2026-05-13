@@ -4,6 +4,7 @@ from app.models.company import Company
 from app.models.commodity import Commodity
 from app.models.ingestion_run import IngestionRun
 from app.models.location import Location
+from app.models.notification_log import NotificationLog
 from app.models.normalized_price import NormalizedPrice
 from app.models.organization import Organization
 from app.models.price_snapshot import PriceSnapshot
@@ -14,6 +15,7 @@ from app.models.source import Source
 from app.models.source_health_snapshot import SourceHealthSnapshot
 from app.models.user import User
 from app.models.watchlist import Watchlist
+from app.models.saved_search import SavedSearch
 
 __all__ = [
     "Alert",
@@ -22,11 +24,13 @@ __all__ = [
     "Commodity",
     "IngestionRun",
     "Location",
+    "NotificationLog",
     "NormalizedPrice",
     "Organization",
     "PriceSnapshot",
     "QuoteRun",
     "RawUpload",
+    "SavedSearch",
     "SignalForecast",
     "Source",
     "SourceHealthSnapshot",

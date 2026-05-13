@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.alert import Alert
 from app.models.alert_rule import AlertRule
+from app.models.notification_log import NotificationLog
 
 
 def notify_new_alerts(db: Session, *, alert_ids: list[uuid.UUID]) -> None:
@@ -18,9 +19,11 @@ def notify_new_alerts(db: Session, *, alert_ids: list[uuid.UUID]) -> None:
         return
 
     if not settings.alert_email_to or not settings.alert_email_from:
+        _log_skipped_notifications(db, alert_ids=alert_ids, reason="missing email recipient configuration")
         return
 
     if not settings.alert_smtp_host:
+        _log_skipped_notifications(db, alert_ids=alert_ids, reason="missing smtp host")
         return
 
     rows = db.execute(
@@ -45,7 +48,35 @@ def notify_new_alerts(db: Session, *, alert_ids: list[uuid.UUID]) -> None:
     message["To"] = settings.alert_email_to
     message.set_content("\n".join(lines))
 
-    _send(message)
+    try:
+        _send(message)
+        for alert, rule in rows:
+            db.add(
+                NotificationLog(
+                    org_id=rule.org_id,
+                    alert_id=alert.id,
+                    channel="email",
+                    recipient=settings.alert_email_to,
+                    status="sent",
+                    payload_json={"subject": message["Subject"]},
+                )
+            )
+        db.commit()
+    except Exception as exc:
+        for alert, rule in rows:
+            db.add(
+                NotificationLog(
+                    org_id=rule.org_id,
+                    alert_id=alert.id,
+                    channel="email",
+                    recipient=settings.alert_email_to,
+                    status="failed",
+                    error_message=str(exc),
+                    payload_json={"subject": message["Subject"]},
+                )
+            )
+        db.commit()
+        raise
 
 
 def _send(message: EmailMessage) -> None:
@@ -65,3 +96,25 @@ def _send(message: EmailMessage) -> None:
         if username and password:
             client.login(username, password)
         client.send_message(message)
+
+
+def _log_skipped_notifications(db: Session, *, alert_ids: list[uuid.UUID], reason: str) -> None:
+    if not alert_ids:
+        return
+    rows = db.execute(
+        select(Alert, AlertRule)
+        .join(AlertRule, AlertRule.id == Alert.alert_rule_id)
+        .where(Alert.id.in_(alert_ids))
+    ).all()
+    for alert, rule in rows:
+        db.add(
+            NotificationLog(
+                org_id=rule.org_id,
+                alert_id=alert.id,
+                channel="email",
+                recipient=settings.alert_email_to,
+                status="skipped",
+                error_message=reason,
+            )
+        )
+    db.commit()
