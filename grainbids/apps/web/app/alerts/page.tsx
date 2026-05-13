@@ -35,6 +35,9 @@ export default function AlertsPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [activeAlertId, setActiveAlertId] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "new" | "open" | "pending" | "acknowledged" | "resolved">("all");
+  const [ruleFilter, setRuleFilter] = useState<string>("all");
+  const [searchText, setSearchText] = useState("");
 
   async function loadData() {
     setLoading(true);
@@ -78,6 +81,22 @@ export default function AlertsPage() {
   useEffect(() => {
     loadData().catch((err) => setError(String(err)));
   }, [openOnly]);
+
+  const visibleAlerts = alerts.filter((alert) => {
+    if (statusFilter !== "all" && alert.status !== statusFilter) return false;
+    if (ruleFilter !== "all" && alert.rule_type !== ruleFilter) return false;
+    const text = searchText.trim().toLowerCase();
+    if (!text) return true;
+    return (
+      (alert.location || "").toLowerCase().includes(text)
+      || (alert.message || "").toLowerCase().includes(text)
+      || (alert.rule_type || "").toLowerCase().includes(text)
+    );
+  });
+
+  const uniqueRuleTypes = Array.from(new Set(alerts.map((a) => a.rule_type).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b),
+  );
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
@@ -140,15 +159,48 @@ export default function AlertsPage() {
 
       <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
         <h2 className="text-lg font-semibold">Alert events</h2>
-        <label className="mt-3 inline-flex items-center gap-2 text-xs text-black/70">
+        <div className="mt-3 grid gap-2 md:grid-cols-4">
+          <label className="inline-flex items-center gap-2 text-xs text-black/70">
+            <input
+              type="checkbox"
+              checked={openOnly}
+              onChange={(event) => setOpenOnly(event.target.checked)}
+              className="h-4 w-4 rounded border border-black/20"
+            />
+            Show open alerts only
+          </label>
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+            className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
+          >
+            <option value="all">All statuses</option>
+            <option value="new">new</option>
+            <option value="open">open</option>
+            <option value="pending">pending</option>
+            <option value="acknowledged">acknowledged</option>
+            <option value="resolved">resolved</option>
+          </select>
+          <select
+            value={ruleFilter}
+            onChange={(event) => setRuleFilter(event.target.value)}
+            className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
+          >
+            <option value="all">All rule types</option>
+            {uniqueRuleTypes.map((ruleType) => (
+              <option key={ruleType} value={ruleType}>
+                {ruleType}
+              </option>
+            ))}
+          </select>
           <input
-            type="checkbox"
-            checked={openOnly}
-            onChange={(event) => setOpenOnly(event.target.checked)}
-            className="h-4 w-4 rounded border border-black/20"
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder="Search location/message"
+            className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
           />
-          Show open alerts only
-        </label>
+        </div>
+        <p className="mt-2 text-xs text-black/55">Showing {visibleAlerts.length} of {alerts.length} alerts.</p>
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead>
@@ -161,14 +213,14 @@ export default function AlertsPage() {
               </tr>
             </thead>
             <tbody>
-              {alerts.length === 0 ? (
+              {visibleAlerts.length === 0 ? (
                 <tr>
                   <td className="px-2 py-4 text-black/55" colSpan={5}>
                     No alerts found.
                   </td>
                 </tr>
               ) : (
-                alerts.map((alert) => (
+                visibleAlerts.map((alert) => (
                   <tr key={alert.id} className="border-b border-black/5">
                     <td className="px-2 py-2">{alert.triggered_at ? new Date(alert.triggered_at).toLocaleString() : "-"}</td>
                     <td className="px-2 py-2">

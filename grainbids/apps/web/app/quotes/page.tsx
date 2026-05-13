@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { API_BASE, buildApiHeaders } from "@/lib/api";
 
 type QuoteRun = {
@@ -11,10 +11,20 @@ type QuoteRun = {
   status: string;
 };
 
+type FacetsResponse = {
+  commodities?: string[];
+  locations?: string[];
+  company_names?: string[];
+};
+
 export default function QuotesPage() {
   const headers = buildApiHeaders();
+  const formRef = useRef<HTMLFormElement | null>(null);
   const [runs, setRuns] = useState<QuoteRun[]>([]);
+  const [facets, setFacets] = useState<FacetsResponse>({});
+  const [estimateCount, setEstimateCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [estimating, setEstimating] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -27,9 +37,53 @@ export default function QuotesPage() {
     setRuns(json.rows || []);
   }
 
+  async function loadFacets() {
+    const response = await fetch(`${API_BASE}/api/normalized-prices/facets`, { cache: "no-store", headers });
+    if (!response.ok) {
+      throw new Error("Failed to load quote filters");
+    }
+    const json = await response.json();
+    setFacets(json || {});
+  }
+
   useEffect(() => {
-    loadRuns().catch((err) => setError(String(err)));
+    Promise.all([loadRuns(), loadFacets()]).catch((err) => setError(String(err)));
   }, []);
+
+  function buildExportParams(formData: FormData) {
+    const params = new URLSearchParams();
+    for (const key of ["export_format", "commodity", "location", "source_name", "captured_date", "trucking_cost_bu", "trucking_cost_mt"]) {
+      const value = String(formData.get(key) || "").trim();
+      if (value) params.set(key, value);
+    }
+    return params;
+  }
+
+  async function runEstimate() {
+    setEstimating(true);
+    setError("");
+    setMessage("");
+    const formEl = formRef.current;
+    if (!formEl) {
+      setEstimating(false);
+      return;
+    }
+    const formData = new FormData(formEl);
+    const params = buildExportParams(formData);
+    try {
+      const response = await fetch(`${API_BASE}/api/normalized-prices/summary?${params.toString()}`, { cache: "no-store", headers });
+      if (!response.ok) {
+        throw new Error("Failed to estimate matching rows");
+      }
+      const json = await response.json();
+      setEstimateCount(typeof json.row_count === "number" ? json.row_count : null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setEstimateCount(null);
+    } finally {
+      setEstimating(false);
+    }
+  }
 
   async function runExport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -37,11 +91,7 @@ export default function QuotesPage() {
     setError("");
     setMessage("");
     const formData = new FormData(event.currentTarget);
-    const params = new URLSearchParams();
-    for (const key of ["export_format", "commodity", "location", "source_name", "captured_date", "trucking_cost_bu", "trucking_cost_mt"]) {
-      const value = String(formData.get(key) || "").trim();
-      if (value) params.set(key, value);
-    }
+    const params = buildExportParams(formData);
 
     try {
       const response = await fetch(`${API_BASE}/api/quotes/export?${params.toString()}`, { method: "POST", headers });
@@ -50,6 +100,7 @@ export default function QuotesPage() {
         throw new Error(typeof json.detail === "string" ? json.detail : "Quote export failed");
       }
       setMessage(`Export created (${json.row_count} rows).`);
+      setEstimateCount(json.row_count ?? null);
       await loadRuns();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -66,15 +117,23 @@ export default function QuotesPage() {
 
       <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
         <h2 className="text-lg font-semibold">Generate export</h2>
-        <form className="mt-3 grid gap-3 md:grid-cols-4" onSubmit={runExport}>
+        <form ref={formRef} className="mt-3 grid gap-3 md:grid-cols-4" onSubmit={runExport}>
           <SelectField name="export_format" label="Format" options={["csv", "xlsx"]} />
-          <TextField name="commodity" label="Commodity" placeholder="corn" />
-          <TextField name="location" label="Location" placeholder="Hamilton" />
-          <TextField name="source_name" label="Source" placeholder="cardinal" />
+          <SelectWithAny name="commodity" label="Commodity" options={facets.commodities || []} anyLabel="All commodities" />
+          <SelectWithAny name="location" label="Location" options={facets.locations || []} anyLabel="All locations" />
+          <SelectWithAny name="source_name" label="Company" options={facets.company_names || []} anyLabel="All companies" />
           <TextField name="captured_date" label="Date (optional)" type="date" />
           <TextField name="trucking_cost_bu" label="Trucking/Bu" type="number" step="0.01" placeholder="0.00" />
           <TextField name="trucking_cost_mt" label="Trucking/MT" type="number" step="0.01" placeholder="0.00" />
-          <div className="flex items-end">
+          <div className="flex items-end gap-2">
+            <button
+              type="button"
+              disabled={estimating}
+              onClick={() => runEstimate()}
+              className="rounded-md border border-black/20 bg-white px-4 py-2 text-sm disabled:opacity-50"
+            >
+              {estimating ? "Estimating..." : "Estimate"}
+            </button>
             <button
               disabled={loading}
               className="rounded-md border border-black/20 bg-black px-4 py-2 text-sm text-white disabled:opacity-50"
@@ -83,6 +142,9 @@ export default function QuotesPage() {
             </button>
           </div>
         </form>
+        <p className="mt-3 text-xs text-black/60">
+          {estimateCount == null ? "Estimate matching rows before export." : `Estimated rows: ${estimateCount}`}
+        </p>
         {message ? <p className="mt-3 text-sm text-emerald-700">{message}</p> : null}
         {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
       </section>
@@ -169,6 +231,32 @@ function SelectField({ name, label, options }: { name: string; label: string; op
     <label className="text-sm">
       <span className="text-xs uppercase tracking-wide text-black/50">{label}</span>
       <select name={name} className="mt-1 w-full rounded-md border border-black/15 bg-white px-3 py-2 text-sm">
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SelectWithAny({
+  name,
+  label,
+  options,
+  anyLabel,
+}: {
+  name: string;
+  label: string;
+  options: string[];
+  anyLabel: string;
+}) {
+  return (
+    <label className="text-sm">
+      <span className="text-xs uppercase tracking-wide text-black/50">{label}</span>
+      <select name={name} className="mt-1 w-full rounded-md border border-black/15 bg-white px-3 py-2 text-sm">
+        <option value="">{anyLabel}</option>
         {options.map((option) => (
           <option key={option} value={option}>
             {option}
