@@ -63,6 +63,48 @@ BUSHELS_PER_METRIC_TONNE = {
     "canola": Decimal("44.092"),
 }
 
+MONTH_TOKEN_TO_NUMBER = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
+
+MONTH_NUMBER_TO_NAME = {
+    1: "January",
+    2: "February",
+    3: "March",
+    4: "April",
+    5: "May",
+    6: "June",
+    7: "July",
+    8: "August",
+    9: "September",
+    10: "October",
+    11: "November",
+    12: "December",
+}
+
 COLUMN_ALIASES = {
     "location": ["location", "site", "location_name", "elevator"],
     "commodity": ["commodity", "crop", "grain", "name"],
@@ -145,6 +187,33 @@ def _extract_price_from_text(value: str | None) -> Decimal | None:
         if parsed is not None:
             return parsed
     return None
+
+
+def _derive_delivery_month_from_futures_month(futures_month: str | None) -> str | None:
+    value = normalize_text(futures_month)
+    if value is None:
+        return None
+    compact = re.sub(r"\s+", " ", value.replace(",", " ")).strip()
+    match = re.match(r"^([A-Za-z]+)\s*([0-9]{2,4})$", compact)
+    if match is None:
+        return None
+
+    month_token = match.group(1).casefold()
+    year_token = match.group(2)
+    month_number = MONTH_TOKEN_TO_NUMBER.get(month_token)
+    if month_number is None:
+        return None
+
+    year_value = int(year_token)
+    if len(year_token) == 2:
+        year_value = 2000 + year_value
+    if year_value < 1900 or year_value > 2200:
+        return None
+
+    if month_number == 1:
+        return f"December {year_value - 1}"
+    previous_month = month_number - 1
+    return f"{MONTH_NUMBER_TO_NAME[previous_month]} {year_value}"
 
 
 def _normalize_basis_value(basis: Decimal | None) -> Decimal | None:
@@ -293,6 +362,11 @@ def persist_normalized_rows(
             cash_price_mt = _infer_cash_price_mt(commodity_name=commodity_name, cash_price_bu=cash_price_bu)
         if _is_blank(futures_month):
             futures_month = normalize_text(delivery_label or delivery_end or "") or ""
+        if _is_blank(delivery_end) and _is_blank(delivery_label):
+            derived_delivery = _derive_delivery_month_from_futures_month(futures_month)
+            if derived_delivery:
+                delivery_end = derived_delivery
+                delivery_label = derived_delivery
         if futures_price is None:
             futures_price = _extract_price_from_text(futures_month_raw)
         if futures_price is None and cash_price_bu is not None and basis is not None:
