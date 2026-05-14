@@ -398,7 +398,7 @@ export default function DashboardPage() {
                 <th className="px-3 py-2">Commodity</th>
                 <th className="px-3 py-2">Delivery</th>
                 <th className="px-3 py-2">Futures</th>
-                <th className="px-3 py-2 text-right">Fut Px</th>
+                <th className="px-3 py-2 text-right">Futures Price</th>
                 <th className="px-3 py-2 text-right">Basis</th>
                 <th className="px-3 py-2 text-right">Basis Chg</th>
                 <th className="px-3 py-2 text-right">Cash/Bu</th>
@@ -485,7 +485,7 @@ export default function DashboardPage() {
                 <p>Cash/Bu: <span className="font-semibold">{formatNumber(selectedRow.cash_price_bu)}</span></p>
                 <p>Basis: <span className="font-semibold">{formatNumber(selectedRow.basis)}</span></p>
                 <p>Futures: <span className="font-semibold">{selectedRow.futures_month || "-"}</span></p>
-                <p>Fut Px: <span className="font-semibold">{formatNumber(selectedRow.futures_price)}</span></p>
+                <p>Futures Price: <span className="font-semibold">{formatNumber(selectedRow.futures_price)}</span></p>
               </div>
             </article>
 
