@@ -10,9 +10,17 @@ type AlertRuleRow = {
   comparison_operator: string;
   threshold_value: number;
   location: string | null;
+  saved_search_id: string | null;
+  delivery_months: string[];
   is_active: boolean;
   last_triggered_at: string | null;
   open_alert_count: number;
+};
+
+type SavedSearchRow = {
+  id: string;
+  name: string;
+  delivery_months: string[];
 };
 
 type RecentAlert = {
@@ -29,15 +37,23 @@ type RecentAlert = {
 export default function AlertsPage() {
   const headers = buildApiHeaders();
   const [rules, setRules] = useState<AlertRuleRow[]>([]);
+  const [savedSearches, setSavedSearches] = useState<SavedSearchRow[]>([]);
   const [alerts, setAlerts] = useState<RecentAlert[]>([]);
   const [openOnly, setOpenOnly] = useState(true);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [activeAlertId, setActiveAlertId] = useState("");
+  const [activeRuleId, setActiveRuleId] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "new" | "open" | "pending" | "acknowledged" | "resolved">("all");
   const [ruleFilter, setRuleFilter] = useState<string>("all");
   const [searchText, setSearchText] = useState("");
+  const [newRuleType, setNewRuleType] = useState("cash_price_bu");
+  const [newRuleOperator, setNewRuleOperator] = useState(">=");
+  const [newRuleThreshold, setNewRuleThreshold] = useState("6.5");
+  const [newRuleLocation, setNewRuleLocation] = useState("");
+  const [newRuleSavedSearchId, setNewRuleSavedSearchId] = useState("");
+  const [newRuleDeliveryMonths, setNewRuleDeliveryMonths] = useState("");
 
   async function loadData() {
     setLoading(true);
@@ -48,10 +64,13 @@ export default function AlertsPage() {
         fetch(`${API_BASE}/api/alerts/rules`, { cache: "no-store", headers }),
         fetch(`${API_BASE}/api/alerts/recent?limit=25${openOnlyQuery}`, { cache: "no-store", headers }),
       ]);
+      const savedSearchesRes = await fetch(`${API_BASE}/api/saved-searches`, { cache: "no-store", headers });
       const rulesJson = rulesRes.ok ? await rulesRes.json() : { rows: [] };
       const alertsJson = alertsRes.ok ? await alertsRes.json() : { rows: [] };
+      const savedSearchesJson = savedSearchesRes.ok ? await savedSearchesRes.json() : { rows: [] };
       setRules(rulesJson.rows || []);
       setAlerts(alertsJson.rows || []);
+      setSavedSearches(savedSearchesJson.rows || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -78,9 +97,74 @@ export default function AlertsPage() {
     }
   }
 
+  async function createAlertRule() {
+    setError("");
+    setMessage("");
+    const threshold = Number(newRuleThreshold);
+    if (!Number.isFinite(threshold)) {
+      setError("Threshold must be a number.");
+      return;
+    }
+    const params = new URLSearchParams({
+      rule_type: newRuleType,
+      threshold_value: String(threshold),
+      comparison_operator: newRuleOperator,
+    });
+    if (newRuleLocation.trim()) {
+      params.set("location", newRuleLocation.trim());
+    }
+    if (newRuleSavedSearchId) {
+      params.set("saved_search_id", newRuleSavedSearchId);
+    }
+    if (newRuleDeliveryMonths.trim()) {
+      params.set("delivery_months", newRuleDeliveryMonths.trim());
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/alerts/rules?${params.toString()}`, { method: "POST", headers });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof json.detail === "string" ? json.detail : "Failed to create alert rule");
+      }
+      setMessage("Alert rule created.");
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function deleteAlertRule(ruleId: string) {
+    setActiveRuleId(ruleId);
+    setError("");
+    setMessage("");
+    try {
+      const res = await fetch(`${API_BASE}/api/alerts/rules/${ruleId}`, { method: "DELETE", headers });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof json.detail === "string" ? json.detail : "Failed to delete alert rule");
+      }
+      setMessage(`Deleted rule ${json.deleted}.`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActiveRuleId("");
+    }
+  }
+
   useEffect(() => {
     loadData().catch((err) => setError(String(err)));
   }, [openOnly]);
+
+  useEffect(() => {
+    if (!newRuleSavedSearchId) {
+      return;
+    }
+    const selected = savedSearches.find((row) => row.id === newRuleSavedSearchId);
+    if (selected && selected.delivery_months.length > 0) {
+      setNewRuleDeliveryMonths(selected.delivery_months.join(", "));
+    }
+  }, [newRuleSavedSearchId, savedSearches]);
 
   const visibleAlerts = alerts.filter((alert) => {
     if (statusFilter !== "all" && alert.status !== statusFilter) return false;
@@ -97,6 +181,7 @@ export default function AlertsPage() {
   const uniqueRuleTypes = Array.from(new Set(alerts.map((a) => a.rule_type).filter(Boolean))).sort((a, b) =>
     a.localeCompare(b),
   );
+  const savedSearchById = new Map(savedSearches.map((row) => [row.id, row.name]));
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
@@ -105,6 +190,59 @@ export default function AlertsPage() {
 
       {message ? <p className="mt-4 text-sm text-emerald-700">{message}</p> : null}
       {error ? <p className="mt-4 text-sm text-red-700">{error}</p> : null}
+
+      <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
+        <h2 className="text-lg font-semibold">Create alert rule</h2>
+        <p className="mt-2 text-sm text-black/65">Create threshold rules and optionally scope them to a saved search and delivery months.</p>
+        <div className="mt-4 grid gap-2 md:grid-cols-3">
+          <select value={newRuleType} onChange={(event) => setNewRuleType(event.target.value)} className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm">
+            <option value="cash_price_bu">Cash/Bu</option>
+            <option value="basis">Basis</option>
+            <option value="basis_change">Basis Change</option>
+            <option value="cash_price_bu_change">Cash/Bu Change</option>
+          </select>
+          <select value={newRuleOperator} onChange={(event) => setNewRuleOperator(event.target.value)} className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm">
+            <option value=">=">{">="}</option>
+            <option value="<=">{"<="}</option>
+            <option value=">">{">"}</option>
+            <option value="<">{"<"}</option>
+            <option value="=">{"="}</option>
+          </select>
+          <input
+            value={newRuleThreshold}
+            onChange={(event) => setNewRuleThreshold(event.target.value)}
+            placeholder="Threshold"
+            className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
+          />
+          <input
+            value={newRuleLocation}
+            onChange={(event) => setNewRuleLocation(event.target.value)}
+            placeholder="Optional location"
+            className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
+          />
+          <select
+            value={newRuleSavedSearchId}
+            onChange={(event) => setNewRuleSavedSearchId(event.target.value)}
+            className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
+          >
+            <option value="">All bids (no saved search)</option>
+            {savedSearches.map((row) => (
+              <option key={row.id} value={row.id}>{row.name}</option>
+            ))}
+          </select>
+          <input
+            value={newRuleDeliveryMonths}
+            onChange={(event) => setNewRuleDeliveryMonths(event.target.value)}
+            placeholder="Delivery months (comma separated)"
+            className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
+          />
+        </div>
+        <div className="mt-3">
+          <button onClick={() => createAlertRule()} className="rounded-md border border-black/20 bg-black px-3 py-2 text-sm text-white">
+            Create rule
+          </button>
+        </div>
+      </section>
 
       <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
         <div className="flex items-center justify-between gap-3">
@@ -129,14 +267,17 @@ export default function AlertsPage() {
                 <th className="px-2 py-2">Operator</th>
                 <th className="px-2 py-2">Threshold</th>
                 <th className="px-2 py-2">Location</th>
+                <th className="px-2 py-2">Saved Search</th>
+                <th className="px-2 py-2">Months</th>
                 <th className="px-2 py-2">Open Alerts</th>
                 <th className="px-2 py-2">Last Trigger</th>
+                <th className="px-2 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
               {rules.length === 0 ? (
                 <tr>
-                  <td className="px-2 py-4 text-black/55" colSpan={6}>
+                  <td className="px-2 py-4 text-black/55" colSpan={9}>
                     No alert rules yet.
                   </td>
                 </tr>
@@ -147,8 +288,19 @@ export default function AlertsPage() {
                     <td className="px-2 py-2">{row.comparison_operator}</td>
                     <td className="px-2 py-2">{row.threshold_value}</td>
                     <td className="px-2 py-2">{row.location || "All"}</td>
+                    <td className="px-2 py-2">{row.saved_search_id ? (savedSearchById.get(row.saved_search_id) || "Unknown") : "All bids"}</td>
+                    <td className="px-2 py-2">{row.delivery_months?.length ? row.delivery_months.join(", ") : "-"}</td>
                     <td className="px-2 py-2">{row.open_alert_count}</td>
                     <td className="px-2 py-2">{row.last_triggered_at ? new Date(row.last_triggered_at).toLocaleString() : "-"}</td>
+                    <td className="px-2 py-2">
+                      <button
+                        disabled={activeRuleId === row.id}
+                        onClick={() => deleteAlertRule(row.id)}
+                        className="rounded-md border border-black/20 bg-white px-2 py-1 text-xs disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
