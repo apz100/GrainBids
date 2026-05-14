@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
+import math
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, select
@@ -21,6 +23,26 @@ from app.services.market_canonicalization import (
 
 
 router = APIRouter(prefix="/api/watchlists", tags=["watchlists"])
+
+
+def _to_float(value: Decimal | float | int | None) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, Decimal) and not value.is_finite():
+        return None
+    number = float(value)
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def _to_basis_float(value: Decimal | float | int | None) -> float | None:
+    number = _to_float(value)
+    if number is None:
+        return None
+    if abs(number) >= 10:
+        return number / 100.0
+    return number
 
 
 @router.get("/module")
@@ -172,6 +194,25 @@ def preview_watchlist(
     rows = db.execute(
         query.order_by(desc(PriceSnapshot.captured_at), desc(NormalizedPrice.cash_price_bu)).limit(limit)
     ).all()
+    deduped_rows: list[tuple[NormalizedPrice, PriceSnapshot]] = []
+    seen: set[str] = set()
+    for price, snapshot in rows:
+        dedupe_key = "|".join(
+            [
+                canonical_location_name(price.location) or "-",
+                canonical_source_name(price.source_name) or "-",
+                canonical_commodity_name(price.commodity_name) or "-",
+                normalize_text(price.delivery_label) or normalize_text(price.delivery_end) or "-",
+                normalize_text(price.futures_month) or "-",
+            ]
+        ).lower()
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        deduped_rows.append((price, snapshot))
+        if len(deduped_rows) >= limit:
+            break
+
     return {
         "watchlist": {
             "id": str(watchlist.id),
@@ -188,11 +229,11 @@ def preview_watchlist(
                 "source_name": canonical_source_name(price.source_name),
                 "delivery_label": normalize_text(price.delivery_label) or normalize_text(price.delivery_end),
                 "futures_month": normalize_text(price.futures_month),
-                "futures_price": float(price.futures_price) if price.futures_price is not None else None,
-                "basis": float(price.basis) if price.basis is not None else None,
-                "cash_price_bu": float(price.cash_price_bu) if price.cash_price_bu is not None else None,
-                "cash_price_mt": float(price.cash_price_mt) if price.cash_price_mt is not None else None,
+                "futures_price": _to_float(price.futures_price),
+                "basis": _to_basis_float(price.basis),
+                "cash_price_bu": _to_float(price.cash_price_bu),
+                "cash_price_mt": _to_float(price.cash_price_mt),
             }
-            for price, snapshot in rows
+            for price, snapshot in deduped_rows
         ],
     }

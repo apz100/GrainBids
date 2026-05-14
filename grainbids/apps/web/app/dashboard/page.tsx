@@ -187,15 +187,7 @@ export default function DashboardPage() {
         });
       }
 
-      const watchlistsRes = await fetch(`${API_BASE}/api/watchlists`, { cache: "no-store", headers });
-      if (watchlistsRes.ok) {
-        const payload = await watchlistsRes.json();
-        const rows = Array.isArray(payload?.rows) ? payload.rows : [];
-        setWatchlists(rows);
-        if (!selectedWatchlistId && rows.length > 0) {
-          setSelectedWatchlistId(rows[0].id);
-        }
-      }
+      await loadWatchlists(selectedWatchlistId || undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -244,10 +236,15 @@ export default function DashboardPage() {
 
   async function runWatchlistPreview() {
     if (!selectedWatchlistId) return;
+    await runWatchlistPreviewFor(selectedWatchlistId);
+  }
+
+  async function runWatchlistPreviewFor(watchlistId: string) {
+    if (!watchlistId) return;
     setWatchlistPreviewLoading(true);
     setWatchlistPreviewError("");
     try {
-      const res = await fetch(`${API_BASE}/api/watchlists/${selectedWatchlistId}/preview?limit=30`, {
+      const res = await fetch(`${API_BASE}/api/watchlists/${watchlistId}/preview?limit=30`, {
         cache: "no-store",
         headers,
       });
@@ -260,6 +257,25 @@ export default function DashboardPage() {
     } finally {
       setWatchlistPreviewLoading(false);
     }
+  }
+
+  async function loadWatchlists(preferredId?: string) {
+    const watchlistsRes = await fetch(`${API_BASE}/api/watchlists`, { cache: "no-store", headers });
+    if (!watchlistsRes.ok) {
+      setWatchlists([]);
+      setSelectedWatchlistId("");
+      return null;
+    }
+    const payload = await watchlistsRes.json();
+    const rows: WatchlistRow[] = Array.isArray(payload?.rows) ? payload.rows : [];
+    setWatchlists(rows);
+    if (rows.length === 0) {
+      setSelectedWatchlistId("");
+      return null;
+    }
+    const resolvedId = preferredId && rows.some((row) => row.id === preferredId) ? preferredId : rows[0].id;
+    setSelectedWatchlistId(resolvedId);
+    return resolvedId;
   }
 
   return (
@@ -503,6 +519,12 @@ export default function DashboardPage() {
                           headers,
                         });
                         if (!res.ok) throw new Error(await readFailure(res));
+                        const createdWatchlist = await res.json();
+                        const createdId = String(createdWatchlist?.id || "");
+                        const resolvedId = (await loadWatchlists(createdId || undefined)) || createdId;
+                        if (resolvedId) {
+                          await runWatchlistPreviewFor(resolvedId);
+                        }
                         setActionMessage(`Watchlist created: ${watchlistName.trim()}`);
                       } catch (err) {
                         setActionError(err instanceof Error ? err.message : String(err));
