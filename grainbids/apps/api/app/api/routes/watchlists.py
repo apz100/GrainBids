@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Select, desc, select
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.core.request_context import RequestContext, get_request_context
@@ -52,64 +52,6 @@ def list_watchlists(
             }
             for row in rows
         ]
-    }
-
-
-@router.get("/{watchlist_id}/preview")
-def preview_watchlist(
-    watchlist_id: uuid.UUID,
-    limit: int = Query(30, ge=1, le=200),
-    context: RequestContext = Depends(get_request_context),
-    db: Session = Depends(get_db),
-):
-    watchlist = db.execute(
-        select(Watchlist).where(Watchlist.id == watchlist_id, Watchlist.org_id == context.org_id)
-    ).scalar_one_or_none()
-    if watchlist is None:
-        raise HTTPException(status_code=404, detail="watchlist not found")
-
-    filters_json = dict(watchlist.filters_json or {})
-    query: Select = (
-        select(NormalizedPrice, PriceSnapshot)
-        .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
-        .join(Source, Source.id == PriceSnapshot.source_id)
-        .where(Source.org_id == context.org_id)
-        .order_by(PriceSnapshot.captured_at.desc(), NormalizedPrice.location.asc())
-    )
-
-    location = str(filters_json.get("location", "") or "").strip()
-    commodity_name = str(filters_json.get("commodity_name", "") or "").strip()
-    source_name = str(filters_json.get("source_name", "") or "").strip()
-    if location:
-        query = query.where(NormalizedPrice.location.ilike(f"%{location}%"))
-    if commodity_name:
-        query = query.where(NormalizedPrice.commodity_name.ilike(f"%{commodity_name}%"))
-    if source_name:
-        query = query.where(NormalizedPrice.source_name.ilike(f"%{source_name}%"))
-
-    rows = db.execute(query.limit(limit)).all()
-    return {
-        "watchlist": {
-            "id": str(watchlist.id),
-            "name": watchlist.name,
-            "filters_json": filters_json,
-        },
-        "rows": [
-            {
-                "id": str(price.id),
-                "captured_at": snapshot.captured_at.isoformat() if snapshot.captured_at else None,
-                "location": price.location,
-                "source_name": price.source_name,
-                "commodity_name": price.commodity_name,
-                "delivery_label": price.delivery_label or price.delivery_end or price.delivery_start,
-                "futures_month": price.futures_month,
-                "futures_price": float(price.futures_price) if price.futures_price is not None else None,
-                "basis": float(price.basis) if price.basis is not None else None,
-                "cash_price_bu": float(price.cash_price_bu) if price.cash_price_bu is not None else None,
-                "cash_price_mt": float(price.cash_price_mt) if price.cash_price_mt is not None else None,
-            }
-            for price, snapshot in rows
-        ],
     }
 
 
