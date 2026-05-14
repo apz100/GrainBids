@@ -6,7 +6,7 @@ import math
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Select, and_, case, desc, func, select
+from sqlalchemy import Select, and_, case, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.request_context import RequestContext, get_request_context
@@ -78,6 +78,22 @@ def _build_filters(
         filters.append(and_(PriceSnapshot.captured_at >= start_dt, PriceSnapshot.captured_at <= end_dt))
 
     return filters
+
+
+def _build_quality_filters() -> list:
+    has_futures_month = func.length(func.trim(func.coalesce(NormalizedPrice.futures_month, ""))) > 0
+    has_delivery_window = or_(
+        func.length(func.trim(func.coalesce(NormalizedPrice.delivery_end, ""))) > 0,
+        func.length(func.trim(func.coalesce(NormalizedPrice.delivery_label, ""))) > 0,
+    )
+    return [
+        has_delivery_window,
+        has_futures_month,
+        NormalizedPrice.futures_price.is_not(None),
+        NormalizedPrice.basis.is_not(None),
+        NormalizedPrice.cash_price_bu.is_not(None),
+        NormalizedPrice.cash_price_mt.is_not(None),
+    ]
 
 
 def _base_query(context: RequestContext) -> Select:
@@ -174,6 +190,7 @@ def facets(
         region=None,
         captured_date=captured_date,
     )
+    quality_filters = _build_quality_filters()
     commodity_query = (
         select(func.distinct(NormalizedPrice.commodity_name))
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
@@ -196,6 +213,9 @@ def facets(
         commodity_query = commodity_query.where(*filters)
         location_query = location_query.where(*filters)
         source_query = source_query.where(*filters)
+    commodity_query = commodity_query.where(*quality_filters)
+    location_query = location_query.where(*quality_filters)
+    source_query = source_query.where(*quality_filters)
 
     commodity_map: dict[str, str] = {}
     for value in db.execute(commodity_query).scalars().all():
@@ -246,6 +266,8 @@ def facets(
     if filters:
         company_rows_query = company_rows_query.where(*filters)
         location_rows_query = location_rows_query.where(*filters)
+    company_rows_query = company_rows_query.where(*quality_filters)
+    location_rows_query = location_rows_query.where(*quality_filters)
 
     company_rows = db.execute(company_rows_query).all()
     location_rows = db.execute(location_rows_query).all()
@@ -312,6 +334,7 @@ def preview(
     query: Select = _base_query(context)
     if filters:
         query = query.where(*filters)
+    query = query.where(*_build_quality_filters())
     query = _with_sorting(query, sort)
 
     rows = db.execute(query.limit(limit * 3)).all()
@@ -390,6 +413,7 @@ def top_movers(
     )
     if filters:
         query = query.where(*filters)
+    query = query.where(*_build_quality_filters())
 
     rows = db.execute(query.limit(limit)).all()
 
