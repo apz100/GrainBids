@@ -106,17 +106,22 @@ def _base_query(context: RequestContext) -> Select:
 
 
 def _with_sorting(query: Select, sort: str) -> Select:
+    source_priority = case(
+        (Source.source_type == "automated", 0),
+        (Source.source_type == "file", 1),
+        else_=2,
+    )
     if sort == "basis_desc":
-        return query.order_by(desc(NormalizedPrice.basis), desc(PriceSnapshot.captured_at))
+        return query.order_by(desc(NormalizedPrice.basis), source_priority.asc(), desc(PriceSnapshot.captured_at))
     if sort == "basis_asc":
-        return query.order_by(NormalizedPrice.basis.asc(), desc(PriceSnapshot.captured_at))
+        return query.order_by(NormalizedPrice.basis.asc(), source_priority.asc(), desc(PriceSnapshot.captured_at))
     if sort == "cash_bu_desc":
-        return query.order_by(desc(NormalizedPrice.cash_price_bu), desc(PriceSnapshot.captured_at))
+        return query.order_by(desc(NormalizedPrice.cash_price_bu), source_priority.asc(), desc(PriceSnapshot.captured_at))
     if sort == "cash_bu_asc":
-        return query.order_by(NormalizedPrice.cash_price_bu.asc(), desc(PriceSnapshot.captured_at))
+        return query.order_by(NormalizedPrice.cash_price_bu.asc(), source_priority.asc(), desc(PriceSnapshot.captured_at))
     if sort == "basis_change_desc":
-        return query.order_by(desc(func.abs(NormalizedPrice.basis_change)), desc(PriceSnapshot.captured_at))
-    return query.order_by(desc(PriceSnapshot.captured_at), NormalizedPrice.location, NormalizedPrice.commodity_name)
+        return query.order_by(desc(func.abs(NormalizedPrice.basis_change)), source_priority.asc(), desc(PriceSnapshot.captured_at))
+    return query.order_by(source_priority.asc(), desc(PriceSnapshot.captured_at), NormalizedPrice.location, NormalizedPrice.commodity_name)
 
 
 @router.get("")
@@ -341,12 +346,12 @@ def preview(
     deduped_rows: list[tuple[NormalizedPrice, PriceSnapshot]] = []
     seen: set[str] = set()
     for price, snapshot in rows:
-        location_key = canonical_key(price.location) or "-"
-        source_key = canonical_key(canonical_source_name(price.source_name)) or "-"
+        location_key = str(price.location_id) if price.location_id else (canonical_key(price.location) or "-")
+        company_key = str(price.company_id) if price.company_id else (canonical_key(canonical_source_name(price.source_name)) or "-")
         commodity_key = canonical_key(price.commodity_name) or "-"
         delivery_key = canonical_key(price.delivery_label or price.delivery_end or price.delivery_start) or "-"
         futures_key = canonical_key(price.futures_month) or "-"
-        dedupe_key = "|".join([location_key, source_key, commodity_key, delivery_key, futures_key])
+        dedupe_key = "|".join([location_key, company_key, commodity_key, delivery_key, futures_key])
         if dedupe_key in seen:
             continue
         seen.add(dedupe_key)

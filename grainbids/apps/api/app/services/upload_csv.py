@@ -21,6 +21,7 @@ from app.models.raw_upload import RawUpload
 from app.models.source import Source
 from app.modules.imports.legacy_helpers import symbol_to_month_extended
 from app.services.market_canonicalization import (
+    canonical_key,
     canonical_commodity_name,
     canonical_location_name,
     canonical_source_name,
@@ -236,6 +237,19 @@ def _infer_cash_price_mt(*, commodity_name: str, cash_price_bu: Decimal | None) 
     return (cash_price_bu * factor).quantize(Decimal("0.01"))
 
 
+def _is_invalid_commodity_name(commodity_name: str | None, source_name: str | None) -> bool:
+    name = normalize_text(commodity_name)
+    if name is None:
+        return False
+    key = name.casefold()
+    if key in {"mixed daily file", "ontario daily file", "ontario cash bids", "eastern ontario daily file", "eastern ontario cash bids"}:
+        return True
+    if any(token in key for token in ("daily file", "cash bids", "source sheet")):
+        return True
+    source_key = canonical_key(source_name)
+    return source_key is not None and key == source_key
+
+
 def _decode_payload(payload: bytes) -> str:
     for encoding in ("utf-8-sig", "utf-8", "latin-1"):
         try:
@@ -335,6 +349,7 @@ def persist_normalized_rows(
         row_count += 1
         location = canonical_location_name(str(row.get(mapping["location"], "") or "").strip()) or ""
         commodity_name = canonical_commodity_name(str(row.get(mapping["commodity"], "") or "").strip()) or canonical_commodity_name(commodity.name) or ""
+        source_name = canonical_source_name(str(row.get(mapping.get("source_name", ""), "") or "").strip()) or canonical_source_name(source.name) or source.name
         if _is_blank(location):
             rejected_row_count += 1
             missing_required_count += 1
@@ -345,8 +360,12 @@ def persist_normalized_rows(
             missing_required_count += 1
             _increment_reason(row_reject_reasons, "missing_commodity_name")
             continue
+        if _is_invalid_commodity_name(commodity_name, source_name):
+            rejected_row_count += 1
+            missing_required_count += 1
+            _increment_reason(row_reject_reasons, "invalid_commodity_name")
+            continue
 
-        source_name = canonical_source_name(str(row.get(mapping.get("source_name", ""), "") or "").strip()) or canonical_source_name(source.name) or source.name
         delivery_start = normalize_text(str(row.get(mapping.get("delivery_start", ""), "") or "").strip()) or ""
         delivery_end = normalize_text(str(row.get(mapping.get("delivery_end", ""), "") or "").strip()) or ""
         delivery_label = normalize_text(str(row.get(mapping.get("delivery_label", ""), "") or "").strip()) or ""

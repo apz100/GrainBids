@@ -12,6 +12,7 @@ from app.services.upload_csv import (  # noqa: E402
     _check_completeness,
     _derive_delivery_month_from_futures_month,
     _extract_price_from_text,
+    _is_invalid_commodity_name,
     _parse_decimal,
     summarize_quality,
 )
@@ -40,6 +41,11 @@ class UploadQualityTests(unittest.TestCase):
 
     def test_derive_delivery_month_from_futures_month_rollover(self) -> None:
         self.assertEqual(_derive_delivery_month_from_futures_month("Jan 2027"), "December 2026")
+
+    def test_invalid_commodity_name_rejects_source_labels(self) -> None:
+        self.assertTrue(_is_invalid_commodity_name("Mixed Daily File", "Ganaraska"))
+        self.assertTrue(_is_invalid_commodity_name("Eastern Ontario Cash Bids", "Eastern Ontario Cash Bids"))
+        self.assertFalse(_is_invalid_commodity_name("Corn", "Ganaraska"))
 
     def test_completeness_requires_delivery_window(self) -> None:
         reasons = _check_completeness(
