@@ -72,6 +72,7 @@ COLUMN_ALIASES = {
     "delivery_label": ["delivery_label", "delivery", "delivery_end", "delivery period"],
     "futures_month": ["futures_month", "month", "futures contract", "symbol", "futures symbol", "futures mon."],
     "futures_price": ["futures_price", "futures", "fut_price"],
+    "futures_change": ["futures_change", "fut_change", "change", "chg"],
     "basis": ["basis", "basis_value"],
     "cash_price_bu": ["cash_price_bu", "cash_bu", "cash price bu", "bushel cash price", "cash price", "the andersons cash price"],
     "cash_price_mt": [
@@ -284,6 +285,7 @@ def persist_normalized_rows(
         futures_month = normalize_text(symbol_to_month_extended(futures_month_raw) or futures_month_raw) or ""
 
         futures_price = _parse_decimal(str(row.get(mapping.get("futures_price", ""), "") or ""))
+        futures_change = _parse_decimal(str(row.get(mapping.get("futures_change", ""), "") or ""))
         basis = _normalize_basis_value(_parse_decimal(str(row.get(mapping.get("basis", ""), "") or "")))
         cash_price_bu = _parse_decimal(str(row.get(mapping.get("cash_price_bu", ""), "") or ""))
         cash_price_mt = _parse_decimal(str(row.get(mapping.get("cash_price_mt", ""), "") or ""))
@@ -301,6 +303,8 @@ def persist_normalized_rows(
             delivery_end=delivery_end,
             delivery_label=delivery_label,
             futures_month=futures_month,
+            futures_month_raw=futures_month_raw,
+            futures_change=futures_change,
             basis=basis,
             cash_price_bu=cash_price_bu,
             cash_price_mt=cash_price_mt,
@@ -485,6 +489,8 @@ def _check_completeness(
     delivery_end: str | None,
     delivery_label: str | None,
     futures_month: str | None,
+    futures_month_raw: str | None,
+    futures_change: Decimal | None,
     basis: Decimal | None,
     cash_price_bu: Decimal | None,
     cash_price_mt: Decimal | None,
@@ -502,6 +508,11 @@ def _check_completeness(
         reasons.append("missing_cash_price_bu")
     if cash_price_mt is None:
         reasons.append("missing_cash_price_mt")
+    source_key = (canonical_source_name(source_name) or source_name or "").strip().casefold()
+    if source_key in {"snobelen", "ganaraska"} and futures_change is None:
+        reasons.append("missing_futures_change")
+    if source_key == "snobelen" and _is_blank(futures_month_raw):
+        reasons.append("missing_futures_month_source")
     return reasons
 
 

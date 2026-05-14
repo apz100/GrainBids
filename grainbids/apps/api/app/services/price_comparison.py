@@ -88,7 +88,7 @@ def _load_most_recent_prior_rows(
     composite_keys: set[str],
     captured_at: datetime,
 ) -> dict[str, Any]:
-    from sqlalchemy import desc, select
+    from sqlalchemy import desc, func, select
 
     from app.models.normalized_price import NormalizedPrice
     from app.models.price_snapshot import PriceSnapshot
@@ -96,11 +96,21 @@ def _load_most_recent_prior_rows(
     if not composite_keys:
         return {}
 
+    current_day = captured_at.date()
+    prior_day = db.execute(
+        select(func.max(func.date(PriceSnapshot.captured_at)))
+        .join(NormalizedPrice, NormalizedPrice.snapshot_id == PriceSnapshot.id)
+        .where(NormalizedPrice.composite_key.in_(composite_keys))
+        .where(func.date(PriceSnapshot.captured_at) < current_day)
+    ).scalar_one_or_none()
+    if prior_day is None:
+        return {}
+
     query = (
         select(NormalizedPrice, PriceSnapshot.captured_at)
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
         .where(NormalizedPrice.composite_key.in_(composite_keys))
-        .where(PriceSnapshot.captured_at < captured_at)
+        .where(func.date(PriceSnapshot.captured_at) == prior_day)
         .order_by(NormalizedPrice.composite_key, desc(PriceSnapshot.captured_at))
     )
 

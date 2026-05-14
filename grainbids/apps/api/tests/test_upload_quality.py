@@ -35,6 +35,8 @@ class UploadQualityTests(unittest.TestCase):
             delivery_end="",
             delivery_label="",
             futures_month="May 2026",
+            futures_month_raw="ZCK26",
+            futures_change=Decimal("0.05"),
             basis=Decimal("0.12"),
             cash_price_bu=Decimal("6.10"),
             cash_price_mt=Decimal("240.20"),
@@ -47,6 +49,8 @@ class UploadQualityTests(unittest.TestCase):
             delivery_end="2026-04-30",
             delivery_label="Apr 30",
             futures_month="Jul 2026",
+            futures_month_raw="ZCN26",
+            futures_change=Decimal("0.03"),
             basis=None,
             cash_price_bu=None,
             cash_price_mt=Decimal("250.00"),
@@ -61,11 +65,42 @@ class UploadQualityTests(unittest.TestCase):
             delivery_end="2026-05-31",
             delivery_label="May",
             futures_month="Jul 2026",
+            futures_month_raw="ZCN26",
+            futures_change=Decimal("0.02"),
             basis=Decimal("0.15"),
             cash_price_bu=Decimal("6.25"),
             cash_price_mt=Decimal("246.00"),
         )
         self.assertEqual(reasons, [])
+
+    def test_snobelen_requires_futures_change_and_source_month(self) -> None:
+        reasons = _check_completeness(
+            source_name="Snobelen",
+            delivery_end="2026-05-31",
+            delivery_label="May",
+            futures_month="Jul 2026",
+            futures_month_raw="",
+            futures_change=None,
+            basis=Decimal("0.15"),
+            cash_price_bu=Decimal("6.25"),
+            cash_price_mt=Decimal("246.00"),
+        )
+        self.assertIn("missing_futures_change", reasons)
+        self.assertIn("missing_futures_month_source", reasons)
+
+    def test_ganaraska_requires_futures_change(self) -> None:
+        reasons = _check_completeness(
+            source_name="Ganaraska",
+            delivery_end="2026-05-31",
+            delivery_label="May",
+            futures_month="Jul 2026",
+            futures_month_raw="ZCN26",
+            futures_change=None,
+            basis=Decimal("0.15"),
+            cash_price_bu=Decimal("6.25"),
+            cash_price_mt=Decimal("246.00"),
+        )
+        self.assertIn("missing_futures_change", reasons)
 
     def test_quality_summary(self) -> None:
         summary = summarize_quality(
