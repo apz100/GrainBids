@@ -52,6 +52,13 @@ type FacetsResponse = {
   location_rows?: { id: string; name: string; region: string | null }[];
 };
 
+type WatchlistRow = {
+  id: string;
+  name: string;
+  filters_json: Record<string, string>;
+  is_active: boolean;
+};
+
 type SlaSummary = {
   active_sources: number;
   fresh_sources: number;
@@ -120,6 +127,11 @@ export default function DashboardPage() {
   const [actionError, setActionError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const canManageAlerts = useMemo(() => isAdminRole(), []);
+  const [watchlists, setWatchlists] = useState<WatchlistRow[]>([]);
+  const [selectedWatchlistId, setSelectedWatchlistId] = useState("");
+  const [watchlistPreviewRows, setWatchlistPreviewRows] = useState<PreviewRow[]>([]);
+  const [watchlistPreviewLoading, setWatchlistPreviewLoading] = useState(false);
+  const [watchlistPreviewError, setWatchlistPreviewError] = useState("");
 
   useEffect(() => {
     if (configError) {
@@ -174,6 +186,16 @@ export default function DashboardPage() {
           location_rows: Array.isArray(rawFacets?.location_rows) ? rawFacets.location_rows : [],
         });
       }
+
+      const watchlistsRes = await fetch(`${API_BASE}/api/watchlists`, { cache: "no-store", headers });
+      if (watchlistsRes.ok) {
+        const payload = await watchlistsRes.json();
+        const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+        setWatchlists(rows);
+        if (!selectedWatchlistId && rows.length > 0) {
+          setSelectedWatchlistId(rows[0].id);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -218,6 +240,26 @@ export default function DashboardPage() {
 
   function resetFilters() {
     setFilters(DEFAULT_FILTERS);
+  }
+
+  async function runWatchlistPreview() {
+    if (!selectedWatchlistId) return;
+    setWatchlistPreviewLoading(true);
+    setWatchlistPreviewError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/watchlists/${selectedWatchlistId}/preview?limit=30`, {
+        cache: "no-store",
+        headers,
+      });
+      if (!res.ok) throw new Error(await readFailure(res));
+      const payload = await res.json();
+      const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+      setWatchlistPreviewRows(sortPreviewRowsForDisplay(rows));
+    } catch (err) {
+      setWatchlistPreviewError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setWatchlistPreviewLoading(false);
+    }
   }
 
   return (
@@ -552,6 +594,74 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+      </section>
+
+      <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Watchlist Run-Now Preview</h2>
+            <p className="mt-1 text-xs text-black/55">Run a saved watchlist and preview matching current bids.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedWatchlistId}
+              onChange={(event) => setSelectedWatchlistId(event.target.value)}
+              className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Select watchlist</option>
+              {watchlists.map((watchlist) => (
+                <option key={watchlist.id} value={watchlist.id}>
+                  {watchlist.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={runWatchlistPreview}
+              disabled={watchlistPreviewLoading || !selectedWatchlistId}
+              className="rounded-md border border-black bg-black px-3 py-2 text-sm text-white disabled:opacity-60"
+            >
+              {watchlistPreviewLoading ? "Running..." : "Run now"}
+            </button>
+          </div>
+        </div>
+
+        {watchlistPreviewError ? <p className="mt-2 text-sm text-rose-700">{watchlistPreviewError}</p> : null}
+
+        <div className="mt-3 max-h-[320px] overflow-auto rounded-md border border-black/10 bg-white">
+          <table className="min-w-full text-left text-sm">
+            <thead className="sticky top-0 bg-white">
+              <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/55">
+                <th className="px-3 py-2">Location</th>
+                <th className="px-3 py-2">Company</th>
+                <th className="px-3 py-2">Commodity</th>
+                <th className="px-3 py-2">Delivery</th>
+                <th className="px-3 py-2 text-right">Cash/Bu</th>
+                <th className="px-3 py-2 text-right">Basis</th>
+              </tr>
+            </thead>
+            <tbody>
+              {watchlistPreviewRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-3 py-6 text-center text-sm text-black/55">
+                    {selectedWatchlistId ? "No rows for selected watchlist." : "Select a watchlist and click Run now."}
+                  </td>
+                </tr>
+              ) : (
+                watchlistPreviewRows.map((row) => (
+                  <tr key={`watchlist-preview-${row.id}`} className="border-b border-black/5">
+                    <td className="px-3 py-2">{row.location}</td>
+                    <td className="px-3 py-2">{row.source_name || "-"}</td>
+                    <td className="px-3 py-2">{row.commodity_name}</td>
+                    <td className="px-3 py-2">{row.delivery_label || "-"}</td>
+                    <td className="px-3 py-2 text-right">{formatNumber(row.cash_price_bu)}</td>
+                    <td className="px-3 py-2 text-right">{formatNumber(row.basis)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">

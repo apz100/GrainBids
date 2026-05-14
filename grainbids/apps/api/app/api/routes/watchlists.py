@@ -12,6 +12,12 @@ from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
 from app.models.source import Source
 from app.models.watchlist import Watchlist
+from app.services.market_canonicalization import (
+    canonical_commodity_name,
+    canonical_location_name,
+    canonical_source_name,
+    normalize_text,
+)
 
 
 router = APIRouter(prefix="/api/watchlists", tags=["watchlists"])
@@ -188,3 +194,63 @@ def delete_watchlist(
     db.delete(row)
     db.commit()
     return {"deleted": str(watchlist_id)}
+
+
+@router.get("/{watchlist_id}/preview")
+def preview_watchlist(
+    watchlist_id: uuid.UUID,
+    limit: int = Query(30, ge=1, le=200),
+    context: RequestContext = Depends(get_request_context),
+    db: Session = Depends(get_db),
+):
+    watchlist = db.execute(
+        select(Watchlist).where(Watchlist.id == watchlist_id, Watchlist.org_id == context.org_id)
+    ).scalar_one_or_none()
+    if watchlist is None:
+        raise HTTPException(status_code=404, detail="watchlist not found")
+
+    filters = watchlist.filters_json or {}
+    query = (
+        select(NormalizedPrice, PriceSnapshot)
+        .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .where(Source.org_id == context.org_id)
+    )
+
+    location = str(filters.get("location", "") or "").strip()
+    commodity_name = str(filters.get("commodity_name", "") or "").strip()
+    source_name = str(filters.get("source_name", "") or "").strip()
+    if location:
+        query = query.where(NormalizedPrice.location.ilike(f"%{location}%"))
+    if commodity_name:
+        query = query.where(NormalizedPrice.commodity_name.ilike(f"%{commodity_name}%"))
+    if source_name:
+        query = query.where(NormalizedPrice.source_name.ilike(f"%{source_name}%"))
+
+    rows = db.execute(
+        query.order_by(desc(PriceSnapshot.captured_at), desc(NormalizedPrice.cash_price_bu)).limit(limit)
+    ).all()
+    return {
+        "watchlist": {
+            "id": str(watchlist.id),
+            "name": watchlist.name,
+            "filters_json": watchlist.filters_json or {},
+            "is_active": watchlist.is_active,
+        },
+        "rows": [
+            {
+                "id": str(price.id),
+                "captured_at": snapshot.captured_at.isoformat() if snapshot.captured_at else None,
+                "location": canonical_location_name(price.location) or "-",
+                "commodity_name": canonical_commodity_name(price.commodity_name) or "-",
+                "source_name": canonical_source_name(price.source_name),
+                "delivery_label": normalize_text(price.delivery_label) or normalize_text(price.delivery_end),
+                "futures_month": normalize_text(price.futures_month),
+                "futures_price": float(price.futures_price) if price.futures_price is not None else None,
+                "basis": float(price.basis) if price.basis is not None else None,
+                "cash_price_bu": float(price.cash_price_bu) if price.cash_price_bu is not None else None,
+                "cash_price_mt": float(price.cash_price_mt) if price.cash_price_mt is not None else None,
+            }
+            for price, snapshot in rows
+        ],
+    }

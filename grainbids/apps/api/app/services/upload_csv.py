@@ -146,6 +146,16 @@ def _extract_price_from_text(value: str | None) -> Decimal | None:
     return None
 
 
+def _normalize_basis_value(basis: Decimal | None) -> Decimal | None:
+    if basis is None:
+        return None
+    # Some source sheets emit basis in cents (e.g. 140) instead of dollars/bu (1.40).
+    # GrainBids standard is dollars per bushel.
+    if abs(basis) >= Decimal("10"):
+        return (basis / Decimal("100")).quantize(Decimal("0.01"))
+    return basis
+
+
 def _infer_cash_price_mt(*, commodity_name: str, cash_price_bu: Decimal | None) -> Decimal | None:
     if cash_price_bu is None:
         return None
@@ -154,15 +164,6 @@ def _infer_cash_price_mt(*, commodity_name: str, cash_price_bu: Decimal | None) 
     if factor is None:
         factor = BUSHELS_PER_METRIC_TONNE.get(key.rstrip("s"), BUSHELS_PER_METRIC_TONNE["corn"])
     return (cash_price_bu * factor).quantize(Decimal("0.01"))
-
-
-def _normalize_basis_value(value: Decimal | None) -> Decimal | None:
-    if value is None:
-        return None
-    # Some source boards publish basis in cents (e.g., 140 == $1.40/bu).
-    if abs(value) >= Decimal("10"):
-        return value / Decimal("100")
-    return value
 
 
 def _decode_payload(payload: bytes) -> str:
