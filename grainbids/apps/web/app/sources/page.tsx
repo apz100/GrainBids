@@ -98,6 +98,18 @@ type SlaSummary = {
   } | null;
 };
 
+type FacetsResponse = {
+  company_rows?: { id: string; name: string }[];
+};
+
+type CanonicalCoverageRow = {
+  source_name: string | null;
+  source_key: string | null;
+  row_count: number;
+  canonical_count: number;
+  winner_rate: number;
+};
+
 export default function SourcesPage() {
   const headers = buildApiHeaders();
   const adminAllowed = isAdminRole();
@@ -113,23 +125,36 @@ export default function SourcesPage() {
   const [updatingAlertId, setUpdatingAlertId] = useState("");
   const [openAlertsOnly, setOpenAlertsOnly] = useState(true);
   const [runningScheduledCycle, setRunningScheduledCycle] = useState(false);
+  const [companyRows, setCompanyRows] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState("");
+  const [priorityKeysInput, setPriorityKeysInput] = useState("");
+  const [loadingPriority, setLoadingPriority] = useState(false);
+  const [savingPriority, setSavingPriority] = useState(false);
+  const [seedingDefaults, setSeedingDefaults] = useState(false);
+  const [coverageRows, setCoverageRows] = useState<CanonicalCoverageRow[]>([]);
 
   async function loadData() {
     const openOnlyQuery = openAlertsOnly ? "&open_only=true" : "";
-    const [runsRes, sourcesRes, slaRes, alertsRes] = await Promise.all([
+    const [runsRes, sourcesRes, slaRes, alertsRes, facetsRes, coverageRes] = await Promise.all([
       fetch(`${API_BASE}/api/ingestion/runs?limit=25`, { cache: "no-store", headers }),
       fetch(`${API_BASE}/api/sources`, { cache: "no-store", headers }),
       fetch(`${API_BASE}/api/ingestion/sla`, { cache: "no-store", headers }),
       fetch(`${API_BASE}/api/alerts/recent?limit=10${openOnlyQuery}`, { cache: "no-store", headers }),
+      fetch(`${API_BASE}/api/normalized-prices/facets`, { cache: "no-store", headers }),
+      fetch(`${API_BASE}/api/sources/canonical-coverage?days=7`, { cache: "no-store", headers }),
     ]);
     const runsJson = runsRes.ok ? await runsRes.json() : { rows: [] };
     const sourcesJson = sourcesRes.ok ? await sourcesRes.json() : { rows: [] };
     const slaJson = slaRes.ok ? await slaRes.json() : null;
     const alertsJson = alertsRes.ok ? await alertsRes.json() : { rows: [] };
+    const facetsJson: FacetsResponse = facetsRes.ok ? await facetsRes.json() : { company_rows: [] };
+    const coverageJson = coverageRes.ok ? await coverageRes.json() : { rows: [] };
     setRuns(runsJson.rows || []);
     setSources(sourcesJson.rows || []);
     setSla(slaJson);
     setAlerts(alertsJson.rows || []);
+    setCompanyRows(Array.isArray(facetsJson.company_rows) ? facetsJson.company_rows : []);
+    setCoverageRows(Array.isArray(coverageJson.rows) ? coverageJson.rows : []);
   }
 
   useEffect(() => {
@@ -233,6 +258,78 @@ export default function SourcesPage() {
     }
   }
 
+  async function loadPriority(companyId: string) {
+    if (!companyId) {
+      setPriorityKeysInput("");
+      return;
+    }
+    setLoadingPriority(true);
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/sources/priority?company_id=${companyId}`, { cache: "no-store", headers });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof json.detail === "string" ? json.detail : "Failed to load priority");
+      }
+      const keys = (json.rows || []).map((row: { source_key: string }) => row.source_key);
+      setPriorityKeysInput(keys.join("\n"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingPriority(false);
+    }
+  }
+
+  async function savePriority() {
+    if (!selectedCompanyId) return;
+    setSavingPriority(true);
+    setMessage("");
+    setError("");
+    try {
+      const sourceKeys = priorityKeysInput
+        .split(/\r?\n|,/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .join(",");
+      const res = await fetch(
+        `${API_BASE}/api/sources/priority?company_id=${selectedCompanyId}&source_keys=${encodeURIComponent(sourceKeys)}`,
+        { method: "PUT", headers }
+      );
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof json.detail === "string" ? json.detail : "Failed to save priority");
+      }
+      setMessage(`Updated source priority for ${json.company_name}.`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingPriority(false);
+    }
+  }
+
+  async function seedDefaultPriority() {
+    setSeedingDefaults(true);
+    setMessage("");
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/sources/priority/seed-defaults`, {
+        method: "POST",
+        headers,
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof json.detail === "string" ? json.detail : "Failed to seed defaults");
+      }
+      setMessage(`Seeded defaults for ${json.seeded_companies} companies (${json.touched_rows} rows).`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSeedingDefaults(false);
+    }
+  }
+
   async function updateAlertStatus(alertId: string, status: "acknowledged" | "resolved") {
     setUpdatingAlertId(alertId);
     setMessage("");
@@ -285,6 +382,101 @@ export default function SourcesPage() {
       </section>
 
       <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
+        <h2 className="text-lg font-semibold">Canonical winner coverage (7d)</h2>
+        <p className="mt-2 text-sm text-black/70">
+          Shows how often each source appears in canonical winner rows versus total candidate rows.
+        </p>
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/50">
+                <th className="px-2 py-2">Source</th>
+                <th className="px-2 py-2">Source key</th>
+                <th className="px-2 py-2 text-right">Candidates</th>
+                <th className="px-2 py-2 text-right">Winners</th>
+                <th className="px-2 py-2 text-right">Winner rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {coverageRows.length === 0 ? (
+                <tr>
+                  <td className="px-2 py-4 text-black/55" colSpan={5}>
+                    No coverage data yet.
+                  </td>
+                </tr>
+              ) : (
+                coverageRows.map((row) => (
+                  <tr key={`${row.source_key}-${row.source_name}`} className="border-b border-black/5">
+                    <td className="px-2 py-2">{row.source_name || "-"}</td>
+                    <td className="px-2 py-2 font-mono text-xs text-black/65">{row.source_key || "-"}</td>
+                    <td className="px-2 py-2 text-right">{row.row_count}</td>
+                    <td className="px-2 py-2 text-right">{row.canonical_count}</td>
+                    <td className="px-2 py-2 text-right">{(row.winner_rate * 100).toFixed(1)}%</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
+        <h2 className="text-lg font-semibold">Source priority by company</h2>
+        <p className="mt-2 text-sm text-black/70">
+          Canonical resolver picks one winner per market key. Set ordered source keys for each company (top line wins).
+        </p>
+        <div className="mt-4 grid gap-3 md:grid-cols-[320px_1fr]">
+          <div>
+            <label className="text-xs uppercase tracking-wide text-black/55">Company</label>
+            <select
+              value={selectedCompanyId}
+              onChange={(event) => {
+                const nextCompanyId = event.target.value;
+                setSelectedCompanyId(nextCompanyId);
+                void loadPriority(nextCompanyId);
+              }}
+              className="mt-1 w-full rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Select company</option>
+              {companyRows.map((company) => (
+                <option key={company.id} value={company.id}>
+                  {company.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs text-black/55">Available source keys from adapter names and canonical source labels.</p>
+          </div>
+          <div>
+            <label className="text-xs uppercase tracking-wide text-black/55">Ordered source keys (one per line)</label>
+            <textarea
+              value={priorityKeysInput}
+              onChange={(event) => setPriorityKeysInput(event.target.value)}
+              placeholder="agricharts&#10;glg&#10;andersons"
+              className="mt-1 min-h-28 w-full rounded-md border border-black/15 bg-white px-3 py-2 font-mono text-sm"
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!selectedCompanyId || loadingPriority || savingPriority}
+                onClick={() => void loadPriority(selectedCompanyId)}
+                className="rounded-md border border-black/20 bg-white px-3 py-2 text-sm disabled:opacity-50"
+              >
+                {loadingPriority ? "Loading..." : "Reload"}
+              </button>
+              <button
+                type="button"
+                disabled={!selectedCompanyId || savingPriority}
+                onClick={savePriority}
+                className="rounded-md border border-black/20 bg-black px-3 py-2 text-sm text-white disabled:opacity-50"
+              >
+                {savingPriority ? "Saving..." : "Save priority"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
         <h2 className="text-lg font-semibold">Latest rejection diagnostics</h2>
         <div className="mt-3 text-sm text-black/70">
           <p>Use the latest ingestion run table below for reject counts and reason breakdown.</p>
@@ -318,6 +510,13 @@ export default function SourcesPage() {
               className="rounded-md border border-black/20 bg-white px-4 py-2 text-sm disabled:opacity-50"
             >
               Seed pilot adapters
+            </button>
+            <button
+              disabled={seedingDefaults}
+              onClick={seedDefaultPriority}
+              className="rounded-md border border-black/20 bg-white px-4 py-2 text-sm disabled:opacity-50"
+            >
+              {seedingDefaults ? "Seeding defaults..." : "Seed company source priority"}
             </button>
           </div>
         </div>

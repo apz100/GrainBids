@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     daily_source_id: str = ""
     daily_commodity_id: str = ""
     file_ingestion_max_attempts: int = 2
+    canonical_min_quality_score: float = 0.8
+    invalid_commodity_labels: str = "mixed daily file"
+    canonical_aggregator_sources: str = "agricharts"
+    canonical_aggregator_gap_threshold: float = 0.15
     alert_email_enabled: bool = False
     alert_email_from: str | None = None
     alert_email_to: str | None = None
@@ -28,6 +32,14 @@ class Settings(BaseSettings):
     @property
     def api_cors_origins_list(self) -> list[str]:
         return [origin.strip().rstrip("/") for origin in self.api_cors_origins.split(",") if origin.strip()]
+
+    @property
+    def invalid_commodity_labels_set(self) -> set[str]:
+        return {token.strip().casefold() for token in self.invalid_commodity_labels.split(",") if token.strip()}
+
+    @property
+    def canonical_aggregator_sources_set(self) -> set[str]:
+        return {token.strip().casefold() for token in self.canonical_aggregator_sources.split(",") if token.strip()}
 
     @model_validator(mode="after")
     def validate_runtime(self) -> "Settings":

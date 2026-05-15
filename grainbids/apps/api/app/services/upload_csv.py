@@ -20,6 +20,7 @@ from app.models.price_snapshot import PriceSnapshot
 from app.models.raw_upload import RawUpload
 from app.models.source import Source
 from app.modules.imports.legacy_helpers import symbol_to_month_extended
+from app.services.canonical_resolver import resolve_canonical_rows_for_snapshot
 from app.services.market_canonicalization import (
     canonical_key,
     canonical_commodity_name,
@@ -491,6 +492,11 @@ def persist_normalized_rows(
     apply_historical_changes(db, normalized_rows=normalized_rows, captured_at=captured)
     db.add_all(normalized_rows)
     db.flush()
+    resolve_canonical_rows_for_snapshot(
+        db,
+        org_id=source.org_id,
+        snapshot_id=snapshot.id,
+    )
     parse_success_rate = float((row_count - rejected_row_count) / row_count) if row_count else 0.0
 
     return NormalizedPersistResult(

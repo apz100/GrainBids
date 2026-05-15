@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Select, and_, case, desc, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.request_context import RequestContext, get_request_context
 from app.db.session import get_db
 from app.models.alert import Alert
@@ -29,6 +30,7 @@ from app.services.market_canonicalization import (
 
 
 router = APIRouter(prefix="/api/normalized-prices", tags=["normalized-prices"])
+QUALITY_SCORE_FIELDS = 7.0
 
 
 def _to_float(value: Decimal | float | int | None) -> float | None:
@@ -49,6 +51,30 @@ def _to_basis_float(value: Decimal | float | int | None) -> float | None:
     if abs(number) >= 10:
         return number / 100.0
     return number
+
+
+def _quality_score_expr():
+    delivery_present = func.coalesce(NormalizedPrice.delivery_end, NormalizedPrice.delivery_label, NormalizedPrice.delivery_start).is_not(None)
+    invalid_labels = tuple(settings.invalid_commodity_labels_set) or ("__invalid_commodity__",)
+    commodity_valid = func.lower(func.trim(NormalizedPrice.commodity_name)).not_in(invalid_labels)
+    return (
+        case((commodity_valid, 1), else_=0)
+        + case((NormalizedPrice.futures_month.is_not(None), 1), else_=0)
+        + case((NormalizedPrice.futures_price.is_not(None), 1), else_=0)
+        + case((NormalizedPrice.basis.is_not(None), 1), else_=0)
+        + case((NormalizedPrice.cash_price_bu.is_not(None), 1), else_=0)
+        + case((NormalizedPrice.cash_price_mt.is_not(None), 1), else_=0)
+        + case((delivery_present, 1), else_=0)
+    ) / QUALITY_SCORE_FIELDS
+
+
+def _canonical_and_quality_filters(include_non_canonical: bool):
+    invalid_labels = tuple(settings.invalid_commodity_labels_set) or ("__invalid_commodity__",)
+    filters = [func.lower(func.trim(NormalizedPrice.commodity_name)).not_in(invalid_labels)]
+    if not include_non_canonical:
+        filters.append(NormalizedPrice.is_canonical.is_(True))
+    filters.append(_quality_score_expr() >= settings.canonical_min_quality_score)
+    return filters
 def _build_filters(
     commodity: str | None,
     location: str | None,
@@ -133,11 +159,12 @@ def list_normalized_prices(
     company_id: uuid.UUID | None = Query(None),
     location_id: uuid.UUID | None = Query(None),
     captured_date: date | None = Query(None),
+    include_non_canonical: bool = Query(False),
     limit: int = Query(200, ge=1, le=1000),
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    query: Select = _base_query(context).order_by(desc(PriceSnapshot.captured_at), NormalizedPrice.location)
+    query: Select = _base_query(context).where(*_canonical_and_quality_filters(include_non_canonical)).order_by(desc(PriceSnapshot.captured_at), NormalizedPrice.location)
 
     filters = _build_filters(
         commodity=commodity,
@@ -176,6 +203,9 @@ def list_normalized_prices(
                 "cash_price_bu_change": _to_float(price.cash_price_bu_change),
                 "cash_price_mt_change": _to_float(price.cash_price_mt_change),
                 "composite_key": price.composite_key,
+                "is_canonical": price.is_canonical,
+                "canonical_rank": price.canonical_rank,
+                "canonical_reason": price.canonical_reason,
             }
             for price, snapshot in rows
         ]
@@ -185,6 +215,7 @@ def list_normalized_prices(
 @router.get("/facets")
 def facets(
     captured_date: date | None = Query(None),
+    include_non_canonical: bool = Query(False),
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
@@ -201,18 +232,21 @@ def facets(
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
         .join(Source, Source.id == PriceSnapshot.source_id)
         .where(Source.org_id == context.org_id)
+        .where(*_canonical_and_quality_filters(include_non_canonical))
     )
     location_query = (
         select(func.distinct(NormalizedPrice.location))
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
         .join(Source, Source.id == PriceSnapshot.source_id)
         .where(Source.org_id == context.org_id)
+        .where(*_canonical_and_quality_filters(include_non_canonical))
     )
     source_query = (
         select(func.distinct(NormalizedPrice.source_name))
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
         .join(Source, Source.id == PriceSnapshot.source_id)
         .where(Source.org_id == context.org_id)
+        .where(*_canonical_and_quality_filters(include_non_canonical))
     )
     if filters:
         commodity_query = commodity_query.where(*filters)
@@ -256,6 +290,7 @@ def facets(
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
         .join(Source, Source.id == PriceSnapshot.source_id)
         .where(Source.org_id == context.org_id)
+        .where(*_canonical_and_quality_filters(include_non_canonical))
         .distinct()
         .order_by(Company.name.asc())
     )
@@ -265,6 +300,7 @@ def facets(
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
         .join(Source, Source.id == PriceSnapshot.source_id)
         .where(Source.org_id == context.org_id)
+        .where(*_canonical_and_quality_filters(include_non_canonical))
         .distinct()
         .order_by(Location.name.asc())
     )
@@ -319,6 +355,7 @@ def preview(
     company_id: uuid.UUID | None = Query(None),
     location_id: uuid.UUID | None = Query(None),
     captured_date: date | None = Query(None),
+    include_non_canonical: bool = Query(False),
     sort: str = Query(
         "captured_desc",
         pattern="^(captured_desc|basis_desc|basis_asc|cash_bu_desc|cash_bu_asc|basis_change_desc)$",
@@ -337,6 +374,7 @@ def preview(
         location_id=location_id,
     )
     query: Select = _base_query(context)
+    query = query.where(*_canonical_and_quality_filters(include_non_canonical))
     if filters:
         query = query.where(*filters)
     query = query.where(*_build_quality_filters())
@@ -359,6 +397,22 @@ def preview(
         if len(deduped_rows) >= limit:
             break
 
+    candidate_counts: dict[str, int] = {}
+    if deduped_rows:
+        key_count_query = (
+            select(NormalizedPrice.composite_key, func.count(NormalizedPrice.id))
+            .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+            .join(Source, Source.id == PriceSnapshot.source_id)
+            .where(Source.org_id == context.org_id)
+            .where(*_canonical_and_quality_filters(True))
+            .where(NormalizedPrice.composite_key.in_([price.composite_key for price, _snapshot in deduped_rows]))
+            .group_by(NormalizedPrice.composite_key)
+        )
+        if filters:
+            key_count_query = key_count_query.where(*filters)
+        for composite_key, count in db.execute(key_count_query).all():
+            candidate_counts[str(composite_key)] = int(count)
+
     return {
         "rows": [
             {
@@ -379,6 +433,11 @@ def preview(
                 "cash_price_mt": _to_float(price.cash_price_mt),
                 "cash_price_mt_change": _to_float(price.cash_price_mt_change),
                 "composite_key": price.composite_key,
+                "candidate_count": candidate_counts.get(str(price.composite_key), 1),
+                "selected_source_key": canonical_key(canonical_source_name(price.source_name)),
+                "canonical_reason": price.canonical_reason,
+                "is_canonical": price.is_canonical,
+                "canonical_rank": price.canonical_rank,
             }
             for price, snapshot in deduped_rows
         ]
@@ -394,6 +453,7 @@ def top_movers(
     company_id: uuid.UUID | None = Query(None),
     location_id: uuid.UUID | None = Query(None),
     captured_date: date | None = Query(None),
+    include_non_canonical: bool = Query(False),
     limit: int = Query(10, ge=1, le=100),
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
@@ -404,6 +464,7 @@ def top_movers(
         .join(Source, Source.id == PriceSnapshot.source_id)
         .where(Source.org_id == context.org_id)
         .where(NormalizedPrice.basis_change.is_not(None))
+        .where(*_canonical_and_quality_filters(include_non_canonical))
         .order_by(desc(func.abs(NormalizedPrice.basis_change)), desc(PriceSnapshot.captured_at))
     )
 
@@ -452,6 +513,7 @@ def summary(
     company_id: uuid.UUID | None = Query(None),
     location_id: uuid.UUID | None = Query(None),
     captured_date: date | None = Query(None),
+    include_non_canonical: bool = Query(False),
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
@@ -474,6 +536,7 @@ def summary(
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
         .join(Source, Source.id == PriceSnapshot.source_id)
         .where(Source.org_id == context.org_id)
+        .where(*_canonical_and_quality_filters(include_non_canonical))
     )
     if filters:
         basis_query = basis_query.where(*filters)

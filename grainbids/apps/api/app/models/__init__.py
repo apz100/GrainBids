@@ -1,6 +1,7 @@
 from app.models.alert import Alert
 from app.models.alert_rule import AlertRule
 from app.models.company import Company
+from app.models.company_source_priority import CompanySourcePriority
 from app.models.commodity import Commodity
 from app.models.ingestion_run import IngestionRun
 from app.models.location import Location
@@ -21,6 +22,7 @@ __all__ = [
     "Alert",
     "AlertRule",
     "Company",
+    "CompanySourcePriority",
     "Commodity",
     "IngestionRun",
     "Location",

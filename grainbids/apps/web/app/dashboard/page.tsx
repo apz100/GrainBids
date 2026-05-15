@@ -40,6 +40,11 @@ type PreviewRow = {
   cash_price_bu_change: number | null;
   cash_price_mt: number | null;
   cash_price_mt_change: number | null;
+  candidate_count?: number;
+  selected_source_key?: string | null;
+  canonical_reason?: string | null;
+  is_canonical?: boolean;
+  canonical_rank?: number | null;
 };
 
 type FacetsResponse = {
@@ -82,6 +87,7 @@ type FilterState = {
   region: string;
   captured_date: string;
   sort: "captured_desc" | "basis_change_desc" | "basis_desc" | "cash_bu_desc";
+  include_non_canonical: boolean;
 };
 
 const DEFAULT_FILTERS: FilterState = {
@@ -91,6 +97,7 @@ const DEFAULT_FILTERS: FilterState = {
   region: "",
   captured_date: "",
   sort: "captured_desc",
+  include_non_canonical: false,
 };
 
 export default function DashboardPage() {
@@ -132,6 +139,7 @@ export default function DashboardPage() {
   const [watchlistPreviewRows, setWatchlistPreviewRows] = useState<PreviewRow[]>([]);
   const [watchlistPreviewLoading, setWatchlistPreviewLoading] = useState(false);
   const [watchlistPreviewError, setWatchlistPreviewError] = useState("");
+  const canUseDebugView = canManageAlerts;
 
   useEffect(() => {
     if (configError) {
@@ -381,6 +389,19 @@ export default function DashboardPage() {
             Reset
           </button>
         </div>
+        {canUseDebugView ? (
+          <label className="mt-2 inline-flex items-center gap-2 text-xs text-black/65">
+            <input
+              type="checkbox"
+              checked={filters.include_non_canonical}
+              onChange={(event) =>
+                setFilters((prev) => ({ ...prev, include_non_canonical: event.target.checked }))
+              }
+              className="h-4 w-4 rounded border border-black/20"
+            />
+            Show alternates (non-canonical rows)
+          </label>
+        ) : null}
       </section>
 
       <section className="mt-4 rounded-xl border border-black/10 bg-white/85 shadow-sm">
@@ -395,6 +416,7 @@ export default function DashboardPage() {
               <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/55">
                 <th className="px-3 py-2">Location</th>
                 <th className="px-3 py-2">Company</th>
+                <th className="px-3 py-2">Winner</th>
                 <th className="px-3 py-2">Commodity</th>
                 <th className="px-3 py-2">Delivery</th>
                 <th className="px-3 py-2">Futures</th>
@@ -405,12 +427,14 @@ export default function DashboardPage() {
                 <th className="px-3 py-2 text-right">Bu Chg</th>
                 <th className="px-3 py-2 text-right">Cash/MT</th>
                 <th className="px-3 py-2 text-right">MT Chg</th>
+                <th className="px-3 py-2 text-right">Candidates</th>
+                <th className="px-3 py-2">Reason</th>
               </tr>
             </thead>
             <tbody>
               {previewRows.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-3 py-8 text-center text-sm text-black/55">
+                  <td colSpan={15} className="px-3 py-8 text-center text-sm text-black/55">
                     No rows for the selected filters.
                   </td>
                 </tr>
@@ -423,6 +447,7 @@ export default function DashboardPage() {
                   >
                     <td className="px-3 py-2">{row.location}</td>
                     <td className="px-3 py-2">{row.source_name || "-"}</td>
+                    <td className="px-3 py-2 text-xs text-black/65">{row.selected_source_key || "-"}</td>
                     <td className="px-3 py-2">{row.commodity_name}</td>
                     <td className="px-3 py-2">{row.delivery_label || "-"}</td>
                     <td className="px-3 py-2">{row.futures_month || "-"}</td>
@@ -433,6 +458,8 @@ export default function DashboardPage() {
                     <td className={`px-3 py-2 text-right ${toneForDelta(row.cash_price_bu_change)}`}>{formatSigned(row.cash_price_bu_change)}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.cash_price_mt)}</td>
                     <td className={`px-3 py-2 text-right ${toneForDelta(row.cash_price_mt_change)}`}>{formatSigned(row.cash_price_mt_change)}</td>
+                    <td className="px-3 py-2 text-right">{row.candidate_count ?? 1}</td>
+                    <td className="px-3 py-2 text-xs text-black/65">{row.canonical_reason || "-"}</td>
                   </tr>
                 ))
               )}
@@ -868,6 +895,7 @@ function buildMarketQuery(filters: FilterState) {
   if (filters.region) params.set("region", filters.region);
   if (filters.captured_date) params.set("captured_date", filters.captured_date);
   if (filters.sort) params.set("sort", filters.sort);
+  if (filters.include_non_canonical) params.set("include_non_canonical", "true");
   const query = params.toString();
   return query ? `?${query}` : "";
 }
