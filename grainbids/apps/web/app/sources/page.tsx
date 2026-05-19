@@ -110,6 +110,15 @@ type CanonicalCoverageRow = {
   winner_rate: number;
 };
 
+type CompanyPriorityCandidateRow = {
+  source_key: string;
+  display_name: string;
+  row_count: number;
+  canonical_count: number;
+  winner_rate: number;
+  policy_rank: number;
+};
+
 export default function SourcesPage() {
   const headers = buildApiHeaders();
   const adminAllowed = isAdminRole();
@@ -132,6 +141,8 @@ export default function SourcesPage() {
   const [savingPriority, setSavingPriority] = useState(false);
   const [seedingDefaults, setSeedingDefaults] = useState(false);
   const [coverageRows, setCoverageRows] = useState<CanonicalCoverageRow[]>([]);
+  const [priorityCandidates, setPriorityCandidates] = useState<CompanyPriorityCandidateRow[]>([]);
+  const [loadingCandidates, setLoadingCandidates] = useState(false);
 
   async function loadData() {
     const openOnlyQuery = openAlertsOnly ? "&open_only=true" : "";
@@ -261,22 +272,35 @@ export default function SourcesPage() {
   async function loadPriority(companyId: string) {
     if (!companyId) {
       setPriorityKeysInput("");
+      setPriorityCandidates([]);
       return;
     }
     setLoadingPriority(true);
+    setLoadingCandidates(true);
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/api/sources/priority?company_id=${companyId}`, { cache: "no-store", headers });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(typeof json.detail === "string" ? json.detail : "Failed to load priority");
+      const [priorityRes, candidatesRes] = await Promise.all([
+        fetch(`${API_BASE}/api/sources/priority?company_id=${companyId}`, { cache: "no-store", headers }),
+        fetch(`${API_BASE}/api/sources/priority/candidates?company_id=${companyId}`, { cache: "no-store", headers }),
+      ]);
+
+      const priorityJson = await priorityRes.json();
+      if (!priorityRes.ok) {
+        throw new Error(typeof priorityJson.detail === "string" ? priorityJson.detail : "Failed to load priority");
       }
-      const keys = (json.rows || []).map((row: { source_key: string }) => row.source_key);
+      const keys = (priorityJson.rows || []).map((row: { source_key: string }) => row.source_key);
       setPriorityKeysInput(keys.join("\n"));
+
+      const candidatesJson = await candidatesRes.json();
+      if (!candidatesRes.ok) {
+        throw new Error(typeof candidatesJson.detail === "string" ? candidatesJson.detail : "Failed to load candidates");
+      }
+      setPriorityCandidates(Array.isArray(candidatesJson.rows) ? candidatesJson.rows : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoadingPriority(false);
+      setLoadingCandidates(false);
     }
   }
 
@@ -328,6 +352,19 @@ export default function SourcesPage() {
     } finally {
       setSeedingDefaults(false);
     }
+  }
+
+  function applyCoverageOrder() {
+    if (priorityCandidates.length === 0) return;
+    const ordered = [...priorityCandidates]
+      .sort((a, b) => {
+        if (a.policy_rank !== b.policy_rank) return a.policy_rank - b.policy_rank;
+        if (a.winner_rate !== b.winner_rate) return b.winner_rate - a.winner_rate;
+        if (a.row_count !== b.row_count) return b.row_count - a.row_count;
+        return a.source_key.localeCompare(b.source_key);
+      })
+      .map((row) => row.source_key);
+    setPriorityKeysInput(ordered.join("\n"));
   }
 
   async function updateAlertStatus(alertId: string, status: "acknowledged" | "resolved") {
@@ -471,8 +508,50 @@ export default function SourcesPage() {
               >
                 {savingPriority ? "Saving..." : "Save priority"}
               </button>
+              <button
+                type="button"
+                disabled={!selectedCompanyId || loadingCandidates || priorityCandidates.length === 0}
+                onClick={applyCoverageOrder}
+                className="rounded-md border border-black/20 bg-white px-3 py-2 text-sm disabled:opacity-50"
+              >
+                Apply recommended order
+              </button>
             </div>
           </div>
+        </div>
+        <div className="mt-4 overflow-x-auto rounded-md border border-black/10 bg-white">
+          <table className="min-w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/50">
+                <th className="px-2 py-2">Source key</th>
+                <th className="px-2 py-2">Display</th>
+                <th className="px-2 py-2 text-right">Rows</th>
+                <th className="px-2 py-2 text-right">Winners</th>
+                <th className="px-2 py-2 text-right">Winner rate</th>
+                <th className="px-2 py-2 text-right">Policy rank</th>
+              </tr>
+            </thead>
+            <tbody>
+              {priorityCandidates.length === 0 ? (
+                <tr>
+                  <td className="px-2 py-4 text-black/55" colSpan={6}>
+                    {selectedCompanyId ? "No source candidates found." : "Select a company to see source candidates."}
+                  </td>
+                </tr>
+              ) : (
+                priorityCandidates.map((row) => (
+                  <tr key={row.source_key} className="border-b border-black/5">
+                    <td className="px-2 py-2 font-mono text-xs">{row.source_key}</td>
+                    <td className="px-2 py-2">{row.display_name}</td>
+                    <td className="px-2 py-2 text-right">{row.row_count}</td>
+                    <td className="px-2 py-2 text-right">{row.canonical_count}</td>
+                    <td className="px-2 py-2 text-right">{(row.winner_rate * 100).toFixed(1)}%</td>
+                    <td className="px-2 py-2 text-right">{row.policy_rank}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 

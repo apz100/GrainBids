@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, desc, func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.request_context import RequestContext, get_request_context, require_admin
 from app.db.session import get_db
 from app.models.commodity import Commodity
@@ -21,6 +22,12 @@ from app.services.source_registry import list_pilot_adapter_keys
 
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
+FILE_AGGREGATOR_KEYS = {
+    "ontario daily file",
+    "ontario cash bids",
+    "eastern ontario daily file",
+    "eastern ontario cash bids",
+}
 
 
 @router.get("/module")
@@ -132,6 +139,85 @@ def get_company_source_priority(
     }
 
 
+@router.get("/priority/candidates")
+def get_company_source_priority_candidates(
+    company_id: uuid.UUID = Query(...),
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    company = db.execute(
+        select(Company).where(Company.id == company_id, Company.org_id == context.org_id)
+    ).scalar_one_or_none()
+    if company is None:
+        raise HTTPException(status_code=404, detail="company not found")
+
+    query = (
+        select(
+            NormalizedPrice.source_name,
+            func.count(NormalizedPrice.id).label("row_count"),
+            func.sum(case((NormalizedPrice.is_canonical.is_(True), 1), else_=0)).label("canonical_count"),
+        )
+        .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .where(
+            Source.org_id == context.org_id,
+            NormalizedPrice.company_id == company_id,
+            NormalizedPrice.source_name.is_not(None),
+        )
+        .group_by(NormalizedPrice.source_name)
+    )
+
+    merged: dict[str, dict[str, object]] = {}
+    for source_name, row_count, canonical_count in db.execute(query).all():
+        display_name = canonical_source_name(source_name) or (source_name or "").strip()
+        source_key = canonical_key(display_name)
+        if not source_key:
+            continue
+        row_value = int(row_count or 0)
+        canonical_value = int(canonical_count or 0)
+        current = merged.get(source_key)
+        if current is None:
+            merged[source_key] = {
+                "source_key": source_key,
+                "display_name": display_name,
+                "row_count": row_value,
+                "canonical_count": canonical_value,
+            }
+        else:
+            current["row_count"] = int(current["row_count"]) + row_value
+            current["canonical_count"] = int(current["canonical_count"]) + canonical_value
+
+    candidates = list(merged.values())
+
+    def _policy_rank(source_key: str) -> int:
+        if source_key == company.canonical_key:
+            return 0
+        if source_key in settings.canonical_aggregator_sources_set or source_key in FILE_AGGREGATOR_KEYS:
+            return 2
+        return 1
+
+    candidates.sort(
+        key=lambda row: (
+            _policy_rank(str(row["source_key"])),
+            -int(row["row_count"]),
+            str(row["source_key"]),
+        )
+    )
+
+    for row in candidates:
+        row_count = int(row["row_count"])
+        canonical_count = int(row["canonical_count"])
+        row["winner_rate"] = float(canonical_count / row_count) if row_count else 0.0
+        row["policy_rank"] = _policy_rank(str(row["source_key"]))
+
+    return {
+        "company_id": str(company_id),
+        "company_name": company.name,
+        "company_key": company.canonical_key,
+        "rows": candidates,
+    }
+
+
 @router.put("/priority")
 def put_company_source_priority(
     company_id: uuid.UUID = Query(...),
@@ -196,6 +282,7 @@ def put_company_source_priority(
 
 @router.post("/priority/seed-defaults")
 def seed_company_source_priority_defaults(
+    overwrite_existing: bool = Query(False),
     context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -203,10 +290,10 @@ def seed_company_source_priority_defaults(
     seeded_companies = 0
     touched_rows = 0
     skipped_single_source = 0
+    skipped_existing = 0
 
-    aggregator_keys = {"agricharts", "ontario daily file", "ontario cash bids", "eastern ontario daily file", "eastern ontario cash bids"}
     for company in companies:
-        source_names = db.execute(
+        source_rows = db.execute(
             select(func.distinct(NormalizedPrice.source_name))
             .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
             .join(Source, Source.id == PriceSnapshot.source_id)
@@ -217,7 +304,7 @@ def seed_company_source_priority_defaults(
         ).scalars().all()
 
         ranked_keys: list[str] = []
-        for source_name in source_names:
+        for source_name in source_rows:
             key = canonical_key(canonical_source_name(source_name))
             if key:
                 ranked_keys.append(key)
@@ -243,6 +330,9 @@ def seed_company_source_priority_defaults(
                 CompanySourcePriority.company_id == company.id,
             )
         ).scalars().all()
+        if not overwrite_existing and any(row.is_active for row in existing):
+            skipped_existing += 1
+            continue
         existing_by_key = {canonical_key(row.source_key) or row.source_key: row for row in existing}
         seen: set[str] = set()
         for rank, source_key in enumerate(ordered_keys, start=1):
@@ -275,6 +365,8 @@ def seed_company_source_priority_defaults(
         "seeded_companies": seeded_companies,
         "touched_rows": touched_rows,
         "skipped_single_source": skipped_single_source,
+        "skipped_existing": skipped_existing,
+        "overwrite_existing": overwrite_existing,
     }
 
 
