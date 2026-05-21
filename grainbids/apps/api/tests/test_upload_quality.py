@@ -4,16 +4,19 @@ import sys
 import unittest
 from decimal import Decimal
 from pathlib import Path
+import uuid
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.services.upload_csv import (  # noqa: E402
+    _choose_company_id_for_row,
     _check_completeness,
     _derive_delivery_month_from_futures_month,
     _extract_price_from_text,
     _is_invalid_commodity_name,
     _parse_decimal,
+    _source_creates_company_identity,
     summarize_quality,
 )
 
@@ -135,6 +138,34 @@ class UploadQualityTests(unittest.TestCase):
         self.assertEqual(summary["rejected_row_count"], 8)
         self.assertEqual(summary["missing_required_count"], 5)
         self.assertEqual(summary["row_reject_reasons"], {"missing_basis": 4, "missing_cash_price_bu": 4})
+
+    def test_aggregator_source_does_not_create_company_identity(self) -> None:
+        self.assertFalse(_source_creates_company_identity("Agricharts"))
+        self.assertTrue(_source_creates_company_identity("GLG"))
+        self.assertFalse(_source_creates_company_identity("Ontario Cash Bids"))
+
+    def test_choose_company_id_for_row_prefers_location_company_for_aggregator(self) -> None:
+        location_company_id = uuid.uuid4()
+        self.assertEqual(
+            _choose_company_id_for_row(
+                source_name="Agricharts",
+                explicit_company_id=None,
+                location_company_id=location_company_id,
+            ),
+            location_company_id,
+        )
+
+    def test_choose_company_id_for_row_keeps_explicit_company_for_company_site(self) -> None:
+        explicit_company_id = uuid.uuid4()
+        location_company_id = uuid.uuid4()
+        self.assertEqual(
+            _choose_company_id_for_row(
+                source_name="GLG",
+                explicit_company_id=explicit_company_id,
+                location_company_id=location_company_id,
+            ),
+            explicit_company_id,
+        )
 
 
 if __name__ == "__main__":

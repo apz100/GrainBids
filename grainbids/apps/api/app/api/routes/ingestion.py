@@ -12,8 +12,14 @@ from app.core.request_context import RequestContext, get_request_context, requir
 from app.db.session import get_db
 from app.models.commodity import Commodity
 from app.models.source import Source
+from app.services.ingestion_diagnostics import build_ingestion_diagnostics
 from app.services.source_orchestration import build_sla_summary
-from app.services.source_file_ingestion import ingest_source_file, list_ingestion_runs, run_scheduled_file_ingestion_cycle
+from app.services.source_file_ingestion import (
+    ingest_source_file,
+    list_ingestion_runs,
+    reprocess_latest_file_source,
+    run_scheduled_file_ingestion_cycle,
+)
 from app.services.upload_csv import summarize_quality
 
 
@@ -85,6 +91,23 @@ def get_ingestion_sla(
     return summary
 
 
+@router.get("/diagnostics")
+def get_ingestion_diagnostics(
+    source_id: uuid.UUID | None = Query(None),
+    duplicate_limit: int = Query(10, ge=1, le=50),
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    if source_id is not None:
+        _assert_source_org_scope(db, source_id=source_id, org_id=context.org_id)
+    return build_ingestion_diagnostics(
+        db,
+        org_id=context.org_id,
+        source_id=source_id,
+        duplicate_limit=duplicate_limit,
+    )
+
+
 @router.post("/source-file/run")
 def run_source_file_ingestion(
     source_file_path: str | None = Query(None),
@@ -123,6 +146,57 @@ def run_source_file_ingestion(
         missing_required_count=result.missing_required_count,
         parse_success_rate=result.parse_success_rate,
         row_reject_reasons=result.row_reject_reasons or {},
+    )
+    status_code = 500 if result.status == "failed" else 200
+    if status_code >= 400:
+        raise HTTPException(status_code=status_code, detail=payload)
+    return {"result": payload}
+
+
+@router.post("/source-file/reprocess-latest")
+def reprocess_latest_source_file_ingestion(
+    source_id: uuid.UUID | None = Query(None),
+    source_file_path: str | None = Query(None),
+    duplicate_limit: int = Query(10, ge=1, le=50),
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    if source_id is not None:
+        _assert_source_org_scope(db, source_id=source_id, org_id=context.org_id)
+
+    try:
+        target, result = reprocess_latest_file_source(
+            db,
+            org_id=context.org_id,
+            source_id=source_id,
+            source_file_path_override=source_file_path or settings.reprocess_source_file_path_override,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    payload = _serialize_result(result)
+    payload["reprocess_target"] = {
+        "source_id": str(target.source_id),
+        "source_name": target.source_name,
+        "commodity_id": str(target.commodity_id),
+        "snapshot_id": str(target.snapshot_id),
+        "captured_at": target.captured_at.isoformat() if target.captured_at else None,
+        "source_file_path": target.source_file_path,
+    }
+    payload["quality_summary"] = summarize_quality(
+        raw_row_count=result.raw_row_count,
+        normalized_row_count=result.normalized_row_count,
+        duplicate_key_count=result.duplicate_key_count,
+        rejected_row_count=result.rejected_row_count,
+        missing_required_count=result.missing_required_count,
+        parse_success_rate=result.parse_success_rate,
+        row_reject_reasons=result.row_reject_reasons or {},
+    )
+    payload["diagnostics"] = build_ingestion_diagnostics(
+        db,
+        org_id=context.org_id,
+        source_id=target.source_id,
+        duplicate_limit=duplicate_limit,
     )
     status_code = 500 if result.status == "failed" else 200
     if status_code >= 400:

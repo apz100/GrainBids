@@ -16,8 +16,10 @@ type SummaryResponse = {
 type TopMover = {
   id: string;
   location: string;
+  company_name?: string | null;
   commodity_name: string;
   source_name: string | null;
+  source_attribution?: string | null;
   basis_change: number | null;
   cash_price_bu_change: number | null;
   captured_at: string | null;
@@ -29,7 +31,9 @@ type PreviewRow = {
   location_id?: string | null;
   captured_at: string | null;
   location: string;
+  company_name?: string | null;
   source_name: string | null;
+  source_attribution?: string | null;
   commodity_name: string;
   delivery_label: string | null;
   futures_month: string | null;
@@ -47,14 +51,21 @@ type PreviewRow = {
   canonical_rank?: number | null;
 };
 
+type MonthlyPreviewGroup = {
+  label: string;
+  row_count: number;
+  top_cash_price_bu: number | null;
+  rows: PreviewRow[];
+};
+
 type FacetsResponse = {
   commodities: string[];
   locations: string[];
   source_names: string[];
   company_names: string[];
   region_names: string[];
-  company_rows?: { id: string; name: string }[];
-  location_rows?: { id: string; name: string; region: string | null }[];
+  company_rows?: { id: string; name: string; market_count?: number }[];
+  location_rows?: { id: string; name: string; region: string | null; market_count?: number }[];
 };
 
 type WatchlistRow = {
@@ -114,13 +125,13 @@ export default function DashboardPage() {
     location_rows: [],
   });
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([]);
+  const [monthlyPreview, setMonthlyPreview] = useState<MonthlyPreviewGroup[]>([]);
   const [movers, setMovers] = useState<TopMover[]>([]);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [sla, setSla] = useState<SlaSummary | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [error, setError] = useState("");
-  const monthlyPreview = useMemo(() => buildMonthlyPreview(previewRows), [previewRows]);
   const [selectedRowId, setSelectedRowId] = useState<string>("");
   const selectedRow = useMemo(
     () => previewRows.find((row) => row.id === selectedRowId) ?? previewRows[0] ?? null,
@@ -213,10 +224,16 @@ export default function DashboardPage() {
       const preview = (await previewRes.json()).rows ?? [];
       setPreviewRows(sortPreviewRowsForDisplay(preview));
 
-      const [moversRes, summaryRes] = await Promise.all([
+      const [groupedRes, moversRes, summaryRes] = await Promise.all([
+        fetch(`${API_BASE}/api/normalized-prices/preview-grouped${query}&limit=120&rows_per_group=8`, { cache: "no-store", headers }),
         fetch(`${API_BASE}/api/normalized-prices/top-movers${query}&limit=8`, { cache: "no-store", headers }),
         fetch(`${API_BASE}/api/normalized-prices/summary${query}`, { cache: "no-store", headers }),
       ]);
+      if (groupedRes.ok) {
+        setMonthlyPreview((await groupedRes.json()).groups ?? []);
+      } else {
+        setError(`Monthly preview unavailable: ${await readFailure(groupedRes)}`);
+      }
       if (moversRes.ok) {
         setMovers((await moversRes.json()).rows ?? []);
       } else {
@@ -445,7 +462,7 @@ export default function DashboardPage() {
                     onClick={() => setSelectedRowId(row.id)}
                   >
                     <td className="px-3 py-2">{row.location}</td>
-                    <td className="px-3 py-2">{row.source_name || "-"}</td>
+                    <td className="px-3 py-2">{row.company_name || "-"}</td>
                     <td className="px-3 py-2">{row.commodity_name}</td>
                     <td className="px-3 py-2">{row.delivery_label || "-"}</td>
                     <td className="px-3 py-2">{row.futures_month || "-"}</td>
@@ -481,7 +498,10 @@ export default function DashboardPage() {
                     <div key={`${group.label}-${row.id}`} className="flex items-start justify-between gap-2 text-xs">
                       <div>
                         <p className="font-medium">{row.location}</p>
-                        <p className="text-black/60">{row.source_name || "-"} / {row.commodity_name}</p>
+                        <p className="text-black/60">
+                          {row.company_name || "Unknown buyer"} / {row.commodity_name}
+                          {row.source_attribution ? ` · Source: ${row.source_attribution}` : ""}
+                        </p>
                       </div>
                       <div className="text-right">
                         <p className="font-semibold">{formatNumber(row.cash_price_bu)}</p>
@@ -504,7 +524,10 @@ export default function DashboardPage() {
           <div className="mt-3 grid gap-4 lg:grid-cols-2">
             <article className="rounded-md border border-black/10 bg-white p-3 text-sm">
               <p className="font-semibold">{selectedRow.location}</p>
-              <p className="text-black/60">{selectedRow.source_name || "-"} / {selectedRow.commodity_name}</p>
+              <p className="text-black/60">
+                {selectedRow.company_name || "Unknown buyer"} / {selectedRow.commodity_name}
+                {selectedRow.source_attribution ? ` · Source: ${selectedRow.source_attribution}` : ""}
+              </p>
               <p className="mt-1 text-black/60">Delivery: {selectedRow.delivery_label || "-"}</p>
               <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
                 <p>Cash/Bu: <span className="font-semibold">{formatNumber(selectedRow.cash_price_bu)}</span></p>
@@ -537,7 +560,7 @@ export default function DashboardPage() {
                           name: watchlistName.trim(),
                           location: selectedRow.location,
                           commodity_name: selectedRow.commodity_name,
-                          source_name: selectedRow.source_name || "",
+                          source_name: selectedRow.company_name || "",
                         });
                         const res = await fetch(`${API_BASE}/api/watchlists?${params.toString()}`, {
                           method: "POST",
@@ -698,7 +721,7 @@ export default function DashboardPage() {
                 watchlistPreviewRows.map((row) => (
                   <tr key={`watchlist-preview-${row.id}`} className="border-b border-black/5">
                     <td className="px-3 py-2">{row.location}</td>
-                    <td className="px-3 py-2">{row.source_name || "-"}</td>
+                    <td className="px-3 py-2">{row.company_name || "-"}</td>
                     <td className="px-3 py-2">{row.commodity_name}</td>
                     <td className="px-3 py-2">{row.delivery_label || "-"}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.cash_price_bu)}</td>
@@ -720,7 +743,10 @@ export default function DashboardPage() {
             movers.map((mover) => (
               <article key={mover.id} className="rounded-md border border-black/10 bg-white p-3">
                 <p className="text-sm font-semibold">{mover.location}</p>
-                <p className="text-xs text-black/60">{mover.source_name || "-"} / {mover.commodity_name}</p>
+                <p className="text-xs text-black/60">
+                  {mover.company_name || "Unknown buyer"} / {mover.commodity_name}
+                  {mover.source_attribution ? ` · Source: ${mover.source_attribution}` : ""}
+                </p>
                 <p className={`mt-2 text-sm ${toneForDelta(mover.basis_change)}`}>Basis: {formatSigned(mover.basis_change)}</p>
                 <p className={`text-xs ${toneForDelta(mover.cash_price_bu_change)}`}>Cash/Bu: {formatSigned(mover.cash_price_bu_change)}</p>
               </article>
@@ -781,7 +807,7 @@ function sortPreviewRowsForDisplay(rows: PreviewRow[]): PreviewRow[] {
   return [...rows].sort((a, b) => {
     const locationCompare = compareString(a.location, b.location);
     if (locationCompare !== 0) return locationCompare;
-    const companyCompare = compareString(a.source_name ?? "", b.source_name ?? "");
+    const companyCompare = compareString(a.company_name ?? "", b.company_name ?? "");
     if (companyCompare !== 0) return companyCompare;
     const commodityCompare = compareString(a.commodity_name, b.commodity_name);
     if (commodityCompare !== 0) return commodityCompare;
@@ -896,34 +922,6 @@ function buildMarketQuery(filters: FilterState) {
   if (filters.include_non_canonical) params.set("include_non_canonical", "true");
   const query = params.toString();
   return query ? `?${query}` : "";
-}
-
-function buildMonthlyPreview(rows: PreviewRow[]): { label: string; rows: PreviewRow[] }[] {
-  const groups = new Map<string, PreviewRow[]>();
-  for (const row of rows) {
-    const label = row.delivery_label || row.futures_month || "Unspecified";
-    const bucket = groups.get(label);
-    if (bucket) {
-      bucket.push(row);
-    } else {
-      groups.set(label, [row]);
-    }
-  }
-
-  const sortedLabels = Array.from(groups.keys()).sort((a, b) => compareMonthLabel(a, b));
-  return sortedLabels.map((label) => {
-    const items = (groups.get(label) || [])
-      .slice()
-      .sort((a, b) => {
-        const cashCompare = (b.cash_price_bu ?? Number.NEGATIVE_INFINITY) - (a.cash_price_bu ?? Number.NEGATIVE_INFINITY);
-        if (cashCompare !== 0) return cashCompare;
-        const basisCompare = (b.basis ?? Number.NEGATIVE_INFINITY) - (a.basis ?? Number.NEGATIVE_INFINITY);
-        if (basisCompare !== 0) return basisCompare;
-        return compareString(a.location, b.location);
-      })
-      .slice(0, 8);
-    return { label, rows: items };
-  });
 }
 
 async function readFailure(res: Response): Promise<string> {

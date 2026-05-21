@@ -15,8 +15,10 @@ class Settings(BaseSettings):
     daily_source_name: str = "daily_source_file"
     daily_source_id: str = ""
     daily_commodity_id: str = ""
+    reprocess_source_file_path_override: str = ""
     file_ingestion_max_attempts: int = 2
     canonical_min_quality_score: float = 0.8
+    user_visible_facet_min_market_count: int = 2
     invalid_commodity_labels: str = "mixed daily file"
     canonical_aggregator_sources: str = "agricharts"
     canonical_aggregator_gap_threshold: float = 0.15

@@ -6,9 +6,11 @@ import re
 NULL_LIKE = {"nan", "none", "null", "na", "n/a", "-"}
 REGION_SOURCE_LABELS = {
     "eastern ontario cash bids": "Eastern Ontario",
-    "eastern ontario daily file": "Eastern Ontario",
     "ontario cash bids": "Ontario",
-    "ontario daily file": "Ontario",
+}
+REGION_CANONICAL_SOURCE_LABELS = {
+    "eastern ontario": ("Eastern Ontario Cash Bids",),
+    "ontario": ("Ontario Cash Bids",),
 }
 LOCATION_CANONICAL_OVERRIDES = {
     # Known deterministic typo/variant cleanups
@@ -53,9 +55,9 @@ def canonical_source_name(source_name: str | None) -> str | None:
         "snobelen": "Snobelen",
         "wanstead": "Wanstead",
         "eastern ontario cash bids": "Eastern Ontario Cash Bids",
-        "eastern ontario daily file": "Eastern Ontario Daily File",
+        "eastern ontario daily file": "Eastern Ontario Cash Bids",
         "ontario cash bids": "Ontario Cash Bids",
-        "ontario daily file": "Ontario Daily File",
+        "ontario daily file": "Ontario Cash Bids",
     }
     return aliases.get(normalized.casefold(), normalized)
 
@@ -109,3 +111,10 @@ def source_scope(source_name: str | None) -> tuple[str, str | None]:
     if region_name:
         return "region", region_name
     return "company", canonical
+
+
+def region_source_names(region_name: str | None) -> tuple[str, ...]:
+    normalized = normalize_text(region_name)
+    if normalized is None:
+        return ()
+    return REGION_CANONICAL_SOURCE_LABELS.get(normalized.casefold(), ())

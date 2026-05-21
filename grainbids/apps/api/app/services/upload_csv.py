@@ -12,6 +12,7 @@ from typing import Mapping
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.company import Company
 from app.models.commodity import Commodity
 from app.models.location import Location
@@ -27,6 +28,7 @@ from app.services.market_canonicalization import (
     canonical_location_name,
     canonical_source_name,
     normalize_text,
+    source_scope,
 )
 from app.services.price_comparison import apply_historical_changes, build_composite_key
 
@@ -337,7 +339,8 @@ def persist_normalized_rows(
 
     normalized_by_key: dict[str, NormalizedPrice] = {}
     company_cache: dict[tuple[uuid.UUID, str], uuid.UUID] = {}
-    location_cache: dict[tuple[uuid.UUID, str], uuid.UUID] = {}
+    location_cache: dict[tuple[uuid.UUID, str], tuple[uuid.UUID, uuid.UUID | None]] = {}
+    company_name_cache: dict[uuid.UUID, str | None] = {}
     row_count = 0
     duplicate_key_count = 0
     rejected_row_count = 0
@@ -427,19 +430,25 @@ def persist_normalized_rows(
             _increment_reason(row_reject_reasons, "missing_composite_key")
             continue
 
-        company_id = _resolve_company_id(
+        company_id = _resolve_company_id_for_row(
             db,
             org_id=source.org_id,
             source_name=source_name,
-            cache=company_cache,
+            company_cache=company_cache,
         )
-        location_id = _resolve_location_id(
+        location_id, location_company_id = _resolve_location_id(
             db,
             org_id=source.org_id,
             company_id=company_id,
             location_name=location,
             region=source.region,
             cache=location_cache,
+            company_name_cache=company_name_cache,
+        )
+        company_id = _choose_company_id_for_row(
+            source_name=source_name,
+            explicit_company_id=company_id,
+            location_company_id=location_company_id,
         )
 
         # If a source file repeats the same market key, keep the last row from that file.
@@ -695,6 +704,46 @@ def _resolve_company_id(
     return row.id
 
 
+def _source_creates_company_identity(source_name: str | None) -> bool:
+    scope, label = source_scope(source_name)
+    if scope != "company":
+        return False
+    key = canonical_key(label)
+    if key is None:
+        return False
+    return key not in settings.canonical_aggregator_sources_set
+
+
+def _resolve_company_id_for_row(
+    db: Session,
+    *,
+    org_id: uuid.UUID,
+    source_name: str,
+    company_cache: dict[tuple[uuid.UUID, str], uuid.UUID],
+) -> uuid.UUID | None:
+    if not _source_creates_company_identity(source_name):
+        return None
+    return _resolve_company_id(
+        db,
+        org_id=org_id,
+        source_name=source_name,
+        cache=company_cache,
+    )
+
+
+def _choose_company_id_for_row(
+    *,
+    source_name: str | None,
+    explicit_company_id: uuid.UUID | None,
+    location_company_id: uuid.UUID | None,
+) -> uuid.UUID | None:
+    if explicit_company_id is not None:
+        return explicit_company_id
+    if _source_creates_company_identity(source_name):
+        return None
+    return location_company_id
+
+
 def _resolve_location_id(
     db: Session,
     *,
@@ -702,11 +751,12 @@ def _resolve_location_id(
     company_id: uuid.UUID | None,
     location_name: str,
     region: str | None,
-    cache: dict[tuple[uuid.UUID, str], uuid.UUID],
-) -> uuid.UUID | None:
+    cache: dict[tuple[uuid.UUID, str], tuple[uuid.UUID, uuid.UUID | None]],
+    company_name_cache: dict[uuid.UUID, str | None],
+) -> tuple[uuid.UUID | None, uuid.UUID | None]:
     normalized = canonical_location_name(location_name)
     if not normalized:
-        return None
+        return None, None
     key = normalized.casefold()
     cache_key = (org_id, key)
     if cache_key in cache:
@@ -719,9 +769,10 @@ def _resolve_location_id(
         )
     ).scalar_one_or_none()
     if row is None:
+        trusted_company_id = company_id if company_id is not None else None
         row = Location(
             org_id=org_id,
-            company_id=company_id,
+            company_id=trusted_company_id,
             name=normalized,
             canonical_key=key,
             region=normalize_text(region),
@@ -729,9 +780,39 @@ def _resolve_location_id(
         db.add(row)
         db.flush()
     else:
-        if row.company_id is None and company_id is not None:
+        existing_company_id = _trusted_location_company_id(
+            db,
+            company_id=row.company_id,
+            company_name_cache=company_name_cache,
+        )
+        if existing_company_id is None and company_id is not None:
             row.company_id = company_id
+            existing_company_id = company_id
         if row.region is None and normalize_text(region):
             row.region = normalize_text(region)
-    cache[cache_key] = row.id
-    return row.id
+        elif row.company_id != existing_company_id:
+            row.company_id = existing_company_id
+    trusted_company_id = _trusted_location_company_id(
+        db,
+        company_id=row.company_id,
+        company_name_cache=company_name_cache,
+    )
+    cache[cache_key] = (row.id, trusted_company_id)
+    return row.id, trusted_company_id
+
+
+def _trusted_location_company_id(
+    db: Session,
+    *,
+    company_id: uuid.UUID | None,
+    company_name_cache: dict[uuid.UUID, str | None],
+) -> uuid.UUID | None:
+    if company_id is None:
+        return None
+    company_name = company_name_cache.get(company_id)
+    if company_name is None and company_id not in company_name_cache:
+        company_name = db.execute(select(Company.name).where(Company.id == company_id)).scalar_one_or_none()
+        company_name_cache[company_id] = company_name
+    if not _source_creates_company_identity(company_name):
+        return None
+    return company_id

@@ -44,6 +44,16 @@ class SourceFileIngestionResult:
     error_message: str | None
 
 
+@dataclass
+class FileSourceReprocessTarget:
+    source_id: uuid.UUID
+    source_name: str
+    commodity_id: uuid.UUID
+    snapshot_id: uuid.UUID
+    captured_at: datetime | None
+    source_file_path: str
+
+
 COMMODITY_ALIASES: dict[str, str] = {
     "corn": "Corn",
     "maize": "Corn",
@@ -456,6 +466,62 @@ def ingest_source_file(
     )
 
 
+def reprocess_latest_file_source(
+    db: Session,
+    *,
+    org_id: uuid.UUID,
+    source_id: uuid.UUID | None = None,
+    source_file_path_override: str | None = None,
+) -> tuple[FileSourceReprocessTarget, SourceFileIngestionResult]:
+    target = get_latest_file_reprocess_target(
+        db,
+        org_id=org_id,
+        source_id=source_id,
+        source_file_path_override=source_file_path_override,
+    )
+    result = ingest_source_file(
+        db,
+        source_file_path=target.source_file_path,
+        source_name=target.source_name,
+        source_id=target.source_id,
+        commodity_id=target.commodity_id,
+        trigger_type="manual",
+        attempt_number=1,
+        max_attempts=1,
+    )
+    return target, result
+
+
+def get_latest_file_reprocess_target(
+    db: Session,
+    *,
+    org_id: uuid.UUID,
+    source_id: uuid.UUID | None = None,
+    source_file_path_override: str | None = None,
+) -> FileSourceReprocessTarget:
+    latest_snapshot = _get_latest_file_snapshot(db, org_id=org_id, source_id=source_id)
+    if latest_snapshot is None:
+        raise ValueError("No file-source snapshot found for this organization")
+
+    snapshot, source = latest_snapshot
+    source_file_path = _source_file_path_for_reprocess(
+        snapshot.raw_payload_json,
+        source.url,
+        source_file_path_override=source_file_path_override or settings.reprocess_source_file_path_override,
+    )
+    if not source_file_path:
+        raise ValueError("Latest file-source snapshot has no reusable file path")
+
+    return FileSourceReprocessTarget(
+        source_id=source.id,
+        source_name=source.name,
+        commodity_id=snapshot.commodity_id,
+        snapshot_id=snapshot.id,
+        captured_at=snapshot.captured_at,
+        source_file_path=source_file_path,
+    )
+
+
 def run_scheduled_file_ingestion_cycle(
     db: Session,
     *,
@@ -580,6 +646,42 @@ def list_ingestion_runs(
     return db.execute(
         query.order_by(desc(IngestionRun.started_at)).limit(limit)
     ).scalars().all()
+
+
+def _get_latest_file_snapshot(
+    db: Session,
+    *,
+    org_id: uuid.UUID,
+    source_id: uuid.UUID | None = None,
+) -> tuple[PriceSnapshot, Source] | None:
+    query = (
+        select(PriceSnapshot, Source)
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .where(
+            Source.org_id == org_id,
+            Source.source_type == "file",
+        )
+    )
+    if source_id is not None:
+        query = query.where(Source.id == source_id)
+    query = query.order_by(desc(PriceSnapshot.captured_at), desc(PriceSnapshot.id)).limit(1)
+    return db.execute(query).one_or_none()
+
+
+def _source_file_path_for_reprocess(
+    raw_payload_json: dict | None,
+    source_url: str | None,
+    *,
+    source_file_path_override: str | None = None,
+) -> str:
+    override = str(source_file_path_override or "").strip()
+    if override:
+        return override
+    if isinstance(raw_payload_json, dict):
+        payload_path = raw_payload_json.get("source_file_path")
+        if payload_path is not None and str(payload_path).strip():
+            return str(payload_path).strip()
+    return str(source_url or "").strip()
 
 
 def _list_file_sources(

@@ -11,6 +11,7 @@ from app.services.market_canonicalization import (  # noqa: E402
     canonical_commodity_name,
     canonical_location_name,
     canonical_source_name,
+    region_source_names,
     source_scope,
 )
 
@@ -19,7 +20,8 @@ class MarketCanonicalizationTests(unittest.TestCase):
     def test_source_aliases(self) -> None:
         self.assertEqual(canonical_source_name("glg"), "GLG")
         self.assertEqual(canonical_source_name("The Andersons"), "Andersons")
-        self.assertEqual(canonical_source_name("Ontario Daily File"), "Ontario Daily File")
+        self.assertEqual(canonical_source_name("Ontario Daily File"), "Ontario Cash Bids")
+        self.assertEqual(canonical_source_name("Eastern Ontario Daily File"), "Eastern Ontario Cash Bids")
 
     def test_location_normalizes_any_branch(self) -> None:
         self.assertEqual(canonical_location_name("Any Wanstead Branch"), "Wanstead Branch")
@@ -35,10 +37,15 @@ class MarketCanonicalizationTests(unittest.TestCase):
 
     def test_source_scope_region_vs_company(self) -> None:
         self.assertEqual(source_scope("Ontario Cash Bids"), ("region", "Ontario"))
+        self.assertEqual(source_scope("Ontario Daily File"), ("region", "Ontario"))
         self.assertEqual(source_scope("Eastern Ontario Daily File"), ("region", "Eastern Ontario"))
         self.assertEqual(source_scope("GLG"), ("company", "GLG"))
+
+    def test_region_source_names(self) -> None:
+        self.assertEqual(region_source_names("Ontario"), ("Ontario Cash Bids",))
+        self.assertEqual(region_source_names("Eastern Ontario"), ("Eastern Ontario Cash Bids",))
+        self.assertEqual(region_source_names("Unknown Region"), ())
 
 
 if __name__ == "__main__":
     unittest.main()
-
