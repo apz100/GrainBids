@@ -13,6 +13,7 @@ from app.db.session import get_db
 from app.models.commodity import Commodity
 from app.models.source import Source
 from app.services.ingestion_diagnostics import build_ingestion_diagnostics
+from app.services.source_company_identity_diagnostics import list_ambiguous_location_company_candidates
 from app.services.source_orchestration import build_sla_summary
 from app.services.source_file_ingestion import (
     ingest_source_file,
@@ -105,6 +106,23 @@ def get_ingestion_diagnostics(
         org_id=context.org_id,
         source_id=source_id,
         duplicate_limit=duplicate_limit,
+    )
+
+
+@router.get("/company-identity/ambiguous-locations")
+def get_ambiguous_location_company_candidates(
+    source_id: uuid.UUID | None = Query(None),
+    limit: int = Query(25, ge=1, le=100),
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    if source_id is not None:
+        _assert_source_org_scope(db, source_id=source_id, org_id=context.org_id)
+    return list_ambiguous_location_company_candidates(
+        db,
+        org_id=context.org_id,
+        source_id=source_id,
+        limit=limit,
     )
 
 
