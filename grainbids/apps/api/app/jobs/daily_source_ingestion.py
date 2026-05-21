@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.core.config import settings
 from app.db.session import get_sessionmaker
@@ -20,6 +20,7 @@ def main() -> int:
 
     db = get_sessionmaker()()
     try:
+        _tune_session_for_job(db)
         if args.single_source:
             return _run_single_source(db)
 
@@ -41,6 +42,11 @@ def main() -> int:
         return 0 if len(failed) == 0 else 1
     finally:
         db.close()
+
+
+def _tune_session_for_job(db) -> None:
+    # Canonical resolution can touch many rows; raise timeout for this batch job only.
+    db.execute(text("SET statement_timeout TO '10min'"))
 
 
 def _run_single_source(db) -> int:

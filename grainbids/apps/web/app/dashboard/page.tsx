@@ -416,7 +416,6 @@ export default function DashboardPage() {
               <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/55">
                 <th className="px-3 py-2">Location</th>
                 <th className="px-3 py-2">Company</th>
-                <th className="px-3 py-2">Winner</th>
                 <th className="px-3 py-2">Commodity</th>
                 <th className="px-3 py-2">Delivery</th>
                 <th className="px-3 py-2">Futures</th>
@@ -434,7 +433,7 @@ export default function DashboardPage() {
             <tbody>
               {previewRows.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="px-3 py-8 text-center text-sm text-black/55">
+                  <td colSpan={14} className="px-3 py-8 text-center text-sm text-black/55">
                     No rows for the selected filters.
                   </td>
                 </tr>
@@ -447,7 +446,6 @@ export default function DashboardPage() {
                   >
                     <td className="px-3 py-2">{row.location}</td>
                     <td className="px-3 py-2">{row.source_name || "-"}</td>
-                    <td className="px-3 py-2 text-xs text-black/65">{row.selected_source_key || "-"}</td>
                     <td className="px-3 py-2">{row.commodity_name}</td>
                     <td className="px-3 py-2">{row.delivery_label || "-"}</td>
                     <td className="px-3 py-2">{row.futures_month || "-"}</td>
