@@ -6,6 +6,364 @@ import Link from "next/link";
 import OpenAlertsPanel from "./open-alerts-panel";
 import { API_BASE, buildApiHeaders, getApiConfigError, isAdminRole } from "@/lib/api";
 
+// Hook to persist filter state to localStorage
+function useFilterStorage(
+  key: string,
+  defaultValue: FilterState
+): [FilterState, (value: FilterState | ((prev: FilterState) => FilterState)) => void] {
+  const [isClient, setIsClient] = useState(false);
+  const [filters, setFiltersState] = useState<FilterState>(defaultValue);
+
+  useEffect(() => {
+    setIsClient(true);
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      try {
+        setFiltersState({ ...defaultValue, ...JSON.parse(stored) });
+      } catch {
+        setFiltersState(defaultValue);
+      }
+    }
+  }, []);
+
+  const updateFilters = (newFilters: FilterState | ((prev: FilterState) => FilterState)) => {
+    const next = typeof newFilters === "function" ? newFilters(filters) : newFilters;
+    setFiltersState(next);
+    if (isClient) {
+      localStorage.setItem(key, JSON.stringify(next));
+    }
+  };
+
+  return [filters, updateFilters];
+}
+
+// Group locations by type (elevator vs benchmark)
+function groupLocationsByType(locations: Array<{ id: string; name: string; region: string | null }>) {
+  const elevators: typeof locations = [];
+  const benchmarks: typeof locations = [];
+
+  for (const loc of locations) {
+    // Simple heuristic: if region exists, it's an elevator location
+    if (loc.region) {
+      elevators.push(loc);
+    } else {
+      benchmarks.push(loc);
+    }
+  }
+
+  return { elevators, benchmarks };
+}
+
+// Filter chips display component
+function FilterChips({
+  filters,
+  facets,
+  onClearFilter,
+  onReset,
+}: {
+  filters: FilterState;
+  facets: FacetsResponse;
+  onClearFilter: (key: keyof FilterState) => void;
+  onReset: () => void;
+}) {
+  const chips: Array<{ label: string; key: keyof FilterState }> = [];
+
+  if (filters.commodity && filters.commodity !== "Corn") {
+    chips.push({ label: `Commodity: ${filters.commodity}`, key: "commodity" });
+  }
+
+  if (filters.location_id) {
+    const locName = facets.location_rows?.find((l) => l.id === filters.location_id)?.name;
+    if (locName) {
+      chips.push({ label: `Location: ${locName}`, key: "location_id" });
+    }
+  }
+
+  if (filters.company_id) {
+    const compName = facets.company_rows?.find((c) => c.id === filters.company_id)?.name;
+    if (compName) {
+      chips.push({ label: `Company: ${compName}`, key: "company_id" });
+    }
+  }
+
+  if (filters.region) {
+    chips.push({ label: `Region: ${filters.region}`, key: "region" });
+  }
+
+  if (filters.captured_date) {
+    chips.push({ label: `Date: ${filters.captured_date}`, key: "captured_date" });
+  }
+
+  if (filters.sort !== "captured_desc") {
+    const sortLabels: Record<FilterState["sort"], string> = {
+      captured_desc: "Newest",
+      basis_change_desc: "Basis Change",
+      basis_desc: "Highest Basis",
+      cash_bu_desc: "Highest Cash/Bu",
+    };
+    chips.push({ label: `Sort: ${sortLabels[filters.sort]}`, key: "sort" });
+  }
+
+  if (chips.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {chips.map((chip) => (
+        <div
+          key={chip.key}
+          className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-900"
+        >
+          <span>{chip.label}</span>
+          <button
+            type="button"
+            onClick={() => onClearFilter(chip.key)}
+            className="hover:text-blue-700"
+            aria-label={`Remove ${chip.label} filter`}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+      {chips.length > 0 && (
+        <button
+          type="button"
+          onClick={onReset}
+          className="text-xs text-blue-600 hover:text-blue-800"
+        >
+          Clear all
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Quick bid detail panel component
+function BidDetailPanel({
+  bid,
+  onClose,
+}: {
+  bid: PreviewRow | null;
+  onClose: () => void;
+}) {
+  if (!bid) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-black/10 px-4 py-3">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Bid Details</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-lg text-black/50 hover:text-black"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="space-y-3 p-4 text-sm">
+          <div>
+            <p className="font-medium">{bid.location}</p>
+            <p className="text-xs text-black/60">Location</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 border-t border-black/5 pt-3">
+            <div>
+              <p className="text-xs text-black/55 uppercase tracking-wide">Company</p>
+              <p className="mt-1 font-medium">{bid.company_name || "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-black/55 uppercase tracking-wide">Commodity</p>
+              <p className="mt-1 font-medium">{bid.commodity_name}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 border-t border-black/5 pt-3">
+            <div>
+              <p className="text-xs text-black/55 uppercase tracking-wide">Delivery</p>
+              <p className="mt-1 font-medium">{bid.delivery_label || "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-black/55 uppercase tracking-wide">Futures</p>
+              <p className="mt-1 font-medium">{bid.futures_month || "—"}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 border-t border-black/5 pt-3">
+            <div>
+              <p className="text-xs text-black/55 uppercase tracking-wide">Futures Price</p>
+              <p className="mt-1 font-semibold">{formatNumber(bid.futures_price)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-black/55 uppercase tracking-wide">Basis</p>
+              <p className={`mt-1 font-semibold ${toneForDelta(bid.basis)}`}>{formatSigned(bid.basis)}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 border-t border-black/5 pt-3">
+            <div>
+              <p className="text-xs text-black/55 uppercase tracking-wide">Cash/Bu</p>
+              <p className="mt-1 font-semibold">{formatNumber(bid.cash_price_bu)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-black/55 uppercase tracking-wide">Cash/MT</p>
+              <p className="mt-1 font-semibold">{formatNumber(bid.cash_price_mt)}</p>
+            </div>
+          </div>
+
+          {bid.source_attribution && (
+            <div className="border-t border-black/5 pt-3">
+              <p className="text-xs text-black/55 uppercase tracking-wide">Source</p>
+              <p className="mt-1 text-xs text-black/70">{bid.source_attribution}</p>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-4 w-full rounded-md border border-black/20 bg-white px-3 py-2 text-sm hover:bg-black/5"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Bid comparison panel component
+function BidComparisonPanel({
+  selectedBids,
+  maxBids,
+  onRemoveBid,
+  onClearAll,
+  onClose,
+}: {
+  selectedBids: PreviewRow[];
+  maxBids: number;
+  onRemoveBid: (bidId: string) => void;
+  onClearAll: () => void;
+  onClose: () => void;
+}) {
+  if (selectedBids.length === 0) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-h-[90vh] max-w-6xl overflow-auto rounded-lg bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-black/10 px-4 py-3 sticky top-0 bg-white">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">
+              Compare Bids ({selectedBids.length}/{maxBids})
+            </h2>
+            <p className="mt-0.5 text-xs text-black/55">Side-by-side bid comparison</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClearAll}
+              className="rounded-md border border-black/20 bg-white px-3 py-1.5 text-xs hover:bg-black/5"
+            >
+              Clear all
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-lg text-black/50 hover:text-black"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto p-4">
+          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${selectedBids.length}, minmax(240px, 1fr))` }}>
+            {selectedBids.map((bid) => (
+              <div
+                key={bid.id}
+                className="rounded-md border border-black/10 bg-white p-3 space-y-2 text-xs"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm">{bid.location}</p>
+                    <p className="text-black/60">{bid.company_name || "—"}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveBid(bid.id)}
+                    className="text-black/40 hover:text-black/70"
+                    aria-label="Remove bid"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 border-t border-black/5 pt-2">
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Commodity</p>
+                    <p className="font-medium">{bid.commodity_name}</p>
+                  </div>
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Delivery</p>
+                    <p className="font-medium">{bid.delivery_label || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Futures</p>
+                    <p className="font-medium">{bid.futures_month || "—"}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 border-t border-black/5 pt-2">
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Futures Price</p>
+                    <p className="font-semibold">{formatNumber(bid.futures_price)}</p>
+                  </div>
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Basis</p>
+                    <p className={`font-semibold ${toneForDelta(bid.basis)}`}>
+                      {formatSigned(bid.basis)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 border-t border-black/5 pt-2">
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Cash/Bu</p>
+                    <p className="font-semibold text-base">{formatNumber(bid.cash_price_bu)}</p>
+                  </div>
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Cash/MT</p>
+                    <p className="font-semibold text-base">{formatNumber(bid.cash_price_mt)}</p>
+                  </div>
+                </div>
+
+                {bid.source_attribution && (
+                  <div className="border-t border-black/5 pt-2">
+                    <p className="text-black/55 uppercase tracking-wide">Source</p>
+                    <p className="text-black/70">{bid.source_attribution}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-black/10 bg-white/50 px-4 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-black/20 bg-white px-4 py-2 text-sm hover:bg-black/5"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type SummaryResponse = {
   average_basis: number | null;
   row_count: number;
@@ -114,7 +472,7 @@ const DEFAULT_FILTERS: FilterState = {
 export default function DashboardPage() {
   const headers = useMemo(() => buildApiHeaders(), []);
   const configError = useMemo(() => getApiConfigError({ requireOrg: true }), []);
-  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useFilterStorage("grainbids-filters", DEFAULT_FILTERS);
   const [facets, setFacets] = useState<FacetsResponse>({
     commodities: [],
     locations: [],
@@ -132,11 +490,38 @@ export default function DashboardPage() {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [error, setError] = useState("");
-  const [selectedRowId, setSelectedRowId] = useState<string>("");
-  const selectedRow = useMemo(
-    () => previewRows.find((row) => row.id === selectedRowId) ?? previewRows[0] ?? null,
-    [previewRows, selectedRowId]
-  );
+  const [selectedRowId, setSelectedRowIdRaw] = useState<string>("");
+  
+  // Helper to update selectedRowId and persist to localStorage
+  const setSelectedRowId = (id: string) => {
+    setSelectedRowIdRaw(id);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("grainbids-selected-row", id);
+    }
+  };
+
+  // Restore selectedRowId from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("grainbids-selected-row") || "";
+      setSelectedRowIdRaw(stored);
+    }
+  }, []);
+  const selectedRow = useMemo(() => {
+    if (!previewRows.length) return null;
+    // Try to find the selected row; if it doesn't exist, use first row
+    const found = previewRows.find((row) => row.id === selectedRowId);
+    if (found) return found;
+    // If selected row no longer exists, select first row and persist
+    const firstRow = previewRows[0];
+    if (firstRow && selectedRowId) {
+      setSelectedRowIdRaw(firstRow.id);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("grainbids-selected-row", firstRow.id);
+      }
+    }
+    return firstRow ?? null;
+  }, [previewRows, selectedRowId]);
   const [watchlistName, setWatchlistName] = useState("");
   const [alertMetric, setAlertMetric] = useState<"cash_price_bu" | "basis">("cash_price_bu");
   const [alertOperator, setAlertOperator] = useState(">=");
@@ -150,6 +535,11 @@ export default function DashboardPage() {
   const [watchlistPreviewRows, setWatchlistPreviewRows] = useState<PreviewRow[]>([]);
   const [watchlistPreviewLoading, setWatchlistPreviewLoading] = useState(false);
   const [watchlistPreviewError, setWatchlistPreviewError] = useState("");
+  const [selectedDeliveryMonth, setSelectedDeliveryMonth] = useState<string>("");
+  const [selectedBidDetail, setSelectedBidDetail] = useState<PreviewRow | null>(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [selectedBidsForCompare, setSelectedBidsForCompare] = useState<PreviewRow[]>([]);
+  const MAX_COMPARE_BIDS = 4;
   const canUseDebugView = canManageAlerts;
 
   useEffect(() => {
@@ -175,6 +565,12 @@ export default function DashboardPage() {
     const preferredThreshold = selectedRow.cash_price_bu ?? selectedRow.basis ?? null;
     setAlertThreshold(preferredThreshold == null ? "" : preferredThreshold.toFixed(2));
   }, [selectedRow]);
+
+  useEffect(() => {
+    if (compareMode && selectedBidsForCompare.length === 0) {
+      setCompareMode(false);
+    }
+  }, [selectedBidsForCompare, compareMode]);
 
   async function loadMeta() {
     setLoadingMeta(true);
@@ -257,6 +653,27 @@ export default function DashboardPage() {
 
   function resetFilters() {
     setFilters(DEFAULT_FILTERS);
+  }
+
+  function toggleBidForCompare(bid: PreviewRow) {
+    setSelectedBidsForCompare((prev) => {
+      const exists = prev.find((b) => b.id === bid.id);
+      if (exists) {
+        return prev.filter((b) => b.id !== bid.id);
+      } else if (prev.length < MAX_COMPARE_BIDS) {
+        return [...prev, bid];
+      }
+      return prev;
+    });
+  }
+
+  function removeBidFromCompare(bidId: string) {
+    setSelectedBidsForCompare((prev) => prev.filter((b) => b.id !== bidId));
+  }
+
+  function clearCompare() {
+    setSelectedBidsForCompare([]);
+    setCompareMode(false);
   }
 
   async function runWatchlistPreview() {
@@ -356,11 +773,31 @@ export default function DashboardPage() {
             className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
           >
             <option value="">All locations</option>
-            {(facets.location_rows || []).map((location) => (
-              <option key={location.id} value={location.id}>
-                {location.name}
-              </option>
-            ))}
+            {(() => {
+              const { elevators, benchmarks } = groupLocationsByType(facets.location_rows || []);
+              return (
+                <>
+                  {elevators.length > 0 && (
+                    <optgroup label={`Elevator locations (${elevators.length})`}>
+                      {elevators.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {benchmarks.length > 0 && (
+                    <optgroup label={`Benchmark labels (${benchmarks.length})`}>
+                      {benchmarks.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </>
+              );
+            })()}
           </select>
           <select
             value={filters.company_id}
@@ -405,6 +842,19 @@ export default function DashboardPage() {
           <button type="button" onClick={resetFilters} className="rounded-md border border-black/20 bg-white px-3 py-2 text-sm">
             Reset
           </button>
+          {selectedBidsForCompare.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setCompareMode(true)}
+              className={`rounded-md border-2 px-3 py-2 text-sm font-medium transition-colors ${
+                compareMode
+                  ? "border-blue-600 bg-blue-50 text-blue-900"
+                  : "border-blue-400 bg-blue-100 text-blue-900 hover:bg-blue-200"
+              }`}
+            >
+              Compare ({selectedBidsForCompare.length}/{MAX_COMPARE_BIDS})
+            </button>
+          )}
         </div>
         {canUseDebugView ? (
           <label className="mt-2 inline-flex items-center gap-2 text-xs text-black/65">
@@ -419,6 +869,22 @@ export default function DashboardPage() {
             Show alternates (non-canonical rows)
           </label>
         ) : null}
+
+        <FilterChips
+          filters={filters}
+          facets={facets}
+          onClearFilter={(key) => {
+            const updates: Partial<FilterState> = {};
+            if (key === "commodity") updates.commodity = "Corn";
+            else if (key === "location_id") updates.location_id = "";
+            else if (key === "company_id") updates.company_id = "";
+            else if (key === "region") updates.region = "";
+            else if (key === "captured_date") updates.captured_date = "";
+            else if (key === "sort") updates.sort = "captured_desc";
+            setFilters((prev) => ({ ...prev, ...updates }));
+          }}
+          onReset={resetFilters}
+        />
       </section>
 
       <section className="mt-4 rounded-xl border border-black/10 bg-white/85 shadow-sm">
@@ -431,6 +897,20 @@ export default function DashboardPage() {
           <table className="min-w-full text-left text-sm">
             <thead className="sticky top-0 bg-white">
               <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/55">
+                <th className="w-10 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedBidsForCompare.length === previewRows.length && previewRows.length > 0}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedBidsForCompare(previewRows.slice(0, MAX_COMPARE_BIDS));
+                      } else {
+                        setSelectedBidsForCompare([]);
+                      }
+                    }}
+                    className="h-4 w-4 rounded border border-black/20 cursor-pointer"
+                  />
+                </th>
                 <th className="px-3 py-2">Location</th>
                 <th className="px-3 py-2">Company</th>
                 <th className="px-3 py-2">Commodity</th>
@@ -450,33 +930,114 @@ export default function DashboardPage() {
             <tbody>
               {previewRows.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-3 py-8 text-center text-sm text-black/55">
-                    No rows for the selected filters.
+                  <td colSpan={15} className="px-3 py-8">
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-black/70">No bids match your filters</p>
+                      <p className="mt-1 text-xs text-black/55">Try adjusting your selection:</p>
+                      <div className="mt-3 space-y-2 text-xs text-black/60">
+                        {filters.location_id && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFilters((prev) => ({ ...prev, location_id: "" }))
+                            }
+                            className="block w-full rounded px-2 py-1 hover:bg-black/5"
+                          >
+                            • Clear location filter
+                          </button>
+                        )}
+                        {filters.company_id && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFilters((prev) => ({ ...prev, company_id: "" }))
+                            }
+                            className="block w-full rounded px-2 py-1 hover:bg-black/5"
+                          >
+                            • Clear company filter
+                          </button>
+                        )}
+                        {(filters.location_id || filters.company_id) && (
+                          <button
+                            type="button"
+                            onClick={resetFilters}
+                            className="block w-full rounded px-2 py-1 font-medium text-blue-600 hover:bg-blue-50"
+                          >
+                            • Reset all filters
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </td>
                 </tr>
               ) : (
-                previewRows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className={`cursor-pointer border-b border-black/5 ${selectedRow?.id === row.id ? "bg-amber-50/50" : ""}`}
-                    onClick={() => setSelectedRowId(row.id)}
-                  >
-                    <td className="px-3 py-2">{row.location}</td>
-                    <td className="px-3 py-2">{row.company_name || "-"}</td>
-                    <td className="px-3 py-2">{row.commodity_name}</td>
-                    <td className="px-3 py-2">{row.delivery_label || "-"}</td>
-                    <td className="px-3 py-2">{row.futures_month || "-"}</td>
-                    <td className="px-3 py-2 text-right">{formatNumber(row.futures_price)}</td>
-                    <td className="px-3 py-2 text-right">{formatNumber(row.basis)}</td>
-                    <td className={`px-3 py-2 text-right ${toneForDelta(row.basis_change)}`}>{formatSigned(row.basis_change)}</td>
-                    <td className="px-3 py-2 text-right">{formatNumber(row.cash_price_bu)}</td>
-                    <td className={`px-3 py-2 text-right ${toneForDelta(row.cash_price_bu_change)}`}>{formatSigned(row.cash_price_bu_change)}</td>
-                    <td className="px-3 py-2 text-right">{formatNumber(row.cash_price_mt)}</td>
-                    <td className={`px-3 py-2 text-right ${toneForDelta(row.cash_price_mt_change)}`}>{formatSigned(row.cash_price_mt_change)}</td>
-                    <td className="px-3 py-2 text-right">{row.candidate_count ?? 1}</td>
-                    <td className="px-3 py-2 text-xs text-black/65">{row.canonical_reason || "-"}</td>
-                  </tr>
-                ))
+                previewRows.map((row) => {
+                  const isSelected = selectedBidsForCompare.some((b) => b.id === row.id);
+                  const canAddMore = selectedBidsForCompare.length < MAX_COMPARE_BIDS;
+                  return (
+                    <tr
+                      key={row.id}
+                      className={`border-b border-black/5 ${selectedRow?.id === row.id ? "bg-amber-50/50" : isSelected ? "bg-blue-50/50" : ""}`}
+                    >
+                      <td className="w-10 px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            if (isSelected || canAddMore) {
+                              toggleBidForCompare(row);
+                            }
+                          }}
+                          disabled={!isSelected && !canAddMore}
+                          className="h-4 w-4 rounded border border-black/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        />
+                      </td>
+                      <td className="px-3 py-2 cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.location}
+                      </td>
+                      <td className="px-3 py-2 cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.company_name || "-"}
+                      </td>
+                      <td className="px-3 py-2 cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.commodity_name}
+                      </td>
+                      <td className="px-3 py-2 cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.delivery_label || "-"}
+                      </td>
+                      <td className="px-3 py-2 cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.futures_month || "-"}
+                      </td>
+                      <td className="px-3 py-2 text-right cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {formatNumber(row.futures_price)}
+                      </td>
+                      <td className={`px-3 py-2 text-right cursor-pointer ${toneForDelta(row.basis)}`} onClick={() => setSelectedRowId(row.id)}>
+                        {formatNumber(row.basis)}
+                      </td>
+                      <td className={`px-3 py-2 text-right cursor-pointer ${toneForDelta(row.basis_change)}`} onClick={() => setSelectedRowId(row.id)}>
+                        {formatSigned(row.basis_change)}
+                      </td>
+                      <td className="px-3 py-2 text-right cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {formatNumber(row.cash_price_bu)}
+                      </td>
+                      <td className={`px-3 py-2 text-right cursor-pointer ${toneForDelta(row.cash_price_bu_change)}`} onClick={() => setSelectedRowId(row.id)}>
+                        {formatSigned(row.cash_price_bu_change)}
+                      </td>
+                      <td className="px-3 py-2 text-right cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {formatNumber(row.cash_price_mt)}
+                      </td>
+                      <td className={`px-3 py-2 text-right cursor-pointer ${toneForDelta(row.cash_price_mt_change)}`} onClick={() => setSelectedRowId(row.id)}>
+                        {formatSigned(row.cash_price_mt_change)}
+                      </td>
+                      <td className="px-3 py-2 text-right cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.candidate_count ?? 1}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-black/65 cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.canonical_reason || "-"}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -484,34 +1045,116 @@ export default function DashboardPage() {
       </section>
 
       <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Top Bids by Delivery Month</h2>
-        <p className="mt-1 text-xs text-black/55">Best cash bids after filters, grouped by delivery month.</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Top Bids by Delivery Month</h2>
+            <p className="mt-1 text-xs text-black/55">Best cash bids after filters, grouped by delivery month.</p>
+          </div>
+        </div>
+
+        {monthlyPreview.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-black/60">Focus by month:</span>
+            <div className="flex flex-wrap gap-2">
+              {selectedDeliveryMonth && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDeliveryMonth("")}
+                  className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-900"
+                >
+                  <span>{selectedDeliveryMonth}</span>
+                  <span className="text-blue-600 hover:text-blue-800">✕</span>
+                </button>
+              )}
+              {monthlyPreview
+                .filter((g) => !selectedDeliveryMonth || g.label === selectedDeliveryMonth)
+                .slice(0, 5)
+                .map((group) => (
+                  <button
+                    key={group.label}
+                    type="button"
+                    onClick={() =>
+                      setSelectedDeliveryMonth(selectedDeliveryMonth === group.label ? "" : group.label)
+                    }
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      selectedDeliveryMonth === group.label
+                        ? "bg-blue-600 text-white"
+                        : "border border-black/15 bg-white text-black/70 hover:bg-black/5"
+                    }`}
+                  >
+                    {group.label} ({group.rows.length})
+                  </button>
+                ))}
+              {monthlyPreview.length > 5 && !selectedDeliveryMonth && (
+                <span className="text-xs text-black/50">+{monthlyPreview.length - 5} more</span>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {monthlyPreview.length === 0 ? (
             <p className="text-sm text-black/55">No monthly preview data available.</p>
           ) : (
-            monthlyPreview.map((group) => (
-              <article key={group.label} className="rounded-md border border-black/10 bg-white p-3">
-                <h3 className="text-sm font-semibold">{group.label}</h3>
-                <div className="mt-2 space-y-2">
-                  {group.rows.map((row) => (
-                    <div key={`${group.label}-${row.id}`} className="flex items-start justify-between gap-2 text-xs">
-                      <div>
-                        <p className="font-medium">{row.location}</p>
-                        <p className="text-black/60">
-                          {row.company_name || "Unknown buyer"} / {row.commodity_name}
-                          {row.source_attribution ? ` · Source: ${row.source_attribution}` : ""}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold">{formatNumber(row.cash_price_bu)}</p>
-                        <p className="text-black/60">basis {formatSigned(row.basis)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </article>
-            ))
+            monthlyPreview
+              .filter((g) => !selectedDeliveryMonth || g.label === selectedDeliveryMonth)
+              .map((group) => (
+                <article
+                  key={group.label}
+                  className={`rounded-md border-2 p-3 transition-colors ${
+                    selectedDeliveryMonth === group.label
+                      ? "border-blue-400 bg-blue-50"
+                      : "border-black/10 bg-white"
+                  }`}
+                >
+                  <h3 className="text-sm font-semibold">{group.label}</h3>
+                  <p className="text-xs text-black/55">{group.rows.length} bids</p>
+                  <div className="mt-2 space-y-1.5">
+                    {group.rows.map((row) => {
+                      const isSelected = selectedBidsForCompare.some((b) => b.id === row.id);
+                      const canAddMore = selectedBidsForCompare.length < MAX_COMPARE_BIDS;
+                      return (
+                        <div
+                          key={`${group.label}-${row.id}`}
+                          className={`flex w-full items-start justify-between gap-2 rounded px-2 py-1.5 text-xs transition-colors ${
+                            isSelected ? "bg-blue-100" : "hover:bg-black/5"
+                          }`}
+                        >
+                          <label className="flex items-center gap-2 flex-1 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                if (isSelected || canAddMore) {
+                                  toggleBidForCompare(row);
+                                }
+                              }}
+                              disabled={!isSelected && !canAddMore}
+                              className="h-4 w-4 rounded border border-black/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                            />
+                            <div className="text-left flex-1">
+                              <p className="font-medium">{row.location}</p>
+                              <p className="text-black/60">
+                                {row.company_name || "Unknown"} · {row.commodity_name}
+                              </p>
+                            </div>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBidDetail(row)}
+                            className="flex-shrink-0 text-right hover:text-blue-600"
+                          >
+                            <p className="font-semibold">{formatNumber(row.cash_price_bu)}</p>
+                            <p className={`text-black/60 ${toneForDelta(row.basis)}`}>
+                              {formatSigned(row.basis)}
+                            </p>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </article>
+              ))
           )}
         </div>
       </section>
@@ -765,6 +1408,15 @@ export default function DashboardPage() {
             : "-"}
         </p>
       ) : null}
+
+      <BidDetailPanel bid={selectedBidDetail} onClose={() => setSelectedBidDetail(null)} />
+      <BidComparisonPanel
+        selectedBids={selectedBidsForCompare}
+        maxBids={MAX_COMPARE_BIDS}
+        onRemoveBid={removeBidFromCompare}
+        onClearAll={clearCompare}
+        onClose={() => setCompareMode(false)}
+      />
     </main>
   );
 }
