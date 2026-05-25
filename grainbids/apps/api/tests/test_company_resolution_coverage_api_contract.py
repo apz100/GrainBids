@@ -69,6 +69,18 @@ def test_company_resolution_coverage_invalid_location_kind_returns_422(monkeypat
     assert response.status_code == 422
 
 
+def test_company_resolution_coverage_invalid_target_returns_422(monkeypatch) -> None:
+    client = _client_with_overrides(monkeypatch, _active_rows_fixture())
+    response = client.get("/api/ingestion/company-resolution/coverage?target=0")
+    assert response.status_code == 422
+
+
+def test_company_resolution_coverage_invalid_top_limit_returns_422(monkeypatch) -> None:
+    client = _client_with_overrides(monkeypatch, _active_rows_fixture())
+    response = client.get("/api/ingestion/company-resolution/coverage?top_limit=0")
+    assert response.status_code == 422
+
+
 def test_company_resolution_coverage_defaults_to_elevator_top_rows(monkeypatch) -> None:
     client = _client_with_overrides(monkeypatch, _active_rows_fixture())
     response = client.get("/api/ingestion/company-resolution/coverage")
@@ -192,3 +204,65 @@ def test_company_resolution_coverage_all_kind_mixed_filter_and_ordering(monkeypa
     assert [row["row_count"] for row in rows] == [2, 2, 1]
     assert [row["location"] for row in rows] == ["Corn Benchmark A", "Wheat Benchmark Z", "Bravo Elevator"]
     assert [row["location_kind"] for row in rows] == ["benchmark", "benchmark", "elevator"]
+
+
+def test_company_resolution_coverage_all_kind_tie_then_top_limit_truncates_after_sort(monkeypatch) -> None:
+    now = datetime.now(timezone.utc)
+    corn_a_id = uuid.uuid4()
+    wheat_m_id = uuid.uuid4()
+    oats_z_id = uuid.uuid4()
+    client = _client_with_overrides(
+        monkeypatch,
+        [
+            {
+                "location_id": oats_z_id,
+                "location_name": "Oats Benchmark Z",
+                "company_id": None,
+                "raw_location": "Oats Benchmark Z",
+                "captured_at": now,
+            },
+            {
+                "location_id": oats_z_id,
+                "location_name": "Oats Benchmark Z",
+                "company_id": None,
+                "raw_location": "Oats Benchmark Z",
+                "captured_at": now - timedelta(minutes=1),
+            },
+            {
+                "location_id": corn_a_id,
+                "location_name": "Corn Benchmark A",
+                "company_id": None,
+                "raw_location": "Corn Benchmark A",
+                "captured_at": now - timedelta(minutes=2),
+            },
+            {
+                "location_id": corn_a_id,
+                "location_name": "Corn Benchmark A",
+                "company_id": None,
+                "raw_location": "Corn Benchmark A",
+                "captured_at": now - timedelta(minutes=3),
+            },
+            {
+                "location_id": wheat_m_id,
+                "location_name": "Wheat Benchmark M",
+                "company_id": None,
+                "raw_location": "Wheat Benchmark M",
+                "captured_at": now - timedelta(minutes=4),
+            },
+            {
+                "location_id": wheat_m_id,
+                "location_name": "Wheat Benchmark M",
+                "company_id": None,
+                "raw_location": "Wheat Benchmark M",
+                "captured_at": now - timedelta(minutes=5),
+            },
+        ],
+    )
+    response = client.get("/api/ingestion/company-resolution/coverage?location_kind=all&top_limit=2")
+    assert response.status_code == 200
+    payload = response.json()
+    rows = payload["top_unmapped_rows"]
+
+    assert [row["row_count"] for row in rows] == [2, 2]
+    assert [row["location"] for row in rows] == ["Corn Benchmark A", "Oats Benchmark Z"]
+    assert [row["location_kind"] for row in rows] == ["benchmark", "benchmark"]
