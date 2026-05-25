@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import OpenAlertsPanel from "./open-alerts-panel";
 import { API_BASE, buildApiHeaders, getApiConfigError, isAdminRole } from "@/lib/api";
@@ -52,6 +53,81 @@ function groupLocationsByType(locations: Array<{ id: string; name: string; regio
   }
 
   return { elevators, benchmarks };
+}
+
+// URL state serialization/deserialization
+type ViewState = {
+  filters: FilterState;
+  selectedDeliveryMonth: string;
+  compareSortMode: "cash_bu" | "basis";
+};
+
+function filterStateToUrlParams(state: ViewState): Record<string, string> {
+  const params: Record<string, string> = {};
+  
+  if (state.filters.commodity && state.filters.commodity !== "Corn") {
+    params.commodity = state.filters.commodity;
+  }
+  if (state.filters.location_id) {
+    params.location = state.filters.location_id;
+  }
+  if (state.filters.company_id) {
+    params.company = state.filters.company_id;
+  }
+  if (state.filters.region) {
+    params.region = state.filters.region;
+  }
+  if (state.filters.captured_date) {
+    params.capturedDate = state.filters.captured_date;
+  }
+  if (state.filters.sort && state.filters.sort !== "captured_desc") {
+    params.sort = state.filters.sort;
+  }
+  if (state.selectedDeliveryMonth) {
+    params.month = state.selectedDeliveryMonth;
+  }
+  if (state.compareSortMode && state.compareSortMode !== "cash_bu") {
+    params.compareSort = state.compareSortMode;
+  }
+
+  return params;
+}
+
+function urlParamsToFilterState(
+  params: URLSearchParams,
+  defaultFilters: FilterState
+): { filters: FilterState; selectedDeliveryMonth: string; compareSortMode: "cash_bu" | "basis" } {
+  const commodity = params.get("commodity") || defaultFilters.commodity;
+  const location_id = params.get("location") || defaultFilters.location_id;
+  const company_id = params.get("company") || defaultFilters.company_id;
+  const region = params.get("region") || defaultFilters.region;
+  const captured_date = params.get("capturedDate") || defaultFilters.captured_date;
+  const sortParam = params.get("sort");
+  const sort = (sortParam as FilterState["sort"]) || defaultFilters.sort;
+  const selectedDeliveryMonth = params.get("month") || "";
+  const compareSortParam = params.get("compareSort");
+  const compareSortMode = (compareSortParam === "basis" ? "basis" : "cash_bu") as "cash_bu" | "basis";
+
+  return {
+    filters: {
+      commodity,
+      location_id,
+      company_id,
+      region,
+      captured_date,
+      sort,
+      include_non_canonical: defaultFilters.include_non_canonical,
+    },
+    selectedDeliveryMonth,
+    compareSortMode,
+  };
+}
+
+function buildViewUrl(state: ViewState): string {
+  const params = filterStateToUrlParams(state);
+  const queryString = new URLSearchParams(params).toString();
+  const baseUrl = typeof window !== "undefined" ? window.location.origin + window.location.pathname : "/bids";
+  return queryString ? `${baseUrl}?${queryString}` : baseUrl;
 }
 
 // Filter chips display component
@@ -240,15 +316,17 @@ function BidComparisonPanel({
   onRemoveBid,
   onClearAll,
   onClose,
+  compareSortMode,
+  onCompareSortModeChange,
 }: {
   selectedBids: PreviewRow[];
   maxBids: number;
   onRemoveBid: (bidId: string) => void;
   onClearAll: () => void;
   onClose: () => void;
+  compareSortMode: "cash_bu" | "basis";
+  onCompareSortModeChange: (mode: "cash_bu" | "basis") => void;
 }) {
-  const [sortBy, setSortBy] = useState<"cash_bu" | "basis">("cash_bu");
-
   if (selectedBids.length === 0) return null;
 
   // Calculate best values (highest is best)
@@ -266,13 +344,13 @@ function BidComparisonPanel({
   // Sort bids based on current sort selection
   const sortedBids = useMemo(() => {
     const copy = [...selectedBids];
-    if (sortBy === "cash_bu") {
+    if (compareSortMode === "cash_bu") {
       copy.sort((a, b) => (b.cash_price_bu ?? 0) - (a.cash_price_bu ?? 0));
     } else {
       copy.sort((a, b) => (b.basis ?? 0) - (a.basis ?? 0));
     }
     return copy;
-  }, [selectedBids, sortBy]);
+  }, [selectedBids, compareSortMode]);
 
   // Check if a bid has the best value for a metric
   const isBestCashPerBu = (bid: PreviewRow) =>
@@ -325,9 +403,9 @@ function BidComparisonPanel({
             <span className="text-black/60">Sort by:</span>
             <button
               type="button"
-              onClick={() => setSortBy("cash_bu")}
+              onClick={() => onCompareSortModeChange("cash_bu")}
               className={`rounded-md border px-2.5 py-1 font-medium transition-all ${
-                sortBy === "cash_bu"
+                compareSortMode === "cash_bu"
                   ? "border-black/30 bg-black/5"
                   : "border-black/15 bg-white hover:border-black/20"
               }`}
@@ -336,9 +414,9 @@ function BidComparisonPanel({
             </button>
             <button
               type="button"
-              onClick={() => setSortBy("basis")}
+              onClick={() => onCompareSortModeChange("basis")}
               className={`rounded-md border px-2.5 py-1 font-medium transition-all ${
-                sortBy === "basis"
+                compareSortMode === "basis"
                   ? "border-black/30 bg-black/5"
                   : "border-black/15 bg-white hover:border-black/20"
               }`}
@@ -567,6 +645,8 @@ const DEFAULT_FILTERS: FilterState = {
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const [isHydrated, setIsHydrated] = useState(false);
   const headers = useMemo(() => buildApiHeaders(), []);
   const configError = useMemo(() => getApiConfigError({ requireOrg: true }), []);
   const [filters, setFilters] = useFilterStorage("grainbids-filters", DEFAULT_FILTERS);
@@ -636,8 +716,37 @@ export default function DashboardPage() {
   const [selectedBidDetail, setSelectedBidDetail] = useState<PreviewRow | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [selectedBidsForCompare, setSelectedBidsForCompare] = useState<PreviewRow[]>([]);
+  const [compareSortMode, setCompareSortMode] = useState<"cash_bu" | "basis">("cash_bu");
   const MAX_COMPARE_BIDS = 4;
   const canUseDebugView = canManageAlerts;
+
+  // Set up client hydration
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
+  // Initialize state from URL params on mount (client-side only)
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const urlState = urlParamsToFilterState(params, DEFAULT_FILTERS);
+    setFilters(urlState.filters);
+    setSelectedDeliveryMonth(urlState.selectedDeliveryMonth);
+    setCompareSortMode(urlState.compareSortMode);
+  }, [isHydrated]);
+
+  // Sync state to URL whenever filters or view state changes (client-side only)
+  useEffect(() => {
+    if (!isHydrated) return;
+    const viewState: ViewState = {
+      filters,
+      selectedDeliveryMonth,
+      compareSortMode,
+    };
+    const url = buildViewUrl(viewState);
+    window.history.replaceState({}, "", url);
+  }, [filters, selectedDeliveryMonth, compareSortMode, isHydrated]);
 
   useEffect(() => {
     if (configError) {
@@ -952,6 +1061,22 @@ export default function DashboardPage() {
               Compare ({selectedBidsForCompare.length}/{MAX_COMPARE_BIDS})
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => {
+              const viewState: ViewState = {
+                filters,
+                selectedDeliveryMonth,
+                compareSortMode,
+              };
+              const url = buildViewUrl(viewState);
+              navigator.clipboard.writeText(url);
+            }}
+            className="rounded-md border border-black/20 bg-white px-3 py-2 text-sm hover:bg-black/5"
+            title="Copy shareable view link to clipboard"
+          >
+            Copy view link
+          </button>
         </div>
         {canUseDebugView ? (
           <label className="mt-2 inline-flex items-center gap-2 text-xs text-black/65">
@@ -1513,6 +1638,8 @@ export default function DashboardPage() {
         onRemoveBid={removeBidFromCompare}
         onClearAll={clearCompare}
         onClose={() => setCompareMode(false)}
+        compareSortMode={compareSortMode}
+        onCompareSortModeChange={setCompareSortMode}
       />
     </main>
   );
