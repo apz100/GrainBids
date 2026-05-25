@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
+from typing import Literal
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.request_context import RequestContext, get_request_context, require_admin
 from app.db.session import get_db
 from app.models.commodity import Commodity
+from app.models.location import Location
+from app.models.normalized_price import NormalizedPrice
+from app.models.price_snapshot import PriceSnapshot
 from app.models.source import Source
 from app.services.ingestion_diagnostics import build_ingestion_diagnostics
+from app.services.market_canonicalization import canonical_key, canonical_location_name
 from app.services.source_company_identity_diagnostics import list_ambiguous_location_company_candidates
 from app.services.source_orchestration import build_sla_summary
 from app.services.source_file_ingestion import (
@@ -123,6 +129,25 @@ def get_ambiguous_location_company_candidates(
         org_id=context.org_id,
         source_id=source_id,
         limit=limit,
+    )
+
+
+@router.get("/company-resolution/coverage")
+def get_company_resolution_coverage(
+    target: int = Query(65, ge=1, le=1000),
+    include_top_unmapped: bool = Query(True),
+    top_limit: int = Query(25, ge=1, le=200),
+    location_kind: Literal["elevator", "benchmark", "all"] = Query("elevator"),
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    active_rows = _list_active_location_resolution_rows(db, org_id=context.org_id)
+    return _build_company_resolution_coverage_payload(
+        active_rows=active_rows,
+        target=target,
+        include_top_unmapped=include_top_unmapped,
+        top_limit=top_limit,
+        location_kind=location_kind,
     )
 
 
@@ -297,6 +322,182 @@ def _serialize_result(result):
         if isinstance(value, uuid.UUID):
             payload[key] = str(value)
     return payload
+
+
+def _list_active_location_resolution_rows(
+    db: Session,
+    *,
+    org_id: uuid.UUID,
+) -> list[dict[str, object]]:
+    latest_snapshot_per_source = (
+        select(
+            PriceSnapshot.source_id.label("source_id"),
+            func.max(PriceSnapshot.captured_at).label("latest_captured_at"),
+        )
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .where(
+            Source.org_id == org_id,
+            Source.is_active.is_(True),
+        )
+        .group_by(PriceSnapshot.source_id)
+        .subquery()
+    )
+
+    query = (
+        select(
+            Location.id,
+            Location.name,
+            Location.company_id,
+            NormalizedPrice.location,
+            PriceSnapshot.captured_at,
+        )
+        .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+        .join(Source, Source.id == PriceSnapshot.source_id)
+        .join(
+            latest_snapshot_per_source,
+            and_(
+                latest_snapshot_per_source.c.source_id == PriceSnapshot.source_id,
+                latest_snapshot_per_source.c.latest_captured_at == PriceSnapshot.captured_at,
+            ),
+        )
+        .outerjoin(
+            Location,
+            and_(
+                Location.id == NormalizedPrice.location_id,
+                Location.org_id == org_id,
+            ),
+        )
+        .where(
+            Source.org_id == org_id,
+            Source.is_active.is_(True),
+        )
+    )
+
+    rows: list[dict[str, object]] = []
+    for location_id, location_name, company_id, raw_location, captured_at in db.execute(query).all():
+        rows.append(
+            {
+                "location_id": location_id,
+                "location_name": location_name,
+                "company_id": company_id,
+                "raw_location": raw_location,
+                "captured_at": captured_at,
+            }
+        )
+    return rows
+
+
+def _build_company_resolution_coverage_payload(
+    *,
+    active_rows: list[dict[str, object]],
+    target: int,
+    include_top_unmapped: bool,
+    top_limit: int,
+    location_kind: Literal["elevator", "benchmark", "all"] = "elevator",
+) -> dict[str, object]:
+    by_location: dict[str, dict[str, object]] = {}
+    latest_captured_at: datetime | None = None
+
+    for row in active_rows:
+        location_name = canonical_location_name(str(row.get("location_name") or row.get("raw_location") or "").strip())
+        if not location_name:
+            continue
+        location_id = row.get("location_id")
+        location_key = str(location_id) if location_id is not None else (canonical_key(location_name) or location_name.casefold())
+        company_id = row.get("company_id")
+        captured_at = row.get("captured_at")
+        if isinstance(captured_at, datetime):
+            if latest_captured_at is None or captured_at > latest_captured_at:
+                latest_captured_at = captured_at
+
+        current = by_location.get(location_key)
+        if current is None:
+            current = {
+                "location": location_name,
+                "mapped": company_id is not None,
+                "row_count": 0,
+                "latest_captured_at": captured_at if isinstance(captured_at, datetime) else None,
+                "location_kind": _location_kind_for_name(location_name),
+            }
+            by_location[location_key] = current
+        else:
+            if company_id is not None:
+                current["mapped"] = True
+            latest_for_location = current.get("latest_captured_at")
+            if isinstance(captured_at, datetime) and (
+                not isinstance(latest_for_location, datetime) or captured_at > latest_for_location
+            ):
+                current["latest_captured_at"] = captured_at
+        current["row_count"] = int(current.get("row_count") or 0) + 1
+
+    values = list(by_location.values())
+    active_locations_total = len(values)
+    active_elevator_locations_total = sum(1 for row in values if row["location_kind"] == "elevator")
+    active_mapped_locations = sum(1 for row in values if bool(row["mapped"]))
+    active_mapped_elevator_locations = sum(
+        1 for row in values if bool(row["mapped"]) and row["location_kind"] == "elevator"
+    )
+
+    payload: dict[str, object] = {
+        "latest_captured_at": latest_captured_at.isoformat() if latest_captured_at else None,
+        "active_locations_total": active_locations_total,
+        "active_elevator_locations_total": active_elevator_locations_total,
+        "active_mapped_locations": active_mapped_locations,
+        "active_mapped_elevator_locations": active_mapped_elevator_locations,
+        "active_unmapped_locations": active_locations_total - active_mapped_locations,
+        "active_unmapped_elevator_locations": active_elevator_locations_total - active_mapped_elevator_locations,
+        "target_active_mapped_elevators": int(target),
+        "target_reached": active_mapped_elevator_locations >= int(target),
+    }
+
+    if include_top_unmapped:
+        top_rows: list[dict[str, object]] = []
+        for entry in values:
+            if bool(entry["mapped"]):
+                continue
+            kind = str(entry["location_kind"])
+            if location_kind != "all" and kind != location_kind:
+                continue
+            latest_for_location = entry.get("latest_captured_at")
+            top_rows.append(
+                {
+                    "location": entry["location"],
+                    "row_count": int(entry["row_count"]),
+                    "location_kind": kind,
+                    "latest_captured_at": latest_for_location.isoformat() if isinstance(latest_for_location, datetime) else None,
+                }
+            )
+        top_rows.sort(
+            key=lambda row: (
+                -int(row["row_count"]),
+                str(row["location"]).casefold(),
+            ),
+        )
+        payload["top_unmapped_rows"] = top_rows[: max(1, int(top_limit))]
+
+    return payload
+
+
+def _location_kind_for_name(location_name: str | None) -> str:
+    normalized = canonical_location_name(location_name)
+    if not normalized:
+        return "unknown"
+    key = normalized.casefold()
+    elevator_tokens = (
+        "elevator",
+        "branch",
+        "terminal",
+        "grain",
+        "feed",
+        "mill",
+        "co-op",
+        "coop",
+        "ethanol",
+    )
+    for token in elevator_tokens:
+        if token in key:
+            return "elevator"
+    return "benchmark"
 
 
 def _reject_totals(payload: dict | None) -> dict[str, int]:
