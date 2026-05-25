@@ -247,106 +247,203 @@ function BidComparisonPanel({
   onClearAll: () => void;
   onClose: () => void;
 }) {
+  const [sortBy, setSortBy] = useState<"cash_bu" | "basis">("cash_bu");
+
   if (selectedBids.length === 0) return null;
+
+  // Calculate best values (highest is best)
+  const bestCashPerBu = Math.max(
+    ...selectedBids
+      .map((b) => b.cash_price_bu)
+      .filter((v) => v != null && !Number.isNaN(v)) as number[]
+  );
+  const bestBasis = Math.max(
+    ...selectedBids
+      .map((b) => b.basis)
+      .filter((v) => v != null && !Number.isNaN(v)) as number[]
+  );
+
+  // Sort bids based on current sort selection
+  const sortedBids = useMemo(() => {
+    const copy = [...selectedBids];
+    if (sortBy === "cash_bu") {
+      copy.sort((a, b) => (b.cash_price_bu ?? 0) - (a.cash_price_bu ?? 0));
+    } else {
+      copy.sort((a, b) => (b.basis ?? 0) - (a.basis ?? 0));
+    }
+    return copy;
+  }, [selectedBids, sortBy]);
+
+  // Check if a bid has the best value for a metric
+  const isBestCashPerBu = (bid: PreviewRow) =>
+    bid.cash_price_bu != null && bid.cash_price_bu === bestCashPerBu;
+  const isBestBasis = (bid: PreviewRow) =>
+    bid.basis != null && bid.basis === bestBasis;
+
+  // Calculate delta from best value
+  const cashPerBuDelta = (bid: PreviewRow) => {
+    if (bid.cash_price_bu == null || Number.isNaN(bid.cash_price_bu)) return null;
+    return bid.cash_price_bu - bestCashPerBu;
+  };
+
+  const basisDelta = (bid: PreviewRow) => {
+    if (bid.basis == null || Number.isNaN(bid.basis)) return null;
+    return bid.basis - bestBasis;
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-h-[90vh] max-w-6xl overflow-auto rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-black/10 px-4 py-3 sticky top-0 bg-white">
-          <div>
-            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">
-              Compare Bids ({selectedBids.length}/{maxBids})
-            </h2>
-            <p className="mt-0.5 text-xs text-black/55">Side-by-side bid comparison</p>
+        <div className="border-b border-black/10 px-4 py-3 sticky top-0 bg-white space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">
+                Compare Bids ({selectedBids.length}/{maxBids})
+              </h2>
+              <p className="mt-0.5 text-xs text-black/55">Side-by-side bid comparison with delta indicators</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClearAll}
+                className="rounded-md border border-black/20 bg-white px-3 py-1.5 text-xs hover:bg-black/5"
+              >
+                Clear all
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-lg text-black/50 hover:text-black"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-black/60">Sort by:</span>
             <button
               type="button"
-              onClick={onClearAll}
-              className="rounded-md border border-black/20 bg-white px-3 py-1.5 text-xs hover:bg-black/5"
+              onClick={() => setSortBy("cash_bu")}
+              className={`rounded-md border px-2.5 py-1 font-medium transition-all ${
+                sortBy === "cash_bu"
+                  ? "border-black/30 bg-black/5"
+                  : "border-black/15 bg-white hover:border-black/20"
+              }`}
             >
-              Clear all
+              Cash/Bu (↓)
             </button>
             <button
               type="button"
-              onClick={onClose}
-              className="text-lg text-black/50 hover:text-black"
-              aria-label="Close"
+              onClick={() => setSortBy("basis")}
+              className={`rounded-md border px-2.5 py-1 font-medium transition-all ${
+                sortBy === "basis"
+                  ? "border-black/30 bg-black/5"
+                  : "border-black/15 bg-white hover:border-black/20"
+              }`}
             >
-              ✕
+              Basis (↓)
             </button>
           </div>
         </div>
 
         <div className="overflow-x-auto p-4">
-          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${selectedBids.length}, minmax(240px, 1fr))` }}>
-            {selectedBids.map((bid) => (
-              <div
-                key={bid.id}
-                className="rounded-md border border-black/10 bg-white p-3 space-y-2 text-xs"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1">
-                    <p className="font-semibold text-sm">{bid.location}</p>
-                    <p className="text-black/60">{bid.company_name || "—"}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => onRemoveBid(bid.id)}
-                    className="text-black/40 hover:text-black/70"
-                    aria-label="Remove bid"
-                  >
-                    ✕
-                  </button>
-                </div>
+          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${sortedBids.length}, minmax(280px, 1fr))` }}>
+            {sortedBids.map((bid) => {
+              const cashDelta = cashPerBuDelta(bid);
+              const basisDt = basisDelta(bid);
 
-                <div className="space-y-1.5 border-t border-black/5 pt-2">
-                  <div>
-                    <p className="text-black/55 uppercase tracking-wide">Commodity</p>
-                    <p className="font-medium">{bid.commodity_name}</p>
+              return (
+                <div
+                  key={bid.id}
+                  className={`rounded-md border p-3 space-y-2 text-xs transition-all ${
+                    isBestCashPerBu(bid) || isBestBasis(bid)
+                      ? "border-emerald-300 bg-emerald-50"
+                      : "border-black/10 bg-white"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1">
+                      <p className="font-semibold text-sm">{bid.location}</p>
+                      <p className="text-black/60">{bid.company_name || "—"}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveBid(bid.id)}
+                      className="text-black/40 hover:text-black/70"
+                      aria-label="Remove bid"
+                    >
+                      ✕
+                    </button>
                   </div>
-                  <div>
-                    <p className="text-black/55 uppercase tracking-wide">Delivery</p>
-                    <p className="font-medium">{bid.delivery_label || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-black/55 uppercase tracking-wide">Futures</p>
-                    <p className="font-medium">{bid.futures_month || "—"}</p>
-                  </div>
-                </div>
 
-                <div className="space-y-1.5 border-t border-black/5 pt-2">
-                  <div>
-                    <p className="text-black/55 uppercase tracking-wide">Futures Price</p>
-                    <p className="font-semibold">{formatNumber(bid.futures_price)}</p>
+                  <div className="space-y-1.5 border-t border-black/5 pt-2">
+                    <div>
+                      <p className="text-black/55 uppercase tracking-wide">Commodity</p>
+                      <p className="font-medium">{bid.commodity_name}</p>
+                    </div>
+                    <div>
+                      <p className="text-black/55 uppercase tracking-wide">Delivery</p>
+                      <p className="font-medium">{bid.delivery_label || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-black/55 uppercase tracking-wide">Futures</p>
+                      <p className="font-medium">{bid.futures_month || "—"}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-black/55 uppercase tracking-wide">Basis</p>
-                    <p className={`font-semibold ${toneForDelta(bid.basis)}`}>
-                      {formatSigned(bid.basis)}
-                    </p>
-                  </div>
-                </div>
 
-                <div className="space-y-1.5 border-t border-black/5 pt-2">
-                  <div>
-                    <p className="text-black/55 uppercase tracking-wide">Cash/Bu</p>
-                    <p className="font-semibold text-base">{formatNumber(bid.cash_price_bu)}</p>
+                  <div className="space-y-1.5 border-t border-black/5 pt-2">
+                    <div>
+                      <p className="text-black/55 uppercase tracking-wide">Futures Price</p>
+                      <p className="font-semibold">{formatNumber(bid.futures_price)}</p>
+                    </div>
+                    <div>
+                      <p className="text-black/55 uppercase tracking-wide">
+                        Basis {isBestBasis(bid) ? "★" : ""}
+                      </p>
+                      <div className="flex items-baseline gap-1.5">
+                        <p className={`font-semibold ${toneForDelta(bid.basis)}`}>
+                          {formatSigned(bid.basis)}
+                        </p>
+                        {basisDt != null && basisDt !== 0 && (
+                          <p className={`text-xs ${toneForDelta(basisDt)}`}>
+                            {formatSigned(basisDt)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-black/55 uppercase tracking-wide">Cash/MT</p>
-                    <p className="font-semibold text-base">{formatNumber(bid.cash_price_mt)}</p>
-                  </div>
-                </div>
 
-                {bid.source_attribution && (
-                  <div className="border-t border-black/5 pt-2">
-                    <p className="text-black/55 uppercase tracking-wide">Source</p>
-                    <p className="text-black/70">{bid.source_attribution}</p>
+                  <div className="space-y-1.5 border-t border-black/5 pt-2">
+                    <div>
+                      <p className="text-black/55 uppercase tracking-wide">
+                        Cash/Bu {isBestCashPerBu(bid) ? "★" : ""}
+                      </p>
+                      <div className="flex items-baseline gap-1.5">
+                        <p className="font-semibold text-base">{formatNumber(bid.cash_price_bu)}</p>
+                        {cashDelta != null && cashDelta !== 0 && (
+                          <p className={`text-xs ${toneForDelta(cashDelta)}`}>
+                            {formatSigned(cashDelta)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-black/55 uppercase tracking-wide">Cash/MT</p>
+                      <p className="font-semibold text-base">{formatNumber(bid.cash_price_mt)}</p>
+                    </div>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {bid.source_attribution && (
+                    <div className="border-t border-black/5 pt-2">
+                      <p className="text-black/55 uppercase tracking-wide">Source</p>
+                      <p className="text-black/70">{bid.source_attribution}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
