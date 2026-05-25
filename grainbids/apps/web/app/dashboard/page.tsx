@@ -233,6 +233,137 @@ function BidDetailPanel({
   );
 }
 
+// Bid comparison panel component
+function BidComparisonPanel({
+  selectedBids,
+  maxBids,
+  onRemoveBid,
+  onClearAll,
+  onClose,
+}: {
+  selectedBids: PreviewRow[];
+  maxBids: number;
+  onRemoveBid: (bidId: string) => void;
+  onClearAll: () => void;
+  onClose: () => void;
+}) {
+  if (selectedBids.length === 0) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-h-[90vh] max-w-6xl overflow-auto rounded-lg bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-black/10 px-4 py-3 sticky top-0 bg-white">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">
+              Compare Bids ({selectedBids.length}/{maxBids})
+            </h2>
+            <p className="mt-0.5 text-xs text-black/55">Side-by-side bid comparison</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClearAll}
+              className="rounded-md border border-black/20 bg-white px-3 py-1.5 text-xs hover:bg-black/5"
+            >
+              Clear all
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-lg text-black/50 hover:text-black"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto p-4">
+          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${selectedBids.length}, minmax(240px, 1fr))` }}>
+            {selectedBids.map((bid) => (
+              <div
+                key={bid.id}
+                className="rounded-md border border-black/10 bg-white p-3 space-y-2 text-xs"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm">{bid.location}</p>
+                    <p className="text-black/60">{bid.company_name || "—"}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveBid(bid.id)}
+                    className="text-black/40 hover:text-black/70"
+                    aria-label="Remove bid"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 border-t border-black/5 pt-2">
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Commodity</p>
+                    <p className="font-medium">{bid.commodity_name}</p>
+                  </div>
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Delivery</p>
+                    <p className="font-medium">{bid.delivery_label || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Futures</p>
+                    <p className="font-medium">{bid.futures_month || "—"}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 border-t border-black/5 pt-2">
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Futures Price</p>
+                    <p className="font-semibold">{formatNumber(bid.futures_price)}</p>
+                  </div>
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Basis</p>
+                    <p className={`font-semibold ${toneForDelta(bid.basis)}`}>
+                      {formatSigned(bid.basis)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 border-t border-black/5 pt-2">
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Cash/Bu</p>
+                    <p className="font-semibold text-base">{formatNumber(bid.cash_price_bu)}</p>
+                  </div>
+                  <div>
+                    <p className="text-black/55 uppercase tracking-wide">Cash/MT</p>
+                    <p className="font-semibold text-base">{formatNumber(bid.cash_price_mt)}</p>
+                  </div>
+                </div>
+
+                {bid.source_attribution && (
+                  <div className="border-t border-black/5 pt-2">
+                    <p className="text-black/55 uppercase tracking-wide">Source</p>
+                    <p className="text-black/70">{bid.source_attribution}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-black/10 bg-white/50 px-4 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-black/20 bg-white px-4 py-2 text-sm hover:bg-black/5"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type SummaryResponse = {
   average_basis: number | null;
   row_count: number;
@@ -406,6 +537,9 @@ export default function DashboardPage() {
   const [watchlistPreviewError, setWatchlistPreviewError] = useState("");
   const [selectedDeliveryMonth, setSelectedDeliveryMonth] = useState<string>("");
   const [selectedBidDetail, setSelectedBidDetail] = useState<PreviewRow | null>(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [selectedBidsForCompare, setSelectedBidsForCompare] = useState<PreviewRow[]>([]);
+  const MAX_COMPARE_BIDS = 4;
   const canUseDebugView = canManageAlerts;
 
   useEffect(() => {
@@ -431,6 +565,12 @@ export default function DashboardPage() {
     const preferredThreshold = selectedRow.cash_price_bu ?? selectedRow.basis ?? null;
     setAlertThreshold(preferredThreshold == null ? "" : preferredThreshold.toFixed(2));
   }, [selectedRow]);
+
+  useEffect(() => {
+    if (compareMode && selectedBidsForCompare.length === 0) {
+      setCompareMode(false);
+    }
+  }, [selectedBidsForCompare, compareMode]);
 
   async function loadMeta() {
     setLoadingMeta(true);
@@ -513,6 +653,27 @@ export default function DashboardPage() {
 
   function resetFilters() {
     setFilters(DEFAULT_FILTERS);
+  }
+
+  function toggleBidForCompare(bid: PreviewRow) {
+    setSelectedBidsForCompare((prev) => {
+      const exists = prev.find((b) => b.id === bid.id);
+      if (exists) {
+        return prev.filter((b) => b.id !== bid.id);
+      } else if (prev.length < MAX_COMPARE_BIDS) {
+        return [...prev, bid];
+      }
+      return prev;
+    });
+  }
+
+  function removeBidFromCompare(bidId: string) {
+    setSelectedBidsForCompare((prev) => prev.filter((b) => b.id !== bidId));
+  }
+
+  function clearCompare() {
+    setSelectedBidsForCompare([]);
+    setCompareMode(false);
   }
 
   async function runWatchlistPreview() {
@@ -681,6 +842,19 @@ export default function DashboardPage() {
           <button type="button" onClick={resetFilters} className="rounded-md border border-black/20 bg-white px-3 py-2 text-sm">
             Reset
           </button>
+          {selectedBidsForCompare.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setCompareMode(true)}
+              className={`rounded-md border-2 px-3 py-2 text-sm font-medium transition-colors ${
+                compareMode
+                  ? "border-blue-600 bg-blue-50 text-blue-900"
+                  : "border-blue-400 bg-blue-100 text-blue-900 hover:bg-blue-200"
+              }`}
+            >
+              Compare ({selectedBidsForCompare.length}/{MAX_COMPARE_BIDS})
+            </button>
+          )}
         </div>
         {canUseDebugView ? (
           <label className="mt-2 inline-flex items-center gap-2 text-xs text-black/65">
@@ -723,6 +897,20 @@ export default function DashboardPage() {
           <table className="min-w-full text-left text-sm">
             <thead className="sticky top-0 bg-white">
               <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/55">
+                <th className="w-10 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedBidsForCompare.length === previewRows.length && previewRows.length > 0}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedBidsForCompare(previewRows.slice(0, MAX_COMPARE_BIDS));
+                      } else {
+                        setSelectedBidsForCompare([]);
+                      }
+                    }}
+                    className="h-4 w-4 rounded border border-black/20 cursor-pointer"
+                  />
+                </th>
                 <th className="px-3 py-2">Location</th>
                 <th className="px-3 py-2">Company</th>
                 <th className="px-3 py-2">Commodity</th>
@@ -742,7 +930,7 @@ export default function DashboardPage() {
             <tbody>
               {previewRows.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-3 py-8">
+                  <td colSpan={15} className="px-3 py-8">
                     <div className="text-center">
                       <p className="text-sm font-medium text-black/70">No bids match your filters</p>
                       <p className="mt-1 text-xs text-black/55">Try adjusting your selection:</p>
@@ -783,28 +971,73 @@ export default function DashboardPage() {
                   </td>
                 </tr>
               ) : (
-                previewRows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className={`cursor-pointer border-b border-black/5 ${selectedRow?.id === row.id ? "bg-amber-50/50" : ""}`}
-                    onClick={() => setSelectedRowId(row.id)}
-                  >
-                    <td className="px-3 py-2">{row.location}</td>
-                    <td className="px-3 py-2">{row.company_name || "-"}</td>
-                    <td className="px-3 py-2">{row.commodity_name}</td>
-                    <td className="px-3 py-2">{row.delivery_label || "-"}</td>
-                    <td className="px-3 py-2">{row.futures_month || "-"}</td>
-                    <td className="px-3 py-2 text-right">{formatNumber(row.futures_price)}</td>
-                    <td className="px-3 py-2 text-right">{formatNumber(row.basis)}</td>
-                    <td className={`px-3 py-2 text-right ${toneForDelta(row.basis_change)}`}>{formatSigned(row.basis_change)}</td>
-                    <td className="px-3 py-2 text-right">{formatNumber(row.cash_price_bu)}</td>
-                    <td className={`px-3 py-2 text-right ${toneForDelta(row.cash_price_bu_change)}`}>{formatSigned(row.cash_price_bu_change)}</td>
-                    <td className="px-3 py-2 text-right">{formatNumber(row.cash_price_mt)}</td>
-                    <td className={`px-3 py-2 text-right ${toneForDelta(row.cash_price_mt_change)}`}>{formatSigned(row.cash_price_mt_change)}</td>
-                    <td className="px-3 py-2 text-right">{row.candidate_count ?? 1}</td>
-                    <td className="px-3 py-2 text-xs text-black/65">{row.canonical_reason || "-"}</td>
-                  </tr>
-                ))
+                previewRows.map((row) => {
+                  const isSelected = selectedBidsForCompare.some((b) => b.id === row.id);
+                  const canAddMore = selectedBidsForCompare.length < MAX_COMPARE_BIDS;
+                  return (
+                    <tr
+                      key={row.id}
+                      className={`border-b border-black/5 ${selectedRow?.id === row.id ? "bg-amber-50/50" : isSelected ? "bg-blue-50/50" : ""}`}
+                    >
+                      <td className="w-10 px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            if (isSelected || canAddMore) {
+                              toggleBidForCompare(row);
+                            }
+                          }}
+                          disabled={!isSelected && !canAddMore}
+                          className="h-4 w-4 rounded border border-black/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        />
+                      </td>
+                      <td className="px-3 py-2 cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.location}
+                      </td>
+                      <td className="px-3 py-2 cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.company_name || "-"}
+                      </td>
+                      <td className="px-3 py-2 cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.commodity_name}
+                      </td>
+                      <td className="px-3 py-2 cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.delivery_label || "-"}
+                      </td>
+                      <td className="px-3 py-2 cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.futures_month || "-"}
+                      </td>
+                      <td className="px-3 py-2 text-right cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {formatNumber(row.futures_price)}
+                      </td>
+                      <td className={`px-3 py-2 text-right cursor-pointer ${toneForDelta(row.basis)}`} onClick={() => setSelectedRowId(row.id)}>
+                        {formatNumber(row.basis)}
+                      </td>
+                      <td className={`px-3 py-2 text-right cursor-pointer ${toneForDelta(row.basis_change)}`} onClick={() => setSelectedRowId(row.id)}>
+                        {formatSigned(row.basis_change)}
+                      </td>
+                      <td className="px-3 py-2 text-right cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {formatNumber(row.cash_price_bu)}
+                      </td>
+                      <td className={`px-3 py-2 text-right cursor-pointer ${toneForDelta(row.cash_price_bu_change)}`} onClick={() => setSelectedRowId(row.id)}>
+                        {formatSigned(row.cash_price_bu_change)}
+                      </td>
+                      <td className="px-3 py-2 text-right cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {formatNumber(row.cash_price_mt)}
+                      </td>
+                      <td className={`px-3 py-2 text-right cursor-pointer ${toneForDelta(row.cash_price_mt_change)}`} onClick={() => setSelectedRowId(row.id)}>
+                        {formatSigned(row.cash_price_mt_change)}
+                      </td>
+                      <td className="px-3 py-2 text-right cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.candidate_count ?? 1}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-black/65 cursor-pointer" onClick={() => setSelectedRowId(row.id)}>
+                        {row.canonical_reason || "-"}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -877,27 +1110,48 @@ export default function DashboardPage() {
                   <h3 className="text-sm font-semibold">{group.label}</h3>
                   <p className="text-xs text-black/55">{group.rows.length} bids</p>
                   <div className="mt-2 space-y-1.5">
-                    {group.rows.map((row) => (
-                      <button
-                        key={`${group.label}-${row.id}`}
-                        type="button"
-                        onClick={() => setSelectedBidDetail(row)}
-                        className="flex w-full items-start justify-between gap-2 rounded px-2 py-1.5 text-xs hover:bg-black/5"
-                      >
-                        <div className="text-left">
-                          <p className="font-medium">{row.location}</p>
-                          <p className="text-black/60">
-                            {row.company_name || "Unknown"} · {row.commodity_name}
-                          </p>
+                    {group.rows.map((row) => {
+                      const isSelected = selectedBidsForCompare.some((b) => b.id === row.id);
+                      const canAddMore = selectedBidsForCompare.length < MAX_COMPARE_BIDS;
+                      return (
+                        <div
+                          key={`${group.label}-${row.id}`}
+                          className={`flex w-full items-start justify-between gap-2 rounded px-2 py-1.5 text-xs transition-colors ${
+                            isSelected ? "bg-blue-100" : "hover:bg-black/5"
+                          }`}
+                        >
+                          <label className="flex items-center gap-2 flex-1 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                if (isSelected || canAddMore) {
+                                  toggleBidForCompare(row);
+                                }
+                              }}
+                              disabled={!isSelected && !canAddMore}
+                              className="h-4 w-4 rounded border border-black/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                            />
+                            <div className="text-left flex-1">
+                              <p className="font-medium">{row.location}</p>
+                              <p className="text-black/60">
+                                {row.company_name || "Unknown"} · {row.commodity_name}
+                              </p>
+                            </div>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBidDetail(row)}
+                            className="flex-shrink-0 text-right hover:text-blue-600"
+                          >
+                            <p className="font-semibold">{formatNumber(row.cash_price_bu)}</p>
+                            <p className={`text-black/60 ${toneForDelta(row.basis)}`}>
+                              {formatSigned(row.basis)}
+                            </p>
+                          </button>
                         </div>
-                        <div className="text-right">
-                          <p className="font-semibold">{formatNumber(row.cash_price_bu)}</p>
-                          <p className={`text-black/60 ${toneForDelta(row.basis)}`}>
-                            {formatSigned(row.basis)}
-                          </p>
-                        </div>
-                      </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 </article>
               ))
@@ -1156,6 +1410,13 @@ export default function DashboardPage() {
       ) : null}
 
       <BidDetailPanel bid={selectedBidDetail} onClose={() => setSelectedBidDetail(null)} />
+      <BidComparisonPanel
+        selectedBids={selectedBidsForCompare}
+        maxBids={MAX_COMPARE_BIDS}
+        onRemoveBid={removeBidFromCompare}
+        onClearAll={clearCompare}
+        onClose={() => setCompareMode(false)}
+      />
     </main>
   );
 }
