@@ -733,6 +733,10 @@ export default function DashboardPage() {
   const elevatorLocationCount = locationTypeBuckets.elevators.length;
   const benchmarkLocationCount = locationTypeBuckets.benchmarks.length;
   const totalLocationCount = elevatorLocationCount + benchmarkLocationCount;
+  const monthlyTotalRows = useMemo(
+    () => monthlyPreview.reduce((total, group) => total + (group.row_count || group.rows.length), 0),
+    [monthlyPreview]
+  );
   const MAX_COMPARE_BIDS = 4;
   const canUseDebugView = canManageAlerts;
 
@@ -1314,20 +1318,20 @@ export default function DashboardPage() {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-black/60">Focus by month:</span>
             <div className="flex flex-wrap gap-2">
-              {selectedDeliveryMonth && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedDeliveryMonth("")}
-                  className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-3 py-1 text-xs font-medium text-blue-900"
-                >
-                  <span>{selectedDeliveryMonth}</span>
-                  <span className="text-blue-600 hover:text-blue-800">✕</span>
-                </button>
-              )}
-              {monthlyPreview
-                .filter((g) => !selectedDeliveryMonth || g.label === selectedDeliveryMonth)
-                .slice(0, 5)
-                .map((group) => (
+              <button
+                type="button"
+                onClick={() => setSelectedDeliveryMonth("")}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  selectedDeliveryMonth === ""
+                    ? "bg-blue-600 text-white"
+                    : "border border-black/15 bg-white text-black/70 hover:bg-black/5"
+                }`}
+              >
+                All months ({monthlyTotalRows} rows)
+              </button>
+              {monthlyPreview.map((group) => {
+                const monthRows = group.row_count || group.rows.length;
+                return (
                   <button
                     key={group.label}
                     type="button"
@@ -1340,12 +1344,10 @@ export default function DashboardPage() {
                         : "border border-black/15 bg-white text-black/70 hover:bg-black/5"
                     }`}
                   >
-                    {group.label} ({group.rows.length})
+                    {group.label} ({monthRows})
                   </button>
-                ))}
-              {monthlyPreview.length > 5 && !selectedDeliveryMonth && (
-                <span className="text-xs text-black/50">+{monthlyPreview.length - 5} more</span>
-              )}
+                );
+              })}
             </div>
           </div>
         )}
