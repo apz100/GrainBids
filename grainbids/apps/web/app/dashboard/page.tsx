@@ -60,6 +60,7 @@ type ViewState = {
   filters: FilterState;
   selectedDeliveryMonth: string;
   compareSortMode: "cash_bu" | "basis";
+  locationKind: "all" | "elevator" | "benchmark";
 };
 
 function filterStateToUrlParams(state: ViewState): Record<string, string> {
@@ -89,6 +90,9 @@ function filterStateToUrlParams(state: ViewState): Record<string, string> {
   if (state.compareSortMode && state.compareSortMode !== "cash_bu") {
     params.compareSort = state.compareSortMode;
   }
+  if (state.locationKind && state.locationKind !== "elevator") {
+    params.locationType = state.locationKind;
+  }
 
   return params;
 }
@@ -96,7 +100,7 @@ function filterStateToUrlParams(state: ViewState): Record<string, string> {
 function urlParamsToFilterState(
   params: URLSearchParams,
   defaultFilters: FilterState
-): { filters: FilterState; selectedDeliveryMonth: string; compareSortMode: "cash_bu" | "basis" } {
+): { filters: FilterState; selectedDeliveryMonth: string; compareSortMode: "cash_bu" | "basis"; locationKind: "all" | "elevator" | "benchmark" } {
   const commodity = params.get("commodity") || defaultFilters.commodity;
   const location_id = params.get("location") || defaultFilters.location_id;
   const company_id = params.get("company") || defaultFilters.company_id;
@@ -107,6 +111,8 @@ function urlParamsToFilterState(
   const selectedDeliveryMonth = params.get("month") || "";
   const compareSortParam = params.get("compareSort");
   const compareSortMode = (compareSortParam === "basis" ? "basis" : "cash_bu") as "cash_bu" | "basis";
+  const locationTypeParam = params.get("locationType");
+  const locationKind = (locationTypeParam === "all" || locationTypeParam === "benchmark" ? locationTypeParam : "elevator") as "all" | "elevator" | "benchmark";
 
   return {
     filters: {
@@ -120,6 +126,7 @@ function urlParamsToFilterState(
     },
     selectedDeliveryMonth,
     compareSortMode,
+    locationKind,
   };
 }
 
@@ -717,6 +724,8 @@ export default function DashboardPage() {
   const [compareMode, setCompareMode] = useState(false);
   const [selectedBidsForCompare, setSelectedBidsForCompare] = useState<PreviewRow[]>([]);
   const [compareSortMode, setCompareSortMode] = useState<"cash_bu" | "basis">("cash_bu");
+  const [locationKind, setLocationKind] = useState<"all" | "elevator" | "benchmark">("elevator");
+  const [copyFeedback, setCopyFeedback] = useState(false);
   const MAX_COMPARE_BIDS = 4;
   const canUseDebugView = canManageAlerts;
 
@@ -734,6 +743,7 @@ export default function DashboardPage() {
     setFilters(urlState.filters);
     setSelectedDeliveryMonth(urlState.selectedDeliveryMonth);
     setCompareSortMode(urlState.compareSortMode);
+    setLocationKind(urlState.locationKind);
   }, [isHydrated]);
 
   // Sync state to URL whenever filters or view state changes (client-side only)
@@ -743,10 +753,11 @@ export default function DashboardPage() {
       filters,
       selectedDeliveryMonth,
       compareSortMode,
+      locationKind,
     };
     const url = buildViewUrl(viewState);
     window.history.replaceState({}, "", url);
-  }, [filters, selectedDeliveryMonth, compareSortMode, isHydrated]);
+  }, [filters, selectedDeliveryMonth, compareSortMode, locationKind, isHydrated]);
 
   useEffect(() => {
     if (configError) {
@@ -763,7 +774,7 @@ export default function DashboardPage() {
     }
     void loadMarketData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, configError]);
+  }, [filters, locationKind, configError]);
 
   useEffect(() => {
     if (!selectedRow) return;
@@ -820,7 +831,7 @@ export default function DashboardPage() {
     setLoadingPreview(true);
     setError((prev) => (prev.startsWith("Missing NEXT_PUBLIC_") ? prev : ""));
     try {
-      const query = buildMarketQuery(filters);
+      const query = buildMarketQuery(filters, locationKind);
       const previewRes = await fetch(`${API_BASE}/api/normalized-prices/preview${query}&limit=120`, { cache: "no-store", headers });
       if (!previewRes.ok) throw new Error(await readFailure(previewRes));
       const preview = (await previewRes.json()).rows ?? [];
@@ -972,7 +983,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_1fr_1fr_160px_160px]">
+        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_1fr_1fr_160px_140px_140px]">
           <select
             value={filters.location_id}
             onChange={(event) => setFilters((prev) => ({ ...prev, location_id: event.target.value }))}
@@ -1045,6 +1056,16 @@ export default function DashboardPage() {
             onChange={(event) => setFilters((prev) => ({ ...prev, captured_date: event.target.value }))}
             className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
           />
+          <select
+            value={locationKind}
+            onChange={(event) => setLocationKind(event.target.value as "all" | "elevator" | "benchmark")}
+            className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
+            title="Filter by location type: All, Elevator only, or Benchmark labels"
+          >
+            <option value="all">All locations</option>
+            <option value="elevator">Elevators only</option>
+            <option value="benchmark">Benchmarks only</option>
+          </select>
           <button type="button" onClick={resetFilters} className="rounded-md border border-black/20 bg-white px-3 py-2 text-sm">
             Reset
           </button>
@@ -1068,14 +1089,17 @@ export default function DashboardPage() {
                 filters,
                 selectedDeliveryMonth,
                 compareSortMode,
+                locationKind,
               };
               const url = buildViewUrl(viewState);
               navigator.clipboard.writeText(url);
+              setCopyFeedback(true);
+              setTimeout(() => setCopyFeedback(false), 2000);
             }}
-            className="rounded-md border border-black/20 bg-white px-3 py-2 text-sm hover:bg-black/5"
+            className="rounded-md border border-black/20 bg-white px-3 py-2 text-sm hover:bg-black/5 transition-all"
             title="Copy shareable view link to clipboard"
           >
-            Copy view link
+            {copyFeedback ? "Link copied!" : "Copy view link"}
           </button>
         </div>
         {canUseDebugView ? (
@@ -1787,7 +1811,7 @@ function parseYearToken(token?: string): number | null {
   return rawYear;
 }
 
-function buildMarketQuery(filters: FilterState) {
+function buildMarketQuery(filters: FilterState, locationKind?: "all" | "elevator" | "benchmark") {
   const params = new URLSearchParams();
   if (filters.commodity) params.set("commodity", filters.commodity);
   if (filters.location_id) params.set("location_id", filters.location_id);
@@ -1796,6 +1820,7 @@ function buildMarketQuery(filters: FilterState) {
   if (filters.captured_date) params.set("captured_date", filters.captured_date);
   if (filters.sort) params.set("sort", filters.sort);
   if (filters.include_non_canonical) params.set("include_non_canonical", "true");
+  if (locationKind && locationKind !== "all") params.set("location_kind", locationKind);
   const query = params.toString();
   return query ? `?${query}` : "";
 }
