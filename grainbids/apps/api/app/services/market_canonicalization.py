@@ -21,6 +21,17 @@ LOCATION_CANONICAL_OVERRIDES = {
     "toledo corn": "Toledo Elevator",
     "toledo soybeans": "Toledo Elevator",
 }
+LOCATION_KIND_ELEVATOR_TOKENS = (
+    "elevator",
+    "branch",
+    "terminal",
+    "grain",
+    "feed",
+    "mill",
+    "co-op",
+    "coop",
+    "ethanol",
+)
 
 
 def normalize_text(value: str | None) -> str | None:
@@ -100,6 +111,17 @@ def canonical_location_name(location_name: str | None) -> str | None:
         return None
     override = LOCATION_CANONICAL_OVERRIDES.get(value.casefold())
     return override or value
+
+
+def location_kind_for_name(location_name: str | None) -> str:
+    normalized = canonical_location_name(location_name)
+    if normalized is None:
+        return "unknown"
+    lowered = normalized.casefold()
+    for token in LOCATION_KIND_ELEVATOR_TOKENS:
+        if token in lowered:
+            return "elevator"
+    return "benchmark"
 
 
 def source_scope(source_name: str | None) -> tuple[str, str | None]:

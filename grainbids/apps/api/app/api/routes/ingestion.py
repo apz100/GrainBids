@@ -18,7 +18,7 @@ from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
 from app.models.source import Source
 from app.services.ingestion_diagnostics import build_ingestion_diagnostics
-from app.services.market_canonicalization import canonical_key, canonical_location_name
+from app.services.market_canonicalization import canonical_key, canonical_location_name, location_kind_for_name
 from app.services.source_company_identity_diagnostics import list_ambiguous_location_company_candidates
 from app.services.source_orchestration import build_sla_summary
 from app.services.source_file_ingestion import (
@@ -479,25 +479,7 @@ def _build_company_resolution_coverage_payload(
 
 
 def _location_kind_for_name(location_name: str | None) -> str:
-    normalized = canonical_location_name(location_name)
-    if not normalized:
-        return "unknown"
-    key = normalized.casefold()
-    elevator_tokens = (
-        "elevator",
-        "branch",
-        "terminal",
-        "grain",
-        "feed",
-        "mill",
-        "co-op",
-        "coop",
-        "ethanol",
-    )
-    for token in elevator_tokens:
-        if token in key:
-            return "elevator"
-    return "benchmark"
+    return location_kind_for_name(location_name)
 
 
 def _reject_totals(payload: dict | None) -> dict[str, int]:
