@@ -726,6 +726,13 @@ export default function DashboardPage() {
   const [compareSortMode, setCompareSortMode] = useState<"cash_bu" | "basis">("cash_bu");
   const [locationKind, setLocationKind] = useState<"all" | "elevator" | "benchmark">("elevator");
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const locationTypeBuckets = useMemo(
+    () => groupLocationsByType(facets.location_rows || []),
+    [facets.location_rows]
+  );
+  const elevatorLocationCount = locationTypeBuckets.elevators.length;
+  const benchmarkLocationCount = locationTypeBuckets.benchmarks.length;
+  const totalLocationCount = elevatorLocationCount + benchmarkLocationCount;
   const MAX_COMPARE_BIDS = 4;
   const canUseDebugView = canManageAlerts;
 
@@ -990,31 +997,24 @@ export default function DashboardPage() {
             className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
           >
             <option value="">All locations</option>
-            {(() => {
-              const { elevators, benchmarks } = groupLocationsByType(facets.location_rows || []);
-              return (
-                <>
-                  {elevators.length > 0 && (
-                    <optgroup label={`Elevator locations (${elevators.length})`}>
-                      {elevators.map((location) => (
-                        <option key={location.id} value={location.id}>
-                          {location.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {benchmarks.length > 0 && (
-                    <optgroup label={`Benchmark labels (${benchmarks.length})`}>
-                      {benchmarks.map((location) => (
-                        <option key={location.id} value={location.id}>
-                          {location.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </>
-              );
-            })()}
+            {locationTypeBuckets.elevators.length > 0 && (
+              <optgroup label={`Elevator locations (${locationTypeBuckets.elevators.length})`}>
+                {locationTypeBuckets.elevators.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {locationTypeBuckets.benchmarks.length > 0 && (
+              <optgroup label={`Benchmark labels (${locationTypeBuckets.benchmarks.length})`}>
+                {locationTypeBuckets.benchmarks.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
           <select
             value={filters.company_id}
@@ -1062,9 +1062,9 @@ export default function DashboardPage() {
             className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
             title="Filter by location type: All, Elevator only, or Benchmark labels"
           >
-            <option value="all">All locations</option>
-            <option value="elevator">Elevators only</option>
-            <option value="benchmark">Benchmarks only</option>
+            <option value="all">All ({totalLocationCount})</option>
+            <option value="elevator">Elevator ({elevatorLocationCount})</option>
+            <option value="benchmark">Benchmark ({benchmarkLocationCount})</option>
           </select>
           <button type="button" onClick={resetFilters} className="rounded-md border border-black/20 bg-white px-3 py-2 text-sm">
             Reset
@@ -1178,7 +1178,19 @@ export default function DashboardPage() {
                 <tr>
                   <td colSpan={15} className="px-3 py-8">
                     <div className="text-center">
-                      <p className="text-sm font-medium text-black/70">No bids match your filters</p>
+                      <p className="text-sm font-medium text-black/70">
+                        {locationKind === "all"
+                          ? "No bids match your filters"
+                          : `No ${locationKind} bids match your filters`}
+                      </p>
+                      <p className="mt-1 text-xs text-black/55">
+                        Location type:{" "}
+                        {locationKind === "all"
+                          ? `All (${totalLocationCount})`
+                          : locationKind === "elevator"
+                            ? `Elevator (${elevatorLocationCount})`
+                            : `Benchmark (${benchmarkLocationCount})`}
+                      </p>
                       <p className="mt-1 text-xs text-black/55">Try adjusting your selection:</p>
                       <div className="mt-3 space-y-2 text-xs text-black/60">
                         {filters.location_id && (
