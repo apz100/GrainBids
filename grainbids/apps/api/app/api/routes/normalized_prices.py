@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timezone
 from decimal import Decimal
 import math
 import re
+from typing import Literal
 import uuid
 
 from fastapi import APIRouter, Depends, Query
@@ -22,10 +23,12 @@ from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
 from app.models.source import Source
 from app.services.market_canonicalization import (
+    LOCATION_KIND_ELEVATOR_TOKENS,
     canonical_commodity_name,
     canonical_key,
     canonical_location_name,
     canonical_source_name,
+    location_kind_for_name,
     normalize_text,
     region_source_names,
     source_scope,
@@ -92,6 +95,7 @@ def _build_filters(
     captured_date: date | None,
     company_id: uuid.UUID | None = None,
     location_id: uuid.UUID | None = None,
+    location_kind: Literal["elevator", "benchmark", "all"] = "all",
 ):
     filters = []
 
@@ -117,8 +121,37 @@ def _build_filters(
         start_dt = datetime.combine(captured_date, time.min, tzinfo=timezone.utc)
         end_dt = datetime.combine(captured_date, time.max, tzinfo=timezone.utc)
         filters.append(and_(PriceSnapshot.captured_at >= start_dt, PriceSnapshot.captured_at <= end_dt))
+    kind_filter = _location_kind_sql_filter(location_kind)
+    if kind_filter is not None:
+        filters.append(kind_filter)
 
     return filters
+
+
+def _location_kind_sql_filter(location_kind: Literal["elevator", "benchmark", "all"]):
+    if location_kind == "all":
+        return None
+    lowered_location = func.lower(func.trim(func.coalesce(NormalizedPrice.location, "")))
+    matches_any_elevator_token = or_(*[lowered_location.like(f"%{token}%") for token in LOCATION_KIND_ELEVATOR_TOKENS])
+    if location_kind == "elevator":
+        return matches_any_elevator_token
+    return and_(func.length(lowered_location) > 0, ~matches_any_elevator_token)
+
+
+def _is_location_kind_match(location_name: str | None, location_kind: Literal["elevator", "benchmark", "all"]) -> bool:
+    if location_kind == "all":
+        return True
+    return location_kind_for_name(location_name) == location_kind
+
+
+def _filter_preview_rows_by_location_kind(
+    rows: list[dict[str, object]],
+    *,
+    location_kind: Literal["elevator", "benchmark", "all"],
+) -> list[dict[str, object]]:
+    if location_kind == "all":
+        return rows
+    return [row for row in rows if _is_location_kind_match(str(row.get("location") or ""), location_kind)]
 
 
 def _canonical_source_filter_values(source_name: str | None) -> list[str]:
@@ -437,6 +470,7 @@ def _load_preview_payload(
     location_id: uuid.UUID | None,
     captured_date: date | None,
     include_non_canonical: bool,
+    location_kind: Literal["elevator", "benchmark", "all"],
     sort: str,
     limit: int,
 ) -> list[dict[str, object]]:
@@ -448,6 +482,7 @@ def _load_preview_payload(
         captured_date=captured_date,
         company_id=company_id,
         location_id=location_id,
+        location_kind=location_kind,
     )
     query: Select = _base_query(context)
     query = query.where(*_user_visible_market_filters(include_non_canonical))
@@ -712,6 +747,7 @@ def preview(
     location_id: uuid.UUID | None = Query(None),
     captured_date: date | None = Query(None),
     include_non_canonical: bool = Query(False),
+    location_kind: Literal["elevator", "benchmark", "all"] = Query("all"),
     sort: str = Query(
         "captured_desc",
         pattern="^(captured_desc|basis_desc|basis_asc|cash_bu_desc|cash_bu_asc|basis_change_desc)$",
@@ -720,22 +756,22 @@ def preview(
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    return {
-        "rows": _load_preview_payload(
-            context=context,
-            db=db,
-            commodity=commodity,
-            location=location,
-            source_name=source_name,
-            region=region,
-            company_id=company_id,
-            location_id=location_id,
-            captured_date=captured_date,
-            include_non_canonical=include_non_canonical,
-            sort=sort,
-            limit=limit,
-        )
-    }
+    rows = _load_preview_payload(
+        context=context,
+        db=db,
+        commodity=commodity,
+        location=location,
+        source_name=source_name,
+        region=region,
+        company_id=company_id,
+        location_id=location_id,
+        captured_date=captured_date,
+        include_non_canonical=include_non_canonical,
+        location_kind=location_kind,
+        sort=sort,
+        limit=limit,
+    )
+    return {"rows": _filter_preview_rows_by_location_kind(rows, location_kind=location_kind)}
 
 
 @router.get("/preview-grouped")
@@ -748,6 +784,7 @@ def preview_grouped(
     location_id: uuid.UUID | None = Query(None),
     captured_date: date | None = Query(None),
     include_non_canonical: bool = Query(False),
+    location_kind: Literal["elevator", "benchmark", "all"] = Query("all"),
     sort: str = Query(
         "captured_desc",
         pattern="^(captured_desc|basis_desc|basis_asc|cash_bu_desc|cash_bu_asc|basis_change_desc)$",
@@ -768,9 +805,11 @@ def preview_grouped(
         location_id=location_id,
         captured_date=captured_date,
         include_non_canonical=include_non_canonical,
+        location_kind=location_kind,
         sort=sort,
         limit=limit,
     )
+    rows = _filter_preview_rows_by_location_kind(rows, location_kind=location_kind)
     return {
         "groups": _group_preview_rows_by_delivery(rows, rows_per_group=rows_per_group),
         "row_count": len(rows),
@@ -787,6 +826,7 @@ def top_movers(
     location_id: uuid.UUID | None = Query(None),
     captured_date: date | None = Query(None),
     include_non_canonical: bool = Query(False),
+    location_kind: Literal["elevator", "benchmark", "all"] = Query("all"),
     limit: int = Query(10, ge=1, le=100),
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
@@ -809,6 +849,7 @@ def top_movers(
         captured_date=captured_date,
         company_id=company_id,
         location_id=location_id,
+        location_kind=location_kind,
     )
     if filters:
         query = query.where(*filters)
@@ -852,6 +893,7 @@ def summary(
     location_id: uuid.UUID | None = Query(None),
     captured_date: date | None = Query(None),
     include_non_canonical: bool = Query(False),
+    location_kind: Literal["elevator", "benchmark", "all"] = Query("all"),
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
@@ -863,6 +905,7 @@ def summary(
         captured_date=captured_date,
         company_id=company_id,
         location_id=location_id,
+        location_kind=location_kind,
     )
 
     normalized_basis_expr = case(
