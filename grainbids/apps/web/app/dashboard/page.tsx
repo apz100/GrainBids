@@ -686,6 +686,12 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [sla, setSla] = useState<SlaSummary | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [loadingMonthlyPreview, setLoadingMonthlyPreview] = useState(false);
+  const [loadingTopMovers, setLoadingTopMovers] = useState(false);
+  const [loadingSummary, setLoadingSummary] = useState(false);
+  const [monthlyPreviewUpdatedAt, setMonthlyPreviewUpdatedAt] = useState<string | null>(null);
+  const [topMoversUpdatedAt, setTopMoversUpdatedAt] = useState<string | null>(null);
+  const [summaryUpdatedAt, setSummaryUpdatedAt] = useState<string | null>(null);
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [error, setError] = useState("");
   const [selectedRowId, setSelectedRowIdRaw] = useState<string>("");
@@ -862,9 +868,13 @@ export default function DashboardPage() {
 
   async function loadMarketData(signal: AbortSignal, requestId: number) {
     setLoadingPreview(true);
+    setLoadingMonthlyPreview(true);
+    setLoadingTopMovers(true);
+    setLoadingSummary(true);
     setError((prev) => (prev.startsWith("Missing NEXT_PUBLIC_") ? prev : ""));
     try {
       const query = buildMarketQuery(filters, locationKind);
+      const requestCompletedAt = new Date().toISOString();
       const previewRes = await fetch(`${API_BASE}/api/normalized-prices/preview${query}&limit=120`, {
         cache: "no-store",
         headers,
@@ -875,42 +885,94 @@ export default function DashboardPage() {
       if (!isCurrentMarketRequest(signal, requestId)) return;
       setPreviewRows(sortPreviewRowsForDisplay(preview));
 
-      const [groupedRes, moversRes, summaryRes] = await Promise.all([
-        fetch(`${API_BASE}/api/normalized-prices/preview-grouped${query}&limit=120&rows_per_group=8`, {
-          cache: "no-store",
-          headers,
-          signal,
-        }),
-        fetch(`${API_BASE}/api/normalized-prices/top-movers${query}&limit=8`, {
-          cache: "no-store",
-          headers,
-          signal,
-        }),
-        fetch(`${API_BASE}/api/normalized-prices/summary${query}`, {
-          cache: "no-store",
-          headers,
-          signal,
-        }),
-      ]);
-      if (!isCurrentMarketRequest(signal, requestId)) return;
-      if (groupedRes.ok) {
-        setMonthlyPreview((await groupedRes.json()).groups ?? []);
-      } else {
-        setError(`Monthly preview unavailable: ${await readFailure(groupedRes)}`);
+      if (isCurrentMarketRequest(signal, requestId)) {
+        setLoadingPreview(false);
       }
-      if (moversRes.ok) {
-        setMovers((await moversRes.json()).rows ?? []);
-      } else {
-        setError(`Top movers unavailable: ${await readFailure(moversRes)}`);
-      }
-      if (summaryRes.ok) {
-        setSummary(await summaryRes.json());
-      } else {
-        setError(`Summary unavailable: ${await readFailure(summaryRes)}`);
-      }
+
+      const groupedPromise = (async () => {
+        try {
+          const groupedRes = await fetch(`${API_BASE}/api/normalized-prices/preview-grouped${query}&limit=120&rows_per_group=8`, {
+            cache: "no-store",
+            headers,
+            signal,
+          });
+          if (!isCurrentMarketRequest(signal, requestId)) return;
+          if (groupedRes.ok) {
+            setMonthlyPreview((await groupedRes.json()).groups ?? []);
+            setMonthlyPreviewUpdatedAt(requestCompletedAt);
+          } else {
+            setError(`Monthly preview unavailable: ${await readFailure(groupedRes)}`);
+          }
+        } catch (err) {
+          if (!signal.aborted && isCurrentMarketRequest(signal, requestId)) {
+            setError(err instanceof Error ? err.message : String(err));
+          }
+        } finally {
+          if (isCurrentMarketRequest(signal, requestId)) {
+            setLoadingMonthlyPreview(false);
+          }
+        }
+      })();
+
+      const moversPromise = (async () => {
+        try {
+          const moversRes = await fetch(`${API_BASE}/api/normalized-prices/top-movers${query}&limit=8`, {
+            cache: "no-store",
+            headers,
+            signal,
+          });
+          if (!isCurrentMarketRequest(signal, requestId)) return;
+          if (moversRes.ok) {
+            setMovers((await moversRes.json()).rows ?? []);
+            setTopMoversUpdatedAt(requestCompletedAt);
+          } else {
+            setError(`Top movers unavailable: ${await readFailure(moversRes)}`);
+          }
+        } catch (err) {
+          if (!signal.aborted && isCurrentMarketRequest(signal, requestId)) {
+            setError(err instanceof Error ? err.message : String(err));
+          }
+        } finally {
+          if (isCurrentMarketRequest(signal, requestId)) {
+            setLoadingTopMovers(false);
+          }
+        }
+      })();
+
+      const summaryPromise = (async () => {
+        try {
+          const summaryRes = await fetch(`${API_BASE}/api/normalized-prices/summary${query}`, {
+            cache: "no-store",
+            headers,
+            signal,
+          });
+          if (!isCurrentMarketRequest(signal, requestId)) return;
+          if (summaryRes.ok) {
+            setSummary(await summaryRes.json());
+            setSummaryUpdatedAt(requestCompletedAt);
+          } else {
+            setError(`Summary unavailable: ${await readFailure(summaryRes)}`);
+          }
+        } catch (err) {
+          if (!signal.aborted && isCurrentMarketRequest(signal, requestId)) {
+            setError(err instanceof Error ? err.message : String(err));
+          }
+        } finally {
+          if (isCurrentMarketRequest(signal, requestId)) {
+            setLoadingSummary(false);
+          }
+        }
+      })();
+
+      await Promise.all([groupedPromise, moversPromise, summaryPromise]);
     } catch (err) {
       if (signal.aborted) {
         return;
+      }
+      if (isCurrentMarketRequest(signal, requestId)) {
+        setLoadingMonthlyPreview(false);
+        setLoadingTopMovers(false);
+        setLoadingSummary(false);
       }
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1030,12 +1092,17 @@ export default function DashboardPage() {
               );
             })}
           </div>
-          <div className="flex items-center gap-2 text-xs text-black/65">
-            <span>Rows: {summary?.row_count ?? 0}</span>
-            <span>|</span>
-            <span>Avg basis: {formatNumber(summary?.average_basis)}</span>
-            <span>|</span>
-            <span>Open alerts: {summary?.open_alerts ?? 0}</span>
+          <div className="flex flex-col items-start gap-1 text-xs text-black/65 md:items-end">
+            <div className="flex items-center gap-2">
+              <span>Rows: {loadingSummary ? "..." : summary?.row_count ?? 0}</span>
+              <span>|</span>
+              <span>Avg basis: {loadingSummary ? "..." : formatNumber(summary?.average_basis)}</span>
+              <span>|</span>
+              <span>Open alerts: {loadingSummary ? "..." : summary?.open_alerts ?? 0}</span>
+            </div>
+            <span className="text-[11px] text-black/50">
+              {loadingSummary ? "Summary refreshing..." : `Summary updated ${formatLastUpdated(summaryUpdatedAt)}`}
+            </span>
           </div>
         </div>
 
@@ -1367,6 +1434,11 @@ export default function DashboardPage() {
             <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Top Bids by Delivery Month</h2>
             <p className="mt-1 text-xs text-black/55">Best cash bids after filters, grouped by delivery month.</p>
           </div>
+          <span className="text-xs text-black/55">
+            {loadingMonthlyPreview
+              ? "Monthly preview refreshing..."
+              : `Updated ${formatLastUpdated(monthlyPreviewUpdatedAt)}`}
+          </span>
         </div>
 
         {monthlyPreview.length > 0 && (
@@ -1408,7 +1480,19 @@ export default function DashboardPage() {
         )}
 
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {monthlyPreview.length === 0 ? (
+          {loadingMonthlyPreview && monthlyPreview.length === 0 ? (
+            Array.from({ length: 3 }).map((_, idx) => (
+              <article key={`monthly-loading-${idx}`} className="rounded-md border border-black/10 bg-white p-3">
+                <div className="h-4 w-2/5 animate-pulse rounded bg-black/10" />
+                <div className="mt-2 h-3 w-1/3 animate-pulse rounded bg-black/10" />
+                <div className="mt-3 space-y-2">
+                  <div className="h-8 w-full animate-pulse rounded bg-black/10" />
+                  <div className="h-8 w-full animate-pulse rounded bg-black/10" />
+                  <div className="h-8 w-full animate-pulse rounded bg-black/10" />
+                </div>
+              </article>
+            ))
+          ) : monthlyPreview.length === 0 ? (
             <p className="text-sm text-black/55">No monthly preview data available.</p>
           ) : (
             monthlyPreview
@@ -1693,9 +1777,25 @@ export default function DashboardPage() {
       </section>
 
       <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Top Basis Movers</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Top Basis Movers</h2>
+          <span className="text-xs text-black/55">
+            {loadingTopMovers
+              ? "Top movers refreshing..."
+              : `Updated ${formatLastUpdated(topMoversUpdatedAt)}`}
+          </span>
+        </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {movers.length === 0 ? (
+          {loadingTopMovers && movers.length === 0 ? (
+            Array.from({ length: 4 }).map((_, idx) => (
+              <article key={`movers-loading-${idx}`} className="rounded-md border border-black/10 bg-white p-3">
+                <div className="h-4 w-2/3 animate-pulse rounded bg-black/10" />
+                <div className="mt-2 h-3 w-5/6 animate-pulse rounded bg-black/10" />
+                <div className="mt-3 h-3 w-1/2 animate-pulse rounded bg-black/10" />
+                <div className="mt-2 h-3 w-2/5 animate-pulse rounded bg-black/10" />
+              </article>
+            ))
+          ) : movers.length === 0 ? (
             <p className="text-sm text-black/55">No mover data available for the current filters.</p>
           ) : (
             movers.map((mover) => (
@@ -1917,4 +2017,11 @@ function formatNumber(value: number | null | undefined): string {
 function formatSigned(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) return "-";
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
+function formatLastUpdated(value: string | null | undefined): string {
+  if (!value) return "-";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return "-";
+  return dt.toLocaleTimeString();
 }
