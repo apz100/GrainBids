@@ -336,17 +336,15 @@ function BidComparisonPanel({
 }) {
   if (selectedBids.length === 0) return null;
 
-  // Calculate best values (highest is best)
-  const bestCashPerBu = Math.max(
-    ...selectedBids
-      .map((b) => b.cash_price_bu)
-      .filter((v) => v != null && !Number.isNaN(v)) as number[]
-  );
-  const bestBasis = Math.max(
-    ...selectedBids
-      .map((b) => b.basis)
-      .filter((v) => v != null && !Number.isNaN(v)) as number[]
-  );
+  // Calculate best values (highest is best) with null-safe handling.
+  const cashValues = selectedBids
+    .map((b) => b.cash_price_bu)
+    .filter((v): v is number => v != null && !Number.isNaN(v));
+  const basisValues = selectedBids
+    .map((b) => b.basis)
+    .filter((v): v is number => v != null && !Number.isNaN(v));
+  const bestCashPerBu = cashValues.length > 0 ? Math.max(...cashValues) : null;
+  const bestBasis = basisValues.length > 0 ? Math.max(...basisValues) : null;
 
   // Sort bids based on current sort selection
   const sortedBids = useMemo(() => {
@@ -361,20 +359,24 @@ function BidComparisonPanel({
 
   // Check if a bid has the best value for a metric
   const isBestCashPerBu = (bid: PreviewRow) =>
-    bid.cash_price_bu != null && bid.cash_price_bu === bestCashPerBu;
+    bestCashPerBu != null && bid.cash_price_bu != null && bid.cash_price_bu === bestCashPerBu;
   const isBestBasis = (bid: PreviewRow) =>
-    bid.basis != null && bid.basis === bestBasis;
+    bestBasis != null && bid.basis != null && bid.basis === bestBasis;
 
   // Calculate delta from best value
   const cashPerBuDelta = (bid: PreviewRow) => {
-    if (bid.cash_price_bu == null || Number.isNaN(bid.cash_price_bu)) return null;
+    if (bestCashPerBu == null || bid.cash_price_bu == null || Number.isNaN(bid.cash_price_bu)) return null;
     return bid.cash_price_bu - bestCashPerBu;
   };
 
   const basisDelta = (bid: PreviewRow) => {
-    if (bid.basis == null || Number.isNaN(bid.basis)) return null;
+    if (bestBasis == null || bid.basis == null || Number.isNaN(bid.basis)) return null;
     return bid.basis - bestBasis;
   };
+  const bestCashBid =
+    bestCashPerBu == null ? null : selectedBids.find((bid) => bid.cash_price_bu === bestCashPerBu) ?? null;
+  const bestBasisBid =
+    bestBasis == null ? null : selectedBids.find((bid) => bid.basis === bestBasis) ?? null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -430,6 +432,18 @@ function BidComparisonPanel({
             >
               Basis (↓)
             </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-black/70">
+            {bestCashBid ? (
+              <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1">
+                Best Cash/Bu: {formatNumber(bestCashPerBu)} @ {bestCashBid.location}
+              </span>
+            ) : null}
+            {bestBasisBid ? (
+              <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1">
+                Best Basis: {formatSigned(bestBasis)} @ {bestBasisBid.location}
+              </span>
+            ) : null}
           </div>
         </div>
 
@@ -1140,7 +1154,7 @@ export default function DashboardPage() {
       <section className="mt-4 rounded-xl border border-black/10 bg-white/85 shadow-sm">
         <div className="flex items-center justify-between border-b border-black/10 px-4 py-3">
           <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Live Price Preview</h2>
-          {loadingPreview ? <span className="text-xs text-black/60">Refreshing...</span> : null}
+          {loadingPreview ? <span className="text-xs text-black/60 animate-pulse">Refreshing bids...</span> : null}
         </div>
         {error ? <p className="px-4 py-2 text-sm text-red-700">{error}</p> : null}
         <div className="max-h-[520px] overflow-auto">
@@ -1179,7 +1193,16 @@ export default function DashboardPage() {
             </thead>
             <tbody>
               {previewRows.length === 0 ? (
-                <tr>
+                loadingPreview ? (
+                  Array.from({ length: 8 }).map((_, idx) => (
+                    <tr key={`preview-loading-${idx}`} className="border-b border-black/5">
+                      <td colSpan={15} className="px-3 py-2">
+                        <div className="h-5 w-full animate-pulse rounded bg-black/10" />
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
                   <td colSpan={15} className="px-3 py-8">
                     <div className="text-center">
                       <p className="text-sm font-medium text-black/70">
@@ -1231,7 +1254,8 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   </td>
-                </tr>
+                  </tr>
+                )
               ) : (
                 previewRows.map((row) => {
                   const isSelected = selectedBidsForCompare.some((b) => b.id === row.id);
