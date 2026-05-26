@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -740,6 +740,7 @@ export default function DashboardPage() {
   const [compareSortMode, setCompareSortMode] = useState<"cash_bu" | "basis">("cash_bu");
   const [locationKind, setLocationKind] = useState<"all" | "elevator" | "benchmark">("elevator");
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const marketRequestIdRef = useRef(0);
   const locationTypeBuckets = useMemo(
     () => groupLocationsByType(facets.location_rows || []),
     [facets.location_rows]
@@ -797,7 +798,10 @@ export default function DashboardPage() {
     if (configError) {
       return;
     }
-    void loadMarketData();
+    const controller = new AbortController();
+    const requestId = ++marketRequestIdRef.current;
+    void loadMarketData(controller.signal, requestId);
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, locationKind, configError]);
 
@@ -852,21 +856,43 @@ export default function DashboardPage() {
     }
   }
 
-  async function loadMarketData() {
+  function isCurrentMarketRequest(signal: AbortSignal, requestId: number): boolean {
+    return !signal.aborted && requestId === marketRequestIdRef.current;
+  }
+
+  async function loadMarketData(signal: AbortSignal, requestId: number) {
     setLoadingPreview(true);
     setError((prev) => (prev.startsWith("Missing NEXT_PUBLIC_") ? prev : ""));
     try {
       const query = buildMarketQuery(filters, locationKind);
-      const previewRes = await fetch(`${API_BASE}/api/normalized-prices/preview${query}&limit=120`, { cache: "no-store", headers });
+      const previewRes = await fetch(`${API_BASE}/api/normalized-prices/preview${query}&limit=120`, {
+        cache: "no-store",
+        headers,
+        signal,
+      });
       if (!previewRes.ok) throw new Error(await readFailure(previewRes));
       const preview = (await previewRes.json()).rows ?? [];
+      if (!isCurrentMarketRequest(signal, requestId)) return;
       setPreviewRows(sortPreviewRowsForDisplay(preview));
 
       const [groupedRes, moversRes, summaryRes] = await Promise.all([
-        fetch(`${API_BASE}/api/normalized-prices/preview-grouped${query}&limit=120&rows_per_group=8`, { cache: "no-store", headers }),
-        fetch(`${API_BASE}/api/normalized-prices/top-movers${query}&limit=8`, { cache: "no-store", headers }),
-        fetch(`${API_BASE}/api/normalized-prices/summary${query}`, { cache: "no-store", headers }),
+        fetch(`${API_BASE}/api/normalized-prices/preview-grouped${query}&limit=120&rows_per_group=8`, {
+          cache: "no-store",
+          headers,
+          signal,
+        }),
+        fetch(`${API_BASE}/api/normalized-prices/top-movers${query}&limit=8`, {
+          cache: "no-store",
+          headers,
+          signal,
+        }),
+        fetch(`${API_BASE}/api/normalized-prices/summary${query}`, {
+          cache: "no-store",
+          headers,
+          signal,
+        }),
       ]);
+      if (!isCurrentMarketRequest(signal, requestId)) return;
       if (groupedRes.ok) {
         setMonthlyPreview((await groupedRes.json()).groups ?? []);
       } else {
@@ -883,9 +909,14 @@ export default function DashboardPage() {
         setError(`Summary unavailable: ${await readFailure(summaryRes)}`);
       }
     } catch (err) {
+      if (signal.aborted) {
+        return;
+      }
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoadingPreview(false);
+      if (isCurrentMarketRequest(signal, requestId)) {
+        setLoadingPreview(false);
+      }
     }
   }
 
