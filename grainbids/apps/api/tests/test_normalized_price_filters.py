@@ -5,6 +5,7 @@ import uuid
 
 from app.api.routes.normalized_prices import (
     _build_quality_filters,
+    _canonical_month_label,
     _canonical_and_quality_filters,
     _group_preview_rows_by_delivery,
     _preview_row_dedupe_key,
@@ -92,3 +93,10 @@ def test_preview_row_dedupe_key_collapses_month_label_variants() -> None:
         location_company_map=location_company_map,
     )
     assert key_a == key_b
+
+
+def test_canonical_month_label_normalizes_common_variants() -> None:
+    assert _canonical_month_label("May-26") == "May 2026"
+    assert _canonical_month_label("Jul 2026") == "July 2026"
+    assert _canonical_month_label("December 2026") == "December 2026"
+    assert _canonical_month_label("Nearby") == "Nearby"
