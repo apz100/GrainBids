@@ -498,7 +498,12 @@ def persist_normalized_rows(
             },
         )
 
-    apply_historical_changes(db, normalized_rows=normalized_rows, captured_at=captured)
+    apply_historical_changes(
+        db,
+        normalized_rows=normalized_rows,
+        captured_at=captured,
+        org_id=source.org_id,
+    )
     db.add_all(normalized_rows)
     db.flush()
     resolve_canonical_rows_for_snapshot(

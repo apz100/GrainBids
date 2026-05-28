@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
+import uuid
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -28,6 +29,7 @@ def apply_historical_changes(
     *,
     normalized_rows: list["NormalizedPrice"],
     captured_at: datetime,
+    org_id: uuid.UUID | None = None,
 ) -> None:
     if not normalized_rows:
         return
@@ -36,6 +38,7 @@ def apply_historical_changes(
         db,
         composite_keys={row.composite_key for row in normalized_rows},
         captured_at=captured_at,
+        org_id=org_id,
     )
 
     for row in normalized_rows:
@@ -87,22 +90,30 @@ def _load_most_recent_prior_rows(
     *,
     composite_keys: set[str],
     captured_at: datetime,
+    org_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     from sqlalchemy import desc, func, select
 
     from app.models.normalized_price import NormalizedPrice
     from app.models.price_snapshot import PriceSnapshot
+    from app.models.source import Source
 
     if not composite_keys:
         return {}
 
     current_day = captured_at.date()
-    prior_day = db.execute(
+    prior_day_query = (
         select(func.max(func.date(PriceSnapshot.captured_at)))
         .join(NormalizedPrice, NormalizedPrice.snapshot_id == PriceSnapshot.id)
         .where(NormalizedPrice.composite_key.in_(composite_keys))
         .where(func.date(PriceSnapshot.captured_at) < current_day)
-    ).scalar_one_or_none()
+    )
+    if org_id is not None:
+        prior_day_query = (
+            prior_day_query.join(Source, Source.id == PriceSnapshot.source_id)
+            .where(Source.org_id == org_id)
+        )
+    prior_day = db.execute(prior_day_query).scalar_one_or_none()
     if prior_day is None:
         return {}
 
@@ -113,6 +124,8 @@ def _load_most_recent_prior_rows(
         .where(func.date(PriceSnapshot.captured_at) == prior_day)
         .order_by(NormalizedPrice.composite_key, desc(PriceSnapshot.captured_at))
     )
+    if org_id is not None:
+        query = query.join(Source, Source.id == PriceSnapshot.source_id).where(Source.org_id == org_id)
 
     prior_by_key: dict[str, NormalizedPrice] = {}
     for row, _prior_captured_at in db.execute(query).all():
