@@ -443,14 +443,12 @@ export default function DashboardPage() {
                 <th className="px-3 py-2 text-right">Bu Chg</th>
                 <th className="px-3 py-2 text-right">Cash/MT</th>
                 <th className="px-3 py-2 text-right">MT Chg</th>
-                <th className="px-3 py-2 text-right">Candidates</th>
-                <th className="px-3 py-2">Reason</th>
               </tr>
             </thead>
             <tbody>
               {previewRows.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-3 py-8 text-center text-sm text-black/55">
+                  <td colSpan={12} className="px-3 py-8 text-center text-sm text-black/55">
                     No rows for the selected filters.
                   </td>
                 </tr>
@@ -473,8 +471,6 @@ export default function DashboardPage() {
                     <td className={`px-3 py-2 text-right ${toneForDelta(row.cash_price_bu_change)}`}>{formatSigned(row.cash_price_bu_change)}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.cash_price_mt)}</td>
                     <td className={`px-3 py-2 text-right ${toneForDelta(row.cash_price_mt_change)}`}>{formatSigned(row.cash_price_mt_change)}</td>
-                    <td className="px-3 py-2 text-right">{row.candidate_count ?? 1}</td>
-                    <td className="px-3 py-2 text-xs text-black/65">{row.canonical_reason || "-"}</td>
                   </tr>
                 ))
               )}

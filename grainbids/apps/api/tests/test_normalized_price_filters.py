@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+import uuid
+
 from app.api.routes.normalized_prices import (
     _build_quality_filters,
     _canonical_and_quality_filters,
     _group_preview_rows_by_delivery,
+    _preview_row_dedupe_key,
     _prune_facet_rows,
     _user_visible_market_filters,
 )
@@ -50,3 +54,41 @@ def test_prune_facet_rows_respects_minimum_market_count() -> None:
     pruned = _prune_facet_rows(rows, minimum_market_count=2)
 
     assert pruned == [{"id": "1", "name": "GLG", "market_count": 3}]
+
+
+def test_preview_row_dedupe_key_collapses_month_label_variants() -> None:
+    location_id = uuid.uuid4()
+    company_id = uuid.uuid4()
+    company_name_map = {company_id: "Great Lakes Grain"}
+    location_company_map = {location_id: company_id}
+    common = {
+        "location_id": location_id,
+        "location": "Aylmer",
+        "company_id": None,
+        "source_name": "Agricharts",
+        "commodity_name": "Corn",
+        "delivery_end": None,
+        "delivery_start": None,
+    }
+    row_a = SimpleNamespace(
+        **common,
+        delivery_label="May 2026",
+        futures_month="July 2026",
+    )
+    row_b = SimpleNamespace(
+        **common,
+        delivery_label="May-26",
+        futures_month="Jul 2026",
+    )
+
+    key_a = _preview_row_dedupe_key(
+        row_a,
+        company_name_map=company_name_map,
+        location_company_map=location_company_map,
+    )
+    key_b = _preview_row_dedupe_key(
+        row_b,
+        company_name_map=company_name_map,
+        location_company_map=location_company_map,
+    )
+    assert key_a == key_b
