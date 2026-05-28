@@ -180,11 +180,18 @@ def _display_company_name_for_row(
     price: NormalizedPrice,
     *,
     company_name_map: dict[uuid.UUID, str],
+    location_company_map: dict[uuid.UUID, uuid.UUID] | None = None,
 ) -> str | None:
     if price.company_id is not None:
         trusted = _trusted_company_name(company_name_map.get(price.company_id))
         if trusted is not None:
             return trusted
+    if location_company_map and price.location_id is not None:
+        location_company_id = location_company_map.get(price.location_id)
+        if location_company_id is not None:
+            trusted = _trusted_company_name(company_name_map.get(location_company_id))
+            if trusted is not None:
+                return trusted
     return _display_company_name(price.source_name)
 
 
@@ -199,12 +206,49 @@ def _load_company_name_map(
     return {company_id: name for company_id, name in rows if company_id is not None and name}
 
 
-def _preview_row_dedupe_key(price: NormalizedPrice) -> str:
-    location_key = str(price.location_id) if price.location_id else (canonical_key(price.location) or "-")
-    company_key = str(price.company_id) if price.company_id else (canonical_key(canonical_source_name(price.source_name)) or "-")
+def _load_location_company_map(
+    db: Session,
+    *,
+    location_ids: set[uuid.UUID],
+) -> dict[uuid.UUID, uuid.UUID]:
+    if not location_ids:
+        return {}
+    rows = db.execute(select(Location.id, Location.company_id).where(Location.id.in_(location_ids))).all()
+    return {
+        location_id: company_id
+        for location_id, company_id in rows
+        if location_id is not None and company_id is not None
+    }
+
+
+def _market_period_dedupe_key(value: str | None) -> str:
+    month_key = _month_sort_key_value(value)
+    if month_key is not None:
+        return f"month:{month_key}"
+    return canonical_key(value) or "-"
+
+
+def _preview_row_dedupe_key(
+    price: NormalizedPrice,
+    *,
+    company_name_map: dict[uuid.UUID, str],
+    location_company_map: dict[uuid.UUID, uuid.UUID],
+) -> str:
+    location_key = canonical_key(canonical_location_name(price.location)) or canonical_key(price.location) or "-"
+    display_company_name = _display_company_name_for_row(
+        price,
+        company_name_map=company_name_map,
+        location_company_map=location_company_map,
+    )
+    company_key = canonical_key(display_company_name) or "-"
     commodity_key = canonical_key(price.commodity_name) or "-"
-    delivery_key = canonical_key(price.delivery_label or price.delivery_end or price.delivery_start) or "-"
-    futures_key = canonical_key(price.futures_month) or "-"
+    delivery_key = _market_period_dedupe_key(
+        normalize_text(price.delivery_label)
+        or normalize_text(price.delivery_end)
+        or normalize_text(price.delivery_start)
+        or normalize_text(price.futures_month)
+    )
+    futures_key = _market_period_dedupe_key(normalize_text(price.futures_month))
     return "|".join([location_key, company_key, commodity_key, delivery_key, futures_key])
 
 
@@ -213,8 +257,13 @@ def _serialize_preview_row(
     snapshot: PriceSnapshot,
     candidate_counts: dict[str, int],
     company_name_map: dict[uuid.UUID, str],
+    location_company_map: dict[uuid.UUID, uuid.UUID],
 ) -> dict[str, object]:
-    company_name = _display_company_name_for_row(price, company_name_map=company_name_map)
+    company_name = _display_company_name_for_row(
+        price,
+        company_name_map=company_name_map,
+        location_company_map=location_company_map,
+    )
     source_attribution = _source_attribution_name(price.source_name)
     return {
         "id": str(price.id),
@@ -456,10 +505,19 @@ def _load_preview_payload(
     query = _with_sorting(query, sort)
 
     rows = db.execute(query.limit(limit * 3)).all()
+    location_ids = {price.location_id for price, _snapshot in rows if price.location_id is not None}
+    company_ids = {price.company_id for price, _snapshot in rows if price.company_id is not None}
+    location_company_map = _load_location_company_map(db, location_ids=location_ids)
+    company_ids.update(location_company_map.values())
+    company_name_map = _load_company_name_map(db, company_ids=company_ids)
     deduped_rows: list[tuple[NormalizedPrice, PriceSnapshot]] = []
     seen: set[str] = set()
     for price, snapshot in rows:
-        dedupe_key = _preview_row_dedupe_key(price)
+        dedupe_key = _preview_row_dedupe_key(
+            price,
+            company_name_map=company_name_map,
+            location_company_map=location_company_map,
+        )
         if dedupe_key in seen:
             continue
         seen.add(dedupe_key)
@@ -483,11 +541,16 @@ def _load_preview_payload(
         for composite_key, count in db.execute(key_count_query).all():
             candidate_counts[str(composite_key)] = int(count)
 
-    company_name_map = _load_company_name_map(
-        db,
-        company_ids={price.company_id for price, _snapshot in deduped_rows if price.company_id is not None},
-    )
-    return [_serialize_preview_row(price, snapshot, candidate_counts, company_name_map) for price, snapshot in deduped_rows]
+    return [
+        _serialize_preview_row(
+            price,
+            snapshot,
+            candidate_counts,
+            company_name_map,
+            location_company_map,
+        )
+        for price, snapshot in deduped_rows
+    ]
 
 
 @router.get("")
