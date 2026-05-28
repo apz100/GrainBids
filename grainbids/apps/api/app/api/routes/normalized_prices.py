@@ -275,8 +275,8 @@ def _serialize_preview_row(
         "source_name": canonical_source_name(price.source_name),
         "source_attribution": source_attribution,
         "commodity_name": canonical_commodity_name(price.commodity_name) or "-",
-        "delivery_label": normalize_text(price.delivery_label) or normalize_text(price.delivery_end),
-        "futures_month": normalize_text(price.futures_month),
+        "delivery_label": _canonical_month_label(normalize_text(price.delivery_label) or normalize_text(price.delivery_end)),
+        "futures_month": _canonical_month_label(normalize_text(price.futures_month)),
         "futures_price": _to_float(price.futures_price),
         "basis": _to_basis_float(price.basis),
         "basis_change": _to_basis_float(price.basis_change),
@@ -291,6 +291,37 @@ def _serialize_preview_row(
         "is_canonical": price.is_canonical,
         "canonical_rank": price.canonical_rank,
     }
+
+
+def _canonical_month_label(value: str | None) -> str | None:
+    normalized = normalize_text(value)
+    if normalized is None:
+        return None
+    month_key = _month_sort_key_value(normalized)
+    if month_key is None:
+        return normalized
+    year = (month_key - 1) // 12
+    month = month_key - (year * 12)
+    month_names = {
+        1: "January",
+        2: "February",
+        3: "March",
+        4: "April",
+        5: "May",
+        6: "June",
+        7: "July",
+        8: "August",
+        9: "September",
+        10: "October",
+        11: "November",
+        12: "December",
+    }
+    month_name = month_names.get(month)
+    if month_name is None:
+        return normalized
+    if year >= 9999:
+        return month_name
+    return f"{month_name} {year}"
 
 
 def _month_sort_key_value(value: str | None) -> int | None:
@@ -602,8 +633,8 @@ def list_normalized_prices(
                 "source_attribution": _source_attribution_name(price.source_name),
                 "delivery_start": normalize_text(price.delivery_start),
                 "delivery_end": normalize_text(price.delivery_end),
-                "delivery_label": normalize_text(price.delivery_label),
-                "futures_month": normalize_text(price.futures_month),
+                "delivery_label": _canonical_month_label(normalize_text(price.delivery_label)),
+                "futures_month": _canonical_month_label(normalize_text(price.futures_month)),
                 "futures_price": _to_float(price.futures_price),
                 "basis": _to_basis_float(price.basis),
                 "cash_price_bu": _to_float(price.cash_price_bu),
