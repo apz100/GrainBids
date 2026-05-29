@@ -1,14 +1,15 @@
 param(
-  [string]$TaskName = "GrainBids-Daily-Ingestion",
+  [string]$TaskName = "GrainBids-Fetch-And-Ingest",
   [string]$StartTimes = "08:00,15:00",
-  [string]$ScriptPath = "$PSScriptRoot\run-daily-ingestion.ps1",
+  [string]$ScriptPath = "$PSScriptRoot\run-fetch-and-ingest.ps1",
   [string]$ApiDir = "$PSScriptRoot\..\..\apps\api",
-  [string]$LogDir = "",
+  [ValidateSet("dynamic", "playwright", "grainbidder")]
+  [string]$Fetcher = "grainbidder",
+  [string]$SourceFilePath = "",
   [string]$CommodityId = "",
   [int]$MaxAttempts = 0,
   [int]$StatementTimeoutMinutes = 45,
   [switch]$SkipPipInstall,
-  [switch]$SingleSource,
   [switch]$Apply
 )
 
@@ -17,9 +18,9 @@ $ErrorActionPreference = "Stop"
 $resolvedScriptPath = (Resolve-Path $ScriptPath).Path
 $resolvedApiDir = (Resolve-Path $ApiDir).Path
 
-$argument = "-NoProfile -ExecutionPolicy Bypass -File `"$resolvedScriptPath`" -ApiDir `"$resolvedApiDir`""
-if ($LogDir -ne "") {
-  $argument += " -LogDir `"$LogDir`""
+$argument = "-NoProfile -ExecutionPolicy Bypass -File `"$resolvedScriptPath`" -ApiDir `"$resolvedApiDir`" -Fetcher $Fetcher"
+if ($SourceFilePath -ne "") {
+  $argument += " -SourceFilePath `"$SourceFilePath`""
 }
 if ($CommodityId -ne "") {
   $argument += " -CommodityId `"$CommodityId`""
@@ -33,14 +34,11 @@ if ($StatementTimeoutMinutes -gt 0) {
 if ($SkipPipInstall.IsPresent) {
   $argument += " -SkipPipInstall"
 }
-if ($SingleSource.IsPresent) {
-  $argument += " -SingleSource"
-}
 
 if ([string]::IsNullOrWhiteSpace($StartTimes)) {
   throw "StartTimes cannot be empty."
 }
-    
+
 $triggerList = @()
 foreach ($token in ($StartTimes -split ",")) {
   $trimmed = $token.Trim()
@@ -58,13 +56,14 @@ if ($triggerList.Count -eq 0) {
 
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $argument
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-$description = "Runs GrainBids scheduled ingestion pipeline."
+$description = "Runs GrainBids fetch + ingestion pipeline."
 
 if ($Apply.IsPresent) {
   Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggerList -Settings $settings -Description $description -Force | Out-Null
   Write-Output "REGISTERED_TASK=$TaskName"
   Write-Output "START_TIMES=$StartTimes"
   Write-Output "SCRIPT=$resolvedScriptPath"
+  Write-Output "FETCHER=$Fetcher"
   exit 0
 }
 
@@ -73,8 +72,9 @@ Write-Output "TASK_NAME=$TaskName"
 Write-Output "START_TIMES=$StartTimes"
 Write-Output "SCRIPT=$resolvedScriptPath"
 Write-Output "API_DIR=$resolvedApiDir"
+Write-Output "FETCHER=$Fetcher"
 Write-Output "ACTION_EXECUTE=powershell.exe"
 Write-Output "ACTION_ARGUMENTS=$argument"
 Write-Output ""
 Write-Output "To register the task:"
-Write-Output "  .\register-daily-ingestion-task.ps1 -Apply"
+Write-Output "  .\register-fetch-and-ingest-task.ps1 -Apply"

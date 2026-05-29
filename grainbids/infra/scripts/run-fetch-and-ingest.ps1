@@ -5,6 +5,7 @@ param(
   [string]$SourceFilePath = "",
   [string]$CommodityId = "",
   [int]$MaxAttempts = 0,
+  [int]$StatementTimeoutMinutes = 45,
   [switch]$SkipPipInstall,
   [switch]$UploadToSupabase,
   [string]$SupabaseUrl = $env:SUPABASE_URL,
@@ -243,6 +244,9 @@ try {
   }
   if ($MaxAttempts -gt 0) {
     $dailyArgs["MaxAttempts"] = $MaxAttempts
+  }
+  if ($StatementTimeoutMinutes -gt 0) {
+    $dailyArgs["StatementTimeoutMinutes"] = $StatementTimeoutMinutes
   }
 
   & $dailyScript @dailyArgs

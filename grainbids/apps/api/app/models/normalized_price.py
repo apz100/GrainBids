@@ -42,6 +42,8 @@ class NormalizedPrice(Base):
     cash_price_mt: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
 
     basis_change: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
+    basis_change_strict: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
+    basis_last_changed_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cash_price_bu_change: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
     cash_price_mt_change: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
     is_canonical: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

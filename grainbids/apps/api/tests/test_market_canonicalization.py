@@ -18,8 +18,11 @@ from app.services.market_canonicalization import (  # noqa: E402
 
 class MarketCanonicalizationTests(unittest.TestCase):
     def test_source_aliases(self) -> None:
-        self.assertEqual(canonical_source_name("glg"), "GLG")
-        self.assertEqual(canonical_source_name("The Andersons"), "Andersons")
+        self.assertEqual(canonical_source_name("glg"), "Great Lakes Grain")
+        self.assertEqual(canonical_source_name("LAC"), "London Agricultural Commodities")
+        self.assertEqual(canonical_source_name("Hensall HDC"), "Hensall Co-operative")
+        self.assertEqual(canonical_source_name("Snobelen"), "Snobelen Farms")
+        self.assertEqual(canonical_source_name("The Andersons"), "The Andersons")
         self.assertEqual(canonical_source_name("Ontario Daily File"), "Ontario Cash Bids")
         self.assertEqual(canonical_source_name("Eastern Ontario Daily File"), "Eastern Ontario Cash Bids")
 
@@ -39,7 +42,7 @@ class MarketCanonicalizationTests(unittest.TestCase):
         self.assertEqual(source_scope("Ontario Cash Bids"), ("region", "Ontario"))
         self.assertEqual(source_scope("Ontario Daily File"), ("region", "Ontario"))
         self.assertEqual(source_scope("Eastern Ontario Daily File"), ("region", "Eastern Ontario"))
-        self.assertEqual(source_scope("GLG"), ("company", "GLG"))
+        self.assertEqual(source_scope("GLG"), ("company", "Great Lakes Grain"))
 
     def test_region_source_names(self) -> None:
         self.assertEqual(region_source_names("Ontario"), ("Ontario Cash Bids",))

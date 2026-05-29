@@ -12,6 +12,7 @@ from app.core.request_context import RequestContext, get_request_context, requir
 from app.db.session import get_db
 from app.models.commodity import Commodity
 from app.models.source import Source
+from app.services.basis_change_diagnostics import build_basis_change_diagnostics
 from app.services.ingestion_diagnostics import build_ingestion_diagnostics
 from app.services.source_company_identity_diagnostics import list_ambiguous_location_company_candidates
 from app.services.source_orchestration import build_sla_summary
@@ -106,6 +107,25 @@ def get_ingestion_diagnostics(
         org_id=context.org_id,
         source_id=source_id,
         duplicate_limit=duplicate_limit,
+    )
+
+
+@router.get("/basis-change-diagnostics")
+def get_basis_change_diagnostics(
+    source_id: uuid.UUID | None = Query(None),
+    limit: int = Query(25, ge=1, le=200),
+    min_snapshot_rows: int = Query(25, ge=1, le=5000),
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    if source_id is not None:
+        _assert_source_org_scope(db, source_id=source_id, org_id=context.org_id)
+    return build_basis_change_diagnostics(
+        db,
+        org_id=context.org_id,
+        source_id=source_id,
+        limit=limit,
+        min_snapshot_rows=min_snapshot_rows,
     )
 
 

@@ -64,6 +64,9 @@ Daily ingestion (Windows Scheduled Task):
 - Register task:
   - `infra/scripts/register-daily-ingestion-task.ps1 -Apply`
 - Default schedule is `08:00` and `15:00` local time. Override with `-StartTimes "HH:mm,HH:mm"`.
+- For Ontario fetch + ingest in one run (recommended for local file pipelines):
+  - Preview task config: `infra/scripts/register-fetch-and-ingest-task.ps1 -Fetcher grainbidder`
+  - Register task: `infra/scripts/register-fetch-and-ingest-task.ps1 -Fetcher grainbidder -Apply`
 
 ## Production baseline (Vercel + Render + Supabase)
 API (`apps/api`) required env:

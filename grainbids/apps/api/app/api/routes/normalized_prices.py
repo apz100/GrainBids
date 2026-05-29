@@ -56,6 +56,10 @@ def _to_basis_float(value: Decimal | float | int | None) -> float | None:
     return number
 
 
+def _coalesce_zero(value: float | None) -> float:
+    return 0.0 if value is None else value
+
+
 def _quality_score_expr():
     delivery_present = func.coalesce(NormalizedPrice.delivery_end, NormalizedPrice.delivery_label, NormalizedPrice.delivery_start).is_not(None)
     invalid_labels = tuple(settings.invalid_commodity_labels_set) or ("__invalid_commodity__",)
@@ -264,6 +268,9 @@ def _serialize_preview_row(
         company_name_map=company_name_map,
         location_company_map=location_company_map,
     )
+    basis_change = _to_basis_float(price.basis_change)
+    cash_price_bu_change = _to_float(price.cash_price_bu_change)
+    cash_price_mt_change = _to_float(price.cash_price_mt_change)
     source_attribution = _source_attribution_name(price.source_name)
     return {
         "id": str(price.id),
@@ -279,11 +286,12 @@ def _serialize_preview_row(
         "futures_month": _canonical_month_label(normalize_text(price.futures_month)),
         "futures_price": _to_float(price.futures_price),
         "basis": _to_basis_float(price.basis),
-        "basis_change": _to_basis_float(price.basis_change),
+        "basis_change": basis_change if basis_change is not None else 0.0,
+        "basis_last_changed_at": price.basis_last_changed_at.isoformat() if price.basis_last_changed_at else None,
         "cash_price_bu": _to_float(price.cash_price_bu),
-        "cash_price_bu_change": _to_float(price.cash_price_bu_change),
+        "cash_price_bu_change": cash_price_bu_change if cash_price_bu_change is not None else 0.0,
         "cash_price_mt": _to_float(price.cash_price_mt),
-        "cash_price_mt_change": _to_float(price.cash_price_mt_change),
+        "cash_price_mt_change": cash_price_mt_change if cash_price_mt_change is not None else 0.0,
         "composite_key": price.composite_key,
         "candidate_count": candidate_counts.get(str(price.composite_key), 1),
         "selected_source_key": canonical_key(canonical_source_name(price.source_name)),
@@ -355,6 +363,38 @@ def _month_sort_key_value(value: str | None) -> int | None:
         "dec": 12,
         "december": 12,
     }
+    month_tokens = "jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december"
+    # Month-day-year labels (e.g. "May 31, 2026") should sort as month/year.
+    month_day_year_match = re.search(
+        rf"\b({month_tokens})\b\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:\s*,\s*|\s+)(\d{{4}})\b",
+        label,
+    )
+    if month_day_year_match:
+        month = month_map.get(month_day_year_match.group(1))
+        year = _parse_year_token(month_day_year_match.group(3))
+        if month is not None and year is not None:
+            return year * 12 + month
+
+    # Month-year shorthand (e.g. May-26, Jul 2026). Exclude month-day-year where the
+    # first number is day-of-month followed by comma and a full year.
+    month_year_match = re.search(
+        rf"\b({month_tokens})\b\s*([\-\/\s])\s*(\d{{2,4}})(?!\s*,\s*\d{{4}})\b",
+        label,
+    )
+    if month_year_match:
+        month = month_map.get(month_year_match.group(1))
+        sep = month_year_match.group(2)
+        year_token = month_year_match.group(3)
+        year = _parse_year_token(year_token)
+        try:
+            raw_year = int(year_token)
+        except (TypeError, ValueError):
+            raw_year = None
+        if month is not None and year is not None:
+            # "May 31" is usually day-of-month (not year); keep it month-only.
+            if not (sep.isspace() and raw_year is not None and len(str(year_token)) <= 2 and raw_year <= 31):
+                return year * 12 + month
+
     harvest_match = re.search(r"\bharvest\b[^0-9]*(\d{2,4})?", label)
     if harvest_match:
         year = _parse_year_token(harvest_match.group(1))
@@ -382,15 +422,19 @@ def _month_sort_key_value(value: str | None) -> int | None:
         if month is not None and year is not None:
             return year * 12 + month
 
-    named_month_match = re.search(
-        r"\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\b[^0-9]*(\d{2,4})?",
-        label,
-    )
+    named_month_match = re.search(rf"\b({month_tokens})\b[^0-9]*(\d{{2,4}})?", label)
     if named_month_match:
         month = month_map.get(named_month_match.group(1))
-        year = _parse_year_token(named_month_match.group(2))
+        year_token = named_month_match.group(2)
+        year = _parse_year_token(year_token)
         if month is not None and year is not None:
-            return year * 12 + month
+            # Avoid misreading month-day labels like "Nov 30" as year 2030.
+            try:
+                raw_year = int(year_token) if year_token is not None else None
+            except (TypeError, ValueError):
+                raw_year = None
+            if raw_year is None or len(str(year_token)) == 4 or raw_year > 31:
+                return year * 12 + month
         if month is not None:
             return 9999 * 12 + month
     return None
@@ -639,9 +683,10 @@ def list_normalized_prices(
                 "basis": _to_basis_float(price.basis),
                 "cash_price_bu": _to_float(price.cash_price_bu),
                 "cash_price_mt": _to_float(price.cash_price_mt),
-                "basis_change": _to_basis_float(price.basis_change),
-                "cash_price_bu_change": _to_float(price.cash_price_bu_change),
-                "cash_price_mt_change": _to_float(price.cash_price_mt_change),
+                "basis_change": _coalesce_zero(_to_basis_float(price.basis_change)),
+                "basis_last_changed_at": price.basis_last_changed_at.isoformat() if price.basis_last_changed_at else None,
+                "cash_price_bu_change": _coalesce_zero(_to_float(price.cash_price_bu_change)),
+                "cash_price_mt_change": _coalesce_zero(_to_float(price.cash_price_mt_change)),
                 "composite_key": price.composite_key,
                 "is_canonical": price.is_canonical,
                 "canonical_rank": price.canonical_rank,
@@ -925,11 +970,12 @@ def top_movers(
                 "source_name": canonical_source_name(price.source_name),
                 "source_attribution": _source_attribution_name(price.source_name),
                 "basis": _to_basis_float(price.basis),
-                "basis_change": _to_basis_float(price.basis_change),
+                "basis_change": _coalesce_zero(_to_basis_float(price.basis_change)),
+                "basis_last_changed_at": price.basis_last_changed_at.isoformat() if price.basis_last_changed_at else None,
                 "cash_price_bu": _to_float(price.cash_price_bu),
-                "cash_price_bu_change": _to_float(price.cash_price_bu_change),
+                "cash_price_bu_change": _coalesce_zero(_to_float(price.cash_price_bu_change)),
                 "cash_price_mt": _to_float(price.cash_price_mt),
-                "cash_price_mt_change": _to_float(price.cash_price_mt_change),
+                "cash_price_mt_change": _coalesce_zero(_to_float(price.cash_price_mt_change)),
             }
             for price, snapshot in rows
         ]

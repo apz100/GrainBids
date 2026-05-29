@@ -16,11 +16,17 @@ def main() -> int:
     parser.add_argument("--single-source", action="store_true", help="Use DAILY_SOURCE_* env vars for one source.")
     parser.add_argument("--commodity-id", type=str, default="", help="Commodity UUID override for scheduled cycle.")
     parser.add_argument("--max-attempts", type=int, default=0, help="Retry attempts per file source.")
+    parser.add_argument(
+        "--statement-timeout-minutes",
+        type=int,
+        default=30,
+        help="Postgres statement_timeout in minutes for this ingestion run.",
+    )
     args = parser.parse_args()
 
     db = get_sessionmaker()()
     try:
-        _tune_session_for_job(db)
+        _tune_session_for_job(db, timeout_minutes=args.statement_timeout_minutes)
         if args.single_source:
             return _run_single_source(db)
 
@@ -44,9 +50,10 @@ def main() -> int:
         db.close()
 
 
-def _tune_session_for_job(db) -> None:
-    # Canonical resolution can touch many rows; raise timeout for this batch job only.
-    db.execute(text("SET statement_timeout TO '10min'"))
+def _tune_session_for_job(db, *, timeout_minutes: int) -> None:
+    # Canonical resolution can touch many rows; make timeout configurable per run.
+    safe_minutes = max(1, int(timeout_minutes))
+    db.execute(text(f"SET statement_timeout TO '{safe_minutes}min'"))
 
 
 def _run_single_source(db) -> int:

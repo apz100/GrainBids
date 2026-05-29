@@ -4,6 +4,7 @@ param(
   [switch]$SkipPipInstall,
   [string]$CommodityId = "",
   [int]$MaxAttempts = 0,
+  [int]$StatementTimeoutMinutes = 45,
   [switch]$SingleSource
 )
 
@@ -66,6 +67,10 @@ try {
   }
   if ($SingleSource.IsPresent) {
     $jobArgs += "--single-source"
+  }
+  if ($StatementTimeoutMinutes -gt 0) {
+    $jobArgs += "--statement-timeout-minutes"
+    $jobArgs += "$StatementTimeoutMinutes"
   }
 
   Write-RunLog "Running ingestion job ($($jobArgs -join ' '))"

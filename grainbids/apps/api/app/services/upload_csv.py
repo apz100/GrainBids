@@ -109,6 +109,12 @@ MONTH_NUMBER_TO_NAME = {
     12: "December",
 }
 
+MONTH_NAME_PATTERN = re.compile(
+    r"^(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|"
+    r"sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b",
+    flags=re.IGNORECASE,
+)
+
 COLUMN_ALIASES = {
     "location": ["location", "site", "location_name", "elevator"],
     "commodity": ["commodity", "crop", "grain", "name"],
@@ -153,6 +159,8 @@ def _parse_decimal(value: str | None) -> Decimal | None:
     if value is None:
         return None
     text = str(value).strip()
+    # Some feeds append trailing side markers (e.g. 455'6s).
+    text = re.sub(r"(?<=\d)[A-Za-z]+$", "", text)
     if not text:
         return None
     tick_match = re.fullmatch(r"(-?\d+)\s*['-]\s*(\d+)", text)
@@ -182,15 +190,46 @@ def _extract_price_from_text(value: str | None) -> Decimal | None:
     text = str(value or "").strip()
     if not text:
         return None
-    # Handles values like "ZCN26 @ 6.34" where the price is bundled with the symbol.
-    matches = re.findall(r"-?\d+(?:\.\d+)?", text.replace(",", ""))
-    if not matches:
-        return None
-    for token in reversed(matches):
+    cleaned = text.replace(",", "")
+
+    # First handle grain tick quotes like 455'6s.
+    tick_matches = re.findall(r"-?\d+\s*['-]\s*\d+[A-Za-z]*", cleaned)
+    for token in reversed(tick_matches):
+        parsed = _parse_decimal(token)
+        if parsed is not None:
+            return parsed
+
+    # Then handle explicit decimal prices (e.g. "ZCN26 @ 6.34").
+    decimal_matches = re.findall(r"-?\d+\.\d+", cleaned)
+    for token in reversed(decimal_matches):
+        parsed = _parse_decimal(token)
+        if parsed is not None:
+            return parsed
+
+    # Only accept integer fallback when the full token is numeric and in a realistic futures range.
+    standalone_number = re.fullmatch(r"-?\d+(?:\.\d+)?", cleaned)
+    if standalone_number is not None:
+        parsed = _parse_decimal(standalone_number.group(0))
+        if parsed is not None and abs(parsed) <= Decimal("1200"):
+            return parsed
+
+    # Finally, accept numbers explicitly marked as prices (e.g. "$500", "@ 500").
+    marked_matches = re.findall(r"(?:@|\$)\s*(-?\d+(?:\.\d+)?)", cleaned)
+    for token in reversed(marked_matches):
         parsed = _parse_decimal(token)
         if parsed is not None:
             return parsed
     return None
+
+
+def _looks_like_month_delivery_label(value: str | None) -> bool:
+    normalized = normalize_text(value)
+    if normalized is None:
+        return False
+    compact = re.sub(r"\s+", " ", normalized.replace(",", " ")).strip()
+    if _derive_delivery_month_from_futures_month(compact) is not None:
+        return True
+    return MONTH_NAME_PATTERN.match(compact) is not None
 
 
 def _derive_delivery_month_from_futures_month(futures_month: str | None) -> str | None:
@@ -385,11 +424,11 @@ def persist_normalized_rows(
             cash_price_mt = _infer_cash_price_mt(commodity_name=commodity_name, cash_price_bu=cash_price_bu)
         if _is_blank(futures_month):
             futures_month = normalize_text(delivery_label or delivery_end or "") or ""
-        if _is_blank(delivery_end) and _is_blank(delivery_label):
-            derived_delivery = _derive_delivery_month_from_futures_month(futures_month)
-            if derived_delivery:
-                delivery_end = derived_delivery
-                delivery_label = derived_delivery
+        derived_delivery = _derive_delivery_month_from_futures_month(futures_month)
+        has_month_delivery_label = _looks_like_month_delivery_label(delivery_label) or _looks_like_month_delivery_label(delivery_end)
+        if derived_delivery and not has_month_delivery_label:
+            delivery_end = derived_delivery
+            delivery_label = derived_delivery
         if futures_price is None:
             futures_price = _extract_price_from_text(futures_month_raw)
         if futures_price is None and cash_price_bu is not None and basis is not None:
@@ -470,6 +509,8 @@ def persist_normalized_rows(
             cash_price_bu=cash_price_bu,
             cash_price_mt=cash_price_mt,
             basis_change=None,
+            basis_change_strict=None,
+            basis_last_changed_at=None,
             cash_price_bu_change=None,
             cash_price_mt_change=None,
             composite_key=composite_key,
@@ -622,9 +663,9 @@ def _check_completeness(
     if cash_price_mt is None:
         reasons.append("missing_cash_price_mt")
     source_key = (canonical_source_name(source_name) or source_name or "").strip().casefold()
-    if source_key in {"snobelen", "ganaraska"} and futures_change is None:
+    if source_key in {"snobelen", "snobelen farms", "ganaraska", "ganaraska grain"} and futures_change is None:
         reasons.append("missing_futures_change")
-    if source_key == "snobelen" and _is_blank(futures_month_raw):
+    if source_key in {"snobelen", "snobelen farms"} and _is_blank(futures_month_raw):
         reasons.append("missing_futures_month_source")
     return reasons
 

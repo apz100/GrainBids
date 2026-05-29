@@ -66,12 +66,38 @@ def _month_to_key(s: str) -> str:
     return f"{yr:04d}-{mm:02d}" if mm else s.lower()
 
 
+def _normalize_text_series(series: pd.Series) -> pd.Series:
+    out = series.fillna("").astype(str).str.strip()
+    return out.mask(out.str.lower().isin({"nan", "none"}), "")
+
+
+def _pick_series(df: pd.DataFrame, candidates: list[str]) -> pd.Series:
+    fallback: pd.Series | None = None
+    for column in candidates:
+        if column not in df.columns:
+            continue
+        series = df[column]
+        if fallback is None:
+            fallback = series
+        if _normalize_text_series(series).ne("").any():
+            return series
+    if fallback is not None:
+        return fallback
+    return pd.Series([""] * len(df), index=df.index, dtype="object")
+
+
 def _build_key(df: pd.DataFrame) -> pd.Series:
-    loc = df.get("Location", "").astype(str).str.strip().str.lower()
-    nam = df.get("Name", "").astype(str).str.strip().str.lower()
-    d1  = df.get("Delivery", "").apply(_month_to_key)
-    d2  = df.get("Delivery End", "").apply(_month_to_key)
-    fm  = df.get("Futures Month", "").apply(_month_to_key)
+    # Support both internal headers and renamed headers in historical CSVs.
+    loc = _normalize_text_series(_pick_series(df, ["Location", "location"])).str.lower()
+    nam = _normalize_text_series(
+        _pick_series(
+            df,
+            ["Name", "Commodity.1", "Commodity", "commodity_name", "commodity"],
+        )
+    ).str.lower()
+    d1 = _normalize_text_series(_pick_series(df, ["Delivery", "Delivery Label", "delivery_label"])).apply(_month_to_key)
+    d2 = _normalize_text_series(_pick_series(df, ["Delivery End", "delivery_end"])).apply(_month_to_key)
+    fm = _normalize_text_series(_pick_series(df, ["Futures Month", "Symbol", "futures_month"])).apply(_month_to_key)
     return loc + "|" + nam + "|" + d1 + "|" + d2 + "|" + fm
 
 
@@ -91,12 +117,9 @@ def _find_prev_output_file(output_dir: Path, fetch_date: str) -> Optional[Path]:
 def add_basis_change_column(today_df: pd.DataFrame, prev_csv_path: Path) -> pd.DataFrame:
     """Compute 'Basis Change' = today's Basis - previous day's Basis (aligned by key)."""
     out = today_df.copy()
-    basis_today = pd.to_numeric(out.get("Basis", pd.Series(dtype="object")), errors="coerce")
+    basis_today = pd.to_numeric(_pick_series(out, ["Basis", "basis"]), errors="coerce")
     prev = pd.read_csv(prev_csv_path, dtype=str)
-    for c in ["Location", "Name", "Delivery", "Delivery End", "Futures Month", "Basis"]:
-        if c not in prev.columns:
-            prev[c] = ""
-    prev["Basis_num"] = pd.to_numeric(prev["Basis"], errors="coerce")
+    prev["Basis_num"] = pd.to_numeric(_pick_series(prev, ["Basis", "basis"]), errors="coerce")
     key_today  = _build_key(out)
     key_prev   = _build_key(prev)
     prev_unique = (
@@ -106,8 +129,11 @@ def add_basis_change_column(today_df: pd.DataFrame, prev_csv_path: Path) -> pd.D
     )
     aligned_prev = key_today.map(prev_unique.to_dict())
     basis_change = basis_today - aligned_prev
-    insert_at = out.columns.get_loc("Basis") + 1 if "Basis" in out.columns else len(out.columns)
-    out.insert(insert_at, "Basis Change", basis_change)
+    if "Basis Change" in out.columns:
+        out["Basis Change"] = basis_change
+    else:
+        insert_at = out.columns.get_loc("Basis") + 1 if "Basis" in out.columns else len(out.columns)
+        out.insert(insert_at, "Basis Change", basis_change)
     return out
 
 

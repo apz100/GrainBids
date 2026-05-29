@@ -99,4 +99,6 @@ def test_canonical_month_label_normalizes_common_variants() -> None:
     assert _canonical_month_label("May-26") == "May 2026"
     assert _canonical_month_label("Jul 2026") == "July 2026"
     assert _canonical_month_label("December 2026") == "December 2026"
+    assert _canonical_month_label("Nov 30, 2026") == "November 2026"
+    assert _canonical_month_label("May 31") == "May"
     assert _canonical_month_label("Nearby") == "Nearby"

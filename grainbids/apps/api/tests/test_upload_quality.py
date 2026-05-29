@@ -15,6 +15,7 @@ from app.services.upload_csv import (  # noqa: E402
     _derive_delivery_month_from_futures_month,
     _extract_price_from_text,
     _is_invalid_commodity_name,
+    _looks_like_month_delivery_label,
     _parse_decimal,
     _source_creates_company_identity,
     summarize_quality,
@@ -32,12 +33,30 @@ class UploadQualityTests(unittest.TestCase):
         self.assertIsNotNone(value)
         self.assertEqual(str(value), "456.75")
 
+    def test_parse_decimal_handles_tick_with_suffix(self) -> None:
+        value = _parse_decimal("455'6s")
+        self.assertIsNotNone(value)
+        self.assertEqual(str(value), "455.75")
+
     def test_parse_decimal_rejects_nan(self) -> None:
         self.assertIsNone(_parse_decimal("NaN"))
 
     def test_extract_price_from_text(self) -> None:
         value = _extract_price_from_text("ZCN26 @ 6.34")
         self.assertEqual(value, Decimal("6.34"))
+
+    def test_extract_price_from_text_ignores_year_only_month_labels(self) -> None:
+        self.assertIsNone(_extract_price_from_text("July 2026"))
+        self.assertIsNone(_extract_price_from_text("November 2030"))
+
+    def test_extract_price_from_text_handles_tick_string(self) -> None:
+        value = _extract_price_from_text("455'6s")
+        self.assertEqual(value, Decimal("455.75"))
+
+    def test_looks_like_month_delivery_label(self) -> None:
+        self.assertTrue(_looks_like_month_delivery_label("May 2026"))
+        self.assertTrue(_looks_like_month_delivery_label("Nov 30, 2026"))
+        self.assertFalse(_looks_like_month_delivery_label("2025 Crop"))
 
     def test_derive_delivery_month_from_futures_month_abbrev(self) -> None:
         self.assertEqual(_derive_delivery_month_from_futures_month("Jul 2026"), "June 2026")

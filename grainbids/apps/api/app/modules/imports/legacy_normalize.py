@@ -11,7 +11,9 @@ _CANDIDATE_MAP: Dict[str, List[str]] = {
     "location": ["Location", "location", "Location Name", "Site"],
     "commodity": ["Commodity", "commodity", "Name", "name"],
     "delivery_end": ["Delivery End", "delivery end", "Delivery", "Delivery Label", "delivery_end"],
-    "futures_month": ["Futures Month", "Futures Mon.", "Futures", "futures_month", "Futures Symbol", "Symbol", "Month"],
+    # Keep "Futures" out of month candidates. In LAC sheets "Futures" is the futures price,
+    # while "Month"/"Symbol" carry the contract code.
+    "futures_month": ["Futures Month", "Futures Mon.", "Futures Symbol", "Symbol", "Month", "futures_month"],
     "futures_price": ["Futures Price", "Futures", "futures_price", "Futures Value", "Futures ($/bu)", "CBOT Futures"],
     "futures_change": ["Change", "Chg", "Futures Change", "futures_change"],
     "basis": ["Basis", "basis"],
