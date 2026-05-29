@@ -8,7 +8,7 @@ import re
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Select, and_, case, desc, false, func, or_, select
+from sqlalchemy import Select, String, and_, case, cast, desc, false, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -17,6 +17,7 @@ from app.db.session import get_db
 from app.models.alert import Alert
 from app.models.alert_rule import AlertRule
 from app.models.company import Company
+from app.models.ingestion_run import IngestionRun
 from app.models.location import Location
 from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
@@ -521,13 +522,50 @@ def _build_quality_filters() -> list:
     ]
 
 
-def _base_query(context: RequestContext) -> Select:
-    return (
+def _snapshot_freshness_filters(*, enforce_latest: bool) -> list:
+    if not enforce_latest:
+        return []
+
+    # File-ingestion sources can emit many snapshots per run (one per commodity chunk).
+    # Keep rows from the latest completed run for that source to avoid leaking stale markets
+    # that disappeared from the newest run (for example, expired delivery/futures combinations).
+    latest_completed_run_id = (
+        select(IngestionRun.id)
+        .where(
+            IngestionRun.source_name == Source.name,
+            IngestionRun.status == "completed",
+        )
+        .order_by(desc(func.coalesce(IngestionRun.completed_at, IngestionRun.started_at)), desc(IngestionRun.started_at), desc(IngestionRun.id))
+        .limit(1)
+        .scalar_subquery()
+    )
+    latest_snapshot_id = (
+        select(PriceSnapshot.id)
+        .where(PriceSnapshot.source_id == Source.id)
+        .order_by(desc(PriceSnapshot.captured_at), desc(PriceSnapshot.id))
+        .limit(1)
+        .scalar_subquery()
+    )
+    run_id_text = PriceSnapshot.raw_payload_json["ingestion_run_id"].astext
+    return [
+        or_(
+            and_(run_id_text.is_not(None), run_id_text == cast(latest_completed_run_id, String)),
+            and_(run_id_text.is_(None), PriceSnapshot.id == latest_snapshot_id),
+        )
+    ]
+
+
+def _base_query(context: RequestContext, *, enforce_latest: bool) -> Select:
+    query = (
         select(NormalizedPrice, PriceSnapshot)
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
         .join(Source, Source.id == PriceSnapshot.source_id)
         .where(Source.org_id == context.org_id)
     )
+    freshness_filters = _snapshot_freshness_filters(enforce_latest=enforce_latest)
+    if freshness_filters:
+        query = query.where(*freshness_filters)
+    return query
 
 
 def _with_sorting(query: Select, sort: str) -> Select:
@@ -564,6 +602,7 @@ def _load_preview_payload(
     sort: str,
     limit: int,
 ) -> list[dict[str, object]]:
+    enforce_latest = captured_date is None
     filters = _build_filters(
         commodity=commodity,
         location=location,
@@ -573,7 +612,7 @@ def _load_preview_payload(
         company_id=company_id,
         location_id=location_id,
     )
-    query: Select = _base_query(context)
+    query: Select = _base_query(context, enforce_latest=enforce_latest)
     query = query.where(*_user_visible_market_filters(include_non_canonical))
     if filters:
         query = query.where(*filters)
@@ -611,6 +650,9 @@ def _load_preview_payload(
             .where(NormalizedPrice.composite_key.in_([price.composite_key for price, _snapshot in deduped_rows]))
             .group_by(NormalizedPrice.composite_key)
         )
+        freshness_filters = _snapshot_freshness_filters(enforce_latest=enforce_latest)
+        if freshness_filters:
+            key_count_query = key_count_query.where(*freshness_filters)
         if filters:
             key_count_query = key_count_query.where(*filters)
         for composite_key, count in db.execute(key_count_query).all():
@@ -642,7 +684,8 @@ def list_normalized_prices(
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    query: Select = _base_query(context).where(*_user_visible_market_filters(include_non_canonical)).order_by(desc(PriceSnapshot.captured_at), NormalizedPrice.location)
+    enforce_latest = captured_date is None
+    query: Select = _base_query(context, enforce_latest=enforce_latest).where(*_user_visible_market_filters(include_non_canonical)).order_by(desc(PriceSnapshot.captured_at), NormalizedPrice.location)
 
     filters = _build_filters(
         commodity=commodity,
@@ -704,6 +747,8 @@ def facets(
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
+    enforce_latest = captured_date is None
+    freshness_filters = _snapshot_freshness_filters(enforce_latest=enforce_latest)
     filters = _build_filters(
         commodity=None,
         location=None,
@@ -718,6 +763,8 @@ def facets(
         .where(Source.org_id == context.org_id)
         .where(*_user_visible_market_filters(include_non_canonical))
     )
+    if freshness_filters:
+        commodity_query = commodity_query.where(*freshness_filters)
     location_query = (
         select(func.distinct(NormalizedPrice.location))
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
@@ -725,6 +772,8 @@ def facets(
         .where(Source.org_id == context.org_id)
         .where(*_user_visible_market_filters(include_non_canonical))
     )
+    if freshness_filters:
+        location_query = location_query.where(*freshness_filters)
     source_query = (
         select(func.distinct(NormalizedPrice.source_name))
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
@@ -732,6 +781,8 @@ def facets(
         .where(Source.org_id == context.org_id)
         .where(*_user_visible_market_filters(include_non_canonical))
     )
+    if freshness_filters:
+        source_query = source_query.where(*freshness_filters)
     if filters:
         commodity_query = commodity_query.where(*filters)
         location_query = location_query.where(*filters)
@@ -777,6 +828,8 @@ def facets(
         .group_by(Company.id, Company.name)
         .order_by(Company.name.asc())
     )
+    if freshness_filters:
+        company_rows_query = company_rows_query.where(*freshness_filters)
     location_rows_query = (
         select(
             Location.id,
@@ -792,6 +845,8 @@ def facets(
         .group_by(Location.id, Location.name, Location.region)
         .order_by(Location.name.asc())
     )
+    if freshness_filters:
+        location_rows_query = location_rows_query.where(*freshness_filters)
     if filters:
         company_rows_query = company_rows_query.where(*filters)
         location_rows_query = location_rows_query.where(*filters)
@@ -930,6 +985,7 @@ def top_movers(
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
+    enforce_latest = captured_date is None
     query: Select = (
         select(NormalizedPrice, PriceSnapshot)
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
@@ -939,6 +995,9 @@ def top_movers(
         .where(*_user_visible_market_filters(include_non_canonical))
         .order_by(desc(func.abs(NormalizedPrice.basis_change)), desc(PriceSnapshot.captured_at))
     )
+    freshness_filters = _snapshot_freshness_filters(enforce_latest=enforce_latest)
+    if freshness_filters:
+        query = query.where(*freshness_filters)
 
     filters = _build_filters(
         commodity=commodity,
@@ -995,6 +1054,8 @@ def summary(
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
+    enforce_latest = captured_date is None
+    freshness_filters = _snapshot_freshness_filters(enforce_latest=enforce_latest)
     filters = _build_filters(
         commodity=commodity,
         location=location,
@@ -1016,6 +1077,8 @@ def summary(
         .where(Source.org_id == context.org_id)
         .where(*_user_visible_market_filters(include_non_canonical))
     )
+    if freshness_filters:
+        basis_query = basis_query.where(*freshness_filters)
     if filters:
         basis_query = basis_query.where(*filters)
 
