@@ -86,7 +86,42 @@ def _canonical_and_quality_filters(include_non_canonical: bool):
 
 
 def _user_visible_market_filters(include_non_canonical: bool):
-    return [*_canonical_and_quality_filters(include_non_canonical), *_build_quality_filters()]
+    return [
+        *_canonical_and_quality_filters(include_non_canonical),
+        *_build_quality_filters(),
+        *_build_market_period_recency_filters(),
+    ]
+
+
+def _build_market_period_recency_filters() -> list:
+    # Prevent stale month/year market periods (for example, April delivery / May futures)
+    # from surfacing in user-facing tables after contracts roll forward.
+    period_pattern = (
+        r"(?i)^(january|february|march|april|may|june|july|august|"
+        r"september|october|november|december)\s+\d{4}$"
+    )
+    delivery_value = func.trim(
+        func.coalesce(
+            NormalizedPrice.delivery_label,
+            NormalizedPrice.delivery_end,
+            NormalizedPrice.delivery_start,
+            "",
+        )
+    )
+    futures_value = func.trim(func.coalesce(NormalizedPrice.futures_month, ""))
+    delivery_month = case(
+        (delivery_value.op("~")(period_pattern), func.to_date(func.initcap(delivery_value), "Month YYYY")),
+        else_=None,
+    )
+    futures_month = case(
+        (futures_value.op("~")(period_pattern), func.to_date(func.initcap(futures_value), "Month YYYY")),
+        else_=None,
+    )
+    current_month_start = date.today().replace(day=1)
+    return [
+        or_(delivery_month.is_(None), delivery_month >= current_month_start),
+        or_(futures_month.is_(None), futures_month >= current_month_start),
+    ]
 
 
 def _build_filters(

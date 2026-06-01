@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import uuid
 
 from app.api.routes.normalized_prices import (
+    _build_market_period_recency_filters,
     _build_quality_filters,
     _canonical_month_label,
     _canonical_and_quality_filters,
@@ -17,9 +18,10 @@ from app.api.routes.normalized_prices import (
 def test_user_visible_market_filters_extend_canonical_filters() -> None:
     canonical_filters = _canonical_and_quality_filters(False)
     quality_filters = _build_quality_filters()
+    recency_filters = _build_market_period_recency_filters()
     combined_filters = _user_visible_market_filters(False)
 
-    assert len(combined_filters) == len(canonical_filters) + len(quality_filters)
+    assert len(combined_filters) == len(canonical_filters) + len(quality_filters) + len(recency_filters)
     assert len(combined_filters) > len(canonical_filters)
 
 
