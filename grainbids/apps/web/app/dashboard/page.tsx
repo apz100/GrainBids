@@ -248,11 +248,13 @@ export default function DashboardPage() {
     setLoadingPreview(true);
     setError((prev) => (prev.startsWith("Missing NEXT_PUBLIC_") ? prev : ""));
     try {
+      const enforceEasternOntarioDefault =
+        !filters.location_id && !filters.company_id && !filters.region;
       const selectedLocationName =
         (facets.location_rows || []).find((row) => row.id === filters.location_id)?.name || "";
       const query = buildMarketQuery(filters, selectedLocationName);
       let previewRowsRaw: PreviewRow[] = [];
-      if (filters.location_id) {
+      if (!enforceEasternOntarioDefault) {
         const previewRes = await fetch(`${API_BASE}/api/normalized-prices/preview${query}&limit=250`, { cache: "no-store", headers });
         if (!previewRes.ok) throw new Error(await readFailure(previewRes));
         previewRowsRaw = (await previewRes.json()).rows ?? [];
@@ -278,7 +280,9 @@ export default function DashboardPage() {
         }
         previewRowsRaw = dedupeRowsById(batches);
       }
-      const preview = previewRowsRaw.filter((row: PreviewRow) => isEasternOntarioLocation(row.location));
+      const preview = enforceEasternOntarioDefault
+        ? previewRowsRaw.filter((row: PreviewRow) => isEasternOntarioLocation(row.location))
+        : previewRowsRaw;
       setPreviewRows(sortPreviewRowsForDisplay(preview));
 
       const [groupedRes, moversRes, summaryRes] = await Promise.all([
@@ -288,19 +292,24 @@ export default function DashboardPage() {
       ]);
       if (groupedRes.ok) {
         const grouped = (await groupedRes.json()).groups ?? [];
-        const filteredGroups = grouped
-          .map((group: MonthlyPreviewGroup) => ({
-            ...group,
-            rows: (group.rows || []).filter((row: PreviewRow) => isEasternOntarioLocation(row.location)),
-          }))
-          .filter((group: MonthlyPreviewGroup) => group.rows.length > 0);
+        const filteredGroups = enforceEasternOntarioDefault
+          ? grouped
+              .map((group: MonthlyPreviewGroup) => ({
+                ...group,
+                rows: (group.rows || []).filter((row: PreviewRow) => isEasternOntarioLocation(row.location)),
+              }))
+              .filter((group: MonthlyPreviewGroup) => group.rows.length > 0)
+          : grouped;
         setMonthlyPreview(filteredGroups);
       } else {
         setError(`Monthly preview unavailable: ${await readFailure(groupedRes)}`);
       }
       if (moversRes.ok) {
         const moversRows = (await moversRes.json()).rows ?? [];
-        setMovers(moversRows.filter((row: TopMover) => isEasternOntarioLocation(row.location)).slice(0, 8));
+        const filteredMovers = enforceEasternOntarioDefault
+          ? moversRows.filter((row: TopMover) => isEasternOntarioLocation(row.location))
+          : moversRows;
+        setMovers(filteredMovers.slice(0, 8));
       } else {
         setError(`Top movers unavailable: ${await readFailure(moversRes)}`);
       }
