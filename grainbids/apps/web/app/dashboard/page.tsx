@@ -90,7 +90,20 @@ type SlaSummary = {
 };
 
 const COMMODITY_TABS = ["Corn", "Soybeans", "Wheat", "All"] as const;
-const EASTERN_ONTARIO_REGION = "Eastern Ontario";
+const EASTERN_ONTARIO_LOCATIONS = new Set(
+  [
+    "Brinston",
+    "Cardinal",
+    "Chesterville",
+    "Johnstown",
+    "Kars",
+    "Lansdowne",
+    "North Gower",
+    "Prescott",
+    "Vankleek Hill",
+    "Winchester",
+  ].map((value) => value.toLowerCase())
+);
 
 type FilterState = {
   commodity: string;
@@ -106,7 +119,7 @@ const DEFAULT_FILTERS: FilterState = {
   commodity: "Corn",
   location_id: "",
   company_id: "",
-  region: EASTERN_ONTARIO_REGION,
+  region: "",
   captured_date: "",
   sort: "captured_desc",
   include_non_canonical: false,
@@ -154,10 +167,7 @@ export default function DashboardPage() {
   const canUseDebugView = canManageAlerts;
   const easternLocationRows = useMemo(() => {
     const rows = facets.location_rows || [];
-    const filtered = rows.filter(
-      (row) => (row.region || "").trim().toLowerCase() === EASTERN_ONTARIO_REGION.toLowerCase()
-    );
-    return filtered.length > 0 ? filtered : rows;
+    return rows.filter((row) => isEasternOntarioLocation(row.name));
   }, [facets.location_rows]);
 
   useEffect(() => {
@@ -229,7 +239,7 @@ export default function DashboardPage() {
       const query = buildMarketQuery(filters);
       const previewRes = await fetch(`${API_BASE}/api/normalized-prices/preview${query}&limit=120`, { cache: "no-store", headers });
       if (!previewRes.ok) throw new Error(await readFailure(previewRes));
-      const preview = (await previewRes.json()).rows ?? [];
+      const preview = ((await previewRes.json()).rows ?? []).filter((row: PreviewRow) => isEasternOntarioLocation(row.location));
       setPreviewRows(sortPreviewRowsForDisplay(preview));
 
       const [groupedRes, moversRes, summaryRes] = await Promise.all([
@@ -238,12 +248,20 @@ export default function DashboardPage() {
         fetch(`${API_BASE}/api/normalized-prices/summary${query}`, { cache: "no-store", headers }),
       ]);
       if (groupedRes.ok) {
-        setMonthlyPreview((await groupedRes.json()).groups ?? []);
+        const grouped = (await groupedRes.json()).groups ?? [];
+        const filteredGroups = grouped
+          .map((group: MonthlyPreviewGroup) => ({
+            ...group,
+            rows: (group.rows || []).filter((row: PreviewRow) => isEasternOntarioLocation(row.location)),
+          }))
+          .filter((group: MonthlyPreviewGroup) => group.rows.length > 0);
+        setMonthlyPreview(filteredGroups);
       } else {
         setError(`Monthly preview unavailable: ${await readFailure(groupedRes)}`);
       }
       if (moversRes.ok) {
-        setMovers((await moversRes.json()).rows ?? []);
+        const moversRows = (await moversRes.json()).rows ?? [];
+        setMovers(moversRows.filter((row: TopMover) => isEasternOntarioLocation(row.location)));
       } else {
         setError(`Top movers unavailable: ${await readFailure(moversRes)}`);
       }
@@ -383,7 +401,7 @@ export default function DashboardPage() {
             ))}
           </select>
           <div className="rounded-md border border-black/15 bg-black/[0.03] px-3 py-2 text-sm text-black/70">
-            {EASTERN_ONTARIO_REGION} only
+            Eastern Ontario locations only
           </div>
           <select
             value={filters.sort}
@@ -906,12 +924,26 @@ function parseYearToken(token?: string): number | null {
   return rawYear;
 }
 
+function normalizeLocationForEasternOntarioFilter(value: string | null | undefined): string {
+  const raw = (value || "").trim().replace(/\s+/g, " ");
+  if (!raw) return "";
+  let normalized = raw.replace(/^LAC\s*-\s*/i, "").trim();
+  normalized = normalized.replace(/\s+\([^)]*\)\s*$/, "").trim();
+  normalized = normalized.replace(/\s+(corn|soybeans?|wheat|hrw new crop wheat|hrw old crop wheat)$/i, "").trim();
+  return normalized.toLowerCase();
+}
+
+function isEasternOntarioLocation(location: string | null | undefined): boolean {
+  const key = normalizeLocationForEasternOntarioFilter(location);
+  return !!key && EASTERN_ONTARIO_LOCATIONS.has(key);
+}
+
 function buildMarketQuery(filters: FilterState) {
   const params = new URLSearchParams();
   if (filters.commodity) params.set("commodity", filters.commodity);
   if (filters.location_id) params.set("location_id", filters.location_id);
   if (filters.company_id) params.set("company_id", filters.company_id);
-  params.set("region", EASTERN_ONTARIO_REGION);
+  if (filters.region) params.set("region", filters.region);
   if (filters.captured_date) params.set("captured_date", filters.captured_date);
   if (filters.sort) params.set("sort", filters.sort);
   if (filters.include_non_canonical) params.set("include_non_canonical", "true");
