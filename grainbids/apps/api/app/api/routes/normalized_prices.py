@@ -9,7 +9,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Select, String, and_, case, cast, desc, false, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.core.config import settings
 from app.core.request_context import RequestContext, get_request_context
@@ -539,10 +539,11 @@ def _snapshot_freshness_filters(*, enforce_latest: bool) -> list:
         .limit(1)
         .scalar_subquery()
     )
+    snapshot_alias = aliased(PriceSnapshot)
     latest_snapshot_id = (
-        select(PriceSnapshot.id)
-        .where(PriceSnapshot.source_id == Source.id)
-        .order_by(desc(PriceSnapshot.captured_at), desc(PriceSnapshot.id))
+        select(snapshot_alias.id)
+        .where(snapshot_alias.source_id == Source.id)
+        .order_by(desc(snapshot_alias.captured_at), desc(snapshot_alias.id))
         .limit(1)
         .scalar_subquery()
     )
