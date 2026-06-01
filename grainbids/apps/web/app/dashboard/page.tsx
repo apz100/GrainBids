@@ -95,6 +95,8 @@ const EASTERN_ONTARIO_LOCATIONS = new Set(
     "Brinston",
     "Cardinal",
     "Chesterville",
+    "Dalkeith",
+    "Embrun",
     "Johnstown",
     "Kars",
     "Lansdowne",
@@ -104,6 +106,20 @@ const EASTERN_ONTARIO_LOCATIONS = new Set(
     "Winchester",
   ].map((value) => value.toLowerCase())
 );
+const EASTERN_ONTARIO_LOCATION_SEARCH_TERMS = [
+  "Brinston",
+  "Cardinal",
+  "Chesterville",
+  "Dalkeith",
+  "Embrun",
+  "Johnstown",
+  "Kars",
+  "Lansdowne",
+  "North Gower",
+  "Prescott",
+  "Vankleek Hill",
+  "Winchester",
+];
 
 type FilterState = {
   commodity: string;
@@ -165,10 +181,6 @@ export default function DashboardPage() {
   const [watchlistPreviewLoading, setWatchlistPreviewLoading] = useState(false);
   const [watchlistPreviewError, setWatchlistPreviewError] = useState("");
   const canUseDebugView = canManageAlerts;
-  const easternLocationRows = useMemo(() => {
-    const rows = facets.location_rows || [];
-    return rows.filter((row) => isEasternOntarioLocation(row.name));
-  }, [facets.location_rows]);
 
   useEffect(() => {
     if (configError) {
@@ -236,15 +248,42 @@ export default function DashboardPage() {
     setLoadingPreview(true);
     setError((prev) => (prev.startsWith("Missing NEXT_PUBLIC_") ? prev : ""));
     try {
-      const query = buildMarketQuery(filters);
-      const previewRes = await fetch(`${API_BASE}/api/normalized-prices/preview${query}&limit=120`, { cache: "no-store", headers });
-      if (!previewRes.ok) throw new Error(await readFailure(previewRes));
-      const preview = ((await previewRes.json()).rows ?? []).filter((row: PreviewRow) => isEasternOntarioLocation(row.location));
+      const selectedLocationName =
+        (facets.location_rows || []).find((row) => row.id === filters.location_id)?.name || "";
+      const query = buildMarketQuery(filters, selectedLocationName);
+      let previewRowsRaw: PreviewRow[] = [];
+      if (filters.location_id) {
+        const previewRes = await fetch(`${API_BASE}/api/normalized-prices/preview${query}&limit=250`, { cache: "no-store", headers });
+        if (!previewRes.ok) throw new Error(await readFailure(previewRes));
+        previewRowsRaw = (await previewRes.json()).rows ?? [];
+      } else {
+        const previewRequests = EASTERN_ONTARIO_LOCATION_SEARCH_TERMS.map((location) => {
+          const locationQuery = appendQueryParam(query, "location", location);
+          return fetch(`${API_BASE}/api/normalized-prices/preview${locationQuery}&limit=80`, { cache: "no-store", headers });
+        });
+        const previewResponses = await Promise.all(previewRequests);
+        const batches: PreviewRow[] = [];
+        let previewError: string | null = null;
+        for (const response of previewResponses) {
+          if (!response.ok) {
+            if (!previewError) previewError = await readFailure(response);
+            continue;
+          }
+          const payload = await response.json();
+          const rows = Array.isArray(payload?.rows) ? (payload.rows as PreviewRow[]) : [];
+          batches.push(...rows);
+        }
+        if (previewError) {
+          setError(`Preview partially unavailable: ${previewError}`);
+        }
+        previewRowsRaw = dedupeRowsById(batches);
+      }
+      const preview = previewRowsRaw.filter((row: PreviewRow) => isEasternOntarioLocation(row.location));
       setPreviewRows(sortPreviewRowsForDisplay(preview));
 
       const [groupedRes, moversRes, summaryRes] = await Promise.all([
-        fetch(`${API_BASE}/api/normalized-prices/preview-grouped${query}&limit=120&rows_per_group=8`, { cache: "no-store", headers }),
-        fetch(`${API_BASE}/api/normalized-prices/top-movers${query}&limit=8`, { cache: "no-store", headers }),
+        fetch(`${API_BASE}/api/normalized-prices/preview-grouped${query}&limit=250&rows_per_group=8`, { cache: "no-store", headers }),
+        fetch(`${API_BASE}/api/normalized-prices/top-movers${query}&limit=40`, { cache: "no-store", headers }),
         fetch(`${API_BASE}/api/normalized-prices/summary${query}`, { cache: "no-store", headers }),
       ]);
       if (groupedRes.ok) {
@@ -261,7 +300,7 @@ export default function DashboardPage() {
       }
       if (moversRes.ok) {
         const moversRows = (await moversRes.json()).rows ?? [];
-        setMovers(moversRows.filter((row: TopMover) => isEasternOntarioLocation(row.location)));
+        setMovers(moversRows.filter((row: TopMover) => isEasternOntarioLocation(row.location)).slice(0, 8));
       } else {
         setError(`Top movers unavailable: ${await readFailure(moversRes)}`);
       }
@@ -382,7 +421,7 @@ export default function DashboardPage() {
             className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
           >
             <option value="">All locations</option>
-            {easternLocationRows.map((location) => (
+            {(facets.location_rows || []).map((location) => (
               <option key={location.id} value={location.id}>
                 {location.name}
               </option>
@@ -400,9 +439,18 @@ export default function DashboardPage() {
               </option>
             ))}
           </select>
-          <div className="rounded-md border border-black/15 bg-black/[0.03] px-3 py-2 text-sm text-black/70">
-            Eastern Ontario locations only
-          </div>
+          <select
+            value={filters.region}
+            onChange={(event) => setFilters((prev) => ({ ...prev, region: event.target.value }))}
+            className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
+          >
+            <option value="">All regions</option>
+            {facets.region_names.map((region) => (
+              <option key={region} value={region}>
+                {region}
+              </option>
+            ))}
+          </select>
           <select
             value={filters.sort}
             onChange={(event) => setFilters((prev) => ({ ...prev, sort: event.target.value as FilterState["sort"] }))}
@@ -820,16 +868,38 @@ function sortPreviewRowsForDisplay(rows: PreviewRow[]): PreviewRow[] {
   return [...rows].sort((a, b) => {
     const locationCompare = compareString(a.location, b.location);
     if (locationCompare !== 0) return locationCompare;
+    const commodityCompare = compareCommodityForDisplay(a.commodity_name, b.commodity_name);
+    if (commodityCompare !== 0) return commodityCompare;
     const companyCompare = compareString(a.company_name ?? "", b.company_name ?? "");
     if (companyCompare !== 0) return companyCompare;
-    const commodityCompare = compareString(a.commodity_name, b.commodity_name);
-    if (commodityCompare !== 0) return commodityCompare;
     const deliveryCompare = compareMonthLabel(a.delivery_label, b.delivery_label);
     if (deliveryCompare !== 0) return deliveryCompare;
     const futuresCompare = compareMonthLabel(a.futures_month, b.futures_month);
     if (futuresCompare !== 0) return futuresCompare;
     return compareString(a.id, b.id);
   });
+}
+
+function compareCommodityForDisplay(a: string, b: string): number {
+  const rankDiff = commodityDisplayRank(a) - commodityDisplayRank(b);
+  if (rankDiff !== 0) return rankDiff;
+  return compareString(a, b);
+}
+
+function commodityDisplayRank(value: string | null | undefined): number {
+  const normalized = normalizeTextForCommodity(value);
+  if (!normalized) return 99;
+  if (normalized === "corn") return 1;
+  if (normalized === "soybeans" || normalized === "soybean") return 2;
+  if (normalized.includes("srw")) return 3;
+  if (normalized.includes("hrw")) return 4;
+  if (normalized.includes("hrs")) return 5;
+  if (normalized.includes("wheat")) return 6;
+  return 99;
+}
+
+function normalizeTextForCommodity(value: string | null | undefined): string {
+  return (value || "").trim().toLowerCase();
 }
 
 function compareString(a: string, b: string): number {
@@ -928,8 +998,10 @@ function normalizeLocationForEasternOntarioFilter(value: string | null | undefin
   const raw = (value || "").trim().replace(/\s+/g, " ");
   if (!raw) return "";
   let normalized = raw.replace(/^LAC\s*-\s*/i, "").trim();
+  normalized = normalized.replace(/^Ingredion\s+/i, "").trim();
   normalized = normalized.replace(/\s+\([^)]*\)\s*$/, "").trim();
   normalized = normalized.replace(/\s+(corn|soybeans?|wheat|hrw new crop wheat|hrw old crop wheat)$/i, "").trim();
+  normalized = normalized.replace(/\s+(transfer|ethanol|elevator)$/i, "").trim();
   return normalized.toLowerCase();
 }
 
@@ -938,10 +1010,14 @@ function isEasternOntarioLocation(location: string | null | undefined): boolean 
   return !!key && EASTERN_ONTARIO_LOCATIONS.has(key);
 }
 
-function buildMarketQuery(filters: FilterState) {
+function buildMarketQuery(filters: FilterState, selectedLocationName?: string) {
   const params = new URLSearchParams();
   if (filters.commodity) params.set("commodity", filters.commodity);
-  if (filters.location_id) params.set("location_id", filters.location_id);
+  if (selectedLocationName) {
+    params.set("location", selectedLocationName);
+  } else if (filters.location_id) {
+    params.set("location_id", filters.location_id);
+  }
   if (filters.company_id) params.set("company_id", filters.company_id);
   if (filters.region) params.set("region", filters.region);
   if (filters.captured_date) params.set("captured_date", filters.captured_date);
@@ -949,6 +1025,21 @@ function buildMarketQuery(filters: FilterState) {
   if (filters.include_non_canonical) params.set("include_non_canonical", "true");
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+function appendQueryParam(query: string, key: string, value: string): string {
+  const params = new URLSearchParams(query.startsWith("?") ? query.slice(1) : query);
+  params.set(key, value);
+  const next = params.toString();
+  return next ? `?${next}` : "";
+}
+
+function dedupeRowsById(rows: PreviewRow[]): PreviewRow[] {
+  const deduped = new Map<string, PreviewRow>();
+  for (const row of rows) {
+    if (!deduped.has(row.id)) deduped.set(row.id, row);
+  }
+  return [...deduped.values()];
 }
 
 async function readFailure(res: Response): Promise<string> {

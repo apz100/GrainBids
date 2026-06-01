@@ -35,6 +35,9 @@ from app.services.market_canonicalization import (
 
 router = APIRouter(prefix="/api/normalized-prices", tags=["normalized-prices"])
 QUALITY_SCORE_FIELDS = 7.0
+LOCATION_COMPANY_DISPLAY_OVERRIDES = {
+    "prescott": "Port of Prescott",
+}
 
 
 def _to_float(value: Decimal | float | int | None) -> float | None:
@@ -261,7 +264,15 @@ def _display_company_name_for_row(
             trusted = _trusted_company_name(company_name_map.get(location_company_id))
             if trusted is not None:
                 return trusted
-    return _display_company_name(price.source_name)
+    source_display = _display_company_name(price.source_name)
+    if source_display is not None:
+        return source_display
+    location_key = canonical_key(canonical_location_name(price.location))
+    if location_key is not None:
+        override = LOCATION_COMPANY_DISPLAY_OVERRIDES.get(location_key)
+        if override:
+            return override
+    return None
 
 
 def _load_company_name_map(

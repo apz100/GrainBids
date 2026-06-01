@@ -16,6 +16,13 @@ LOCATION_CANONICAL_OVERRIDES = {
     # Known deterministic typo/variant cleanups
     "starffordville": "Straffordville",
     "staffordville": "Straffordville",
+    # User-approved location label canonical display
+    "prescott transfer": "Prescott",
+    "prescott (transfer)": "Prescott",
+    "ingredion cardinal": "Cardinal",
+    "johnstown ethanol": "Johnstown",
+    "johnstown (ethanol)": "Johnstown",
+    "embrun elevator": "Embrun Co-op",
     # Source-emitted variants that should map to one market location label
     "toledo": "Toledo Elevator",
     "toledo corn": "Toledo Elevator",
@@ -65,6 +72,8 @@ def canonical_source_name(source_name: str | None) -> str | None:
         "hensall cooperative": "Hensall Co-operative",
         "snobelen": "Snobelen Farms",
         "snobelen farms": "Snobelen Farms",
+        "port of prescott grain terminal": "Port of Prescott",
+        "port of prescott": "Port of Prescott",
         "agricharts": "Agricharts",
         "andersons": "The Andersons",
         "the andersons": "The Andersons",

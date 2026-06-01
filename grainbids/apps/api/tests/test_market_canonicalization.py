@@ -22,6 +22,7 @@ class MarketCanonicalizationTests(unittest.TestCase):
         self.assertEqual(canonical_source_name("LAC"), "London Agricultural Commodities")
         self.assertEqual(canonical_source_name("Hensall HDC"), "Hensall Co-operative")
         self.assertEqual(canonical_source_name("Snobelen"), "Snobelen Farms")
+        self.assertEqual(canonical_source_name("Port of Prescott Grain Terminal"), "Port of Prescott")
         self.assertEqual(canonical_source_name("The Andersons"), "The Andersons")
         self.assertEqual(canonical_source_name("Ontario Daily File"), "Ontario Cash Bids")
         self.assertEqual(canonical_source_name("Eastern Ontario Daily File"), "Eastern Ontario Cash Bids")
@@ -33,6 +34,12 @@ class MarketCanonicalizationTests(unittest.TestCase):
     def test_location_strips_trailing_commodity(self) -> None:
         self.assertEqual(canonical_location_name("Blenheim Corn"), "Blenheim")
         self.assertEqual(canonical_location_name("Brinston Soybeans"), "Brinston")
+
+    def test_location_user_display_overrides(self) -> None:
+        self.assertEqual(canonical_location_name("Prescott Transfer"), "Prescott")
+        self.assertEqual(canonical_location_name("Ingredion Cardinal"), "Cardinal")
+        self.assertEqual(canonical_location_name("Johnstown Ethanol"), "Johnstown")
+        self.assertEqual(canonical_location_name("Embrun Elevator"), "Embrun Co-op")
 
     def test_commodity_aliases(self) -> None:
         self.assertEqual(canonical_commodity_name("soybean"), "Soybeans")
