@@ -90,6 +90,7 @@ type SlaSummary = {
 };
 
 const COMMODITY_TABS = ["Corn", "Soybeans", "Wheat", "All"] as const;
+const EASTERN_ONTARIO_REGION = "Eastern Ontario";
 
 type FilterState = {
   commodity: string;
@@ -105,7 +106,7 @@ const DEFAULT_FILTERS: FilterState = {
   commodity: "Corn",
   location_id: "",
   company_id: "",
-  region: "",
+  region: EASTERN_ONTARIO_REGION,
   captured_date: "",
   sort: "captured_desc",
   include_non_canonical: false,
@@ -151,6 +152,13 @@ export default function DashboardPage() {
   const [watchlistPreviewLoading, setWatchlistPreviewLoading] = useState(false);
   const [watchlistPreviewError, setWatchlistPreviewError] = useState("");
   const canUseDebugView = canManageAlerts;
+  const easternLocationRows = useMemo(() => {
+    const rows = facets.location_rows || [];
+    const filtered = rows.filter(
+      (row) => (row.region || "").trim().toLowerCase() === EASTERN_ONTARIO_REGION.toLowerCase()
+    );
+    return filtered.length > 0 ? filtered : rows;
+  }, [facets.location_rows]);
 
   useEffect(() => {
     if (configError) {
@@ -356,7 +364,7 @@ export default function DashboardPage() {
             className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
           >
             <option value="">All locations</option>
-            {(facets.location_rows || []).map((location) => (
+            {easternLocationRows.map((location) => (
               <option key={location.id} value={location.id}>
                 {location.name}
               </option>
@@ -374,18 +382,9 @@ export default function DashboardPage() {
               </option>
             ))}
           </select>
-          <select
-            value={filters.region}
-            onChange={(event) => setFilters((prev) => ({ ...prev, region: event.target.value }))}
-            className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
-          >
-            <option value="">All regions</option>
-            {facets.region_names.map((regionName) => (
-              <option key={regionName} value={regionName}>
-                {regionName}
-              </option>
-            ))}
-          </select>
+          <div className="rounded-md border border-black/15 bg-black/[0.03] px-3 py-2 text-sm text-black/70">
+            {EASTERN_ONTARIO_REGION} only
+          </div>
           <select
             value={filters.sort}
             onChange={(event) => setFilters((prev) => ({ ...prev, sort: event.target.value as FilterState["sort"] }))}
@@ -912,7 +911,7 @@ function buildMarketQuery(filters: FilterState) {
   if (filters.commodity) params.set("commodity", filters.commodity);
   if (filters.location_id) params.set("location_id", filters.location_id);
   if (filters.company_id) params.set("company_id", filters.company_id);
-  if (filters.region) params.set("region", filters.region);
+  params.set("region", EASTERN_ONTARIO_REGION);
   if (filters.captured_date) params.set("captured_date", filters.captured_date);
   if (filters.sort) params.set("sort", filters.sort);
   if (filters.include_non_canonical) params.set("include_non_canonical", "true");
