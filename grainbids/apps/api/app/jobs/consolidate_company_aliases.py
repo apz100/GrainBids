@@ -9,18 +9,34 @@ from app.db.session import get_sessionmaker
 from app.models.company import Company
 from app.models.company_source_priority import CompanySourcePriority
 from app.models.location import Location
-from app.models.location_company_mapping import LocationCompanyMapping
 from app.models.normalized_price import NormalizedPrice
 from app.services.market_canonicalization import canonical_key, canonical_source_name, normalize_text
 
 
 CANONICAL_COMPANY_ALIASES: tuple[tuple[str, str], ...] = (
     ("thompsons", "The Andersons"),
+    ("thompsons ltd", "The Andersons"),
+    ("thompsons limited", "The Andersons"),
     ("andersons", "The Andersons"),
+    ("the andersons", "The Andersons"),
     ("glg", "Great Lakes Grain"),
+    ("great lakes grain", "Great Lakes Grain"),
+    ("agris", "Great Lakes Grain"),
+    ("agris co-operative", "Great Lakes Grain"),
+    ("agris cooperative", "Great Lakes Grain"),
+    ("central ontario fs", "Great Lakes Grain"),
+    ("lac", "London Agricultural Commodities"),
+    ("london ag commodities", "London Agricultural Commodities"),
+    ("london agricultural commodities", "London Agricultural Commodities"),
     ("windsor crusher", "ADM"),
     ("hensall", "Hensall Co-operative"),
+    ("hensall hdc", "Hensall Co-operative"),
+    ("hensall co-op", "Hensall Co-operative"),
+    ("hensall cooperative", "Hensall Co-operative"),
     ("hensall co-op / hdc", "Hensall Co-operative"),
+    ("snobelen", "Snobelen Farms"),
+    ("snobelen farms", "Snobelen Farms"),
+    ("ganaraska", "Ganaraska Grains"),
 )
 
 
@@ -93,24 +109,6 @@ def consolidate_company_aliases(db, *, org_id: uuid.UUID) -> dict[str, int]:
             priority_rows_merged += merged
             db.delete(alias_company)
             merged_companies += 1
-
-    mapping_rows = db.execute(
-        select(LocationCompanyMapping).where(LocationCompanyMapping.org_id == org_id)
-    ).scalars().all()
-    for row in mapping_rows:
-        canonical_company = canonical_source_name(row.company_name) if row.company_name else None
-        if canonical_company and row.company_name != canonical_company:
-            row.company_name = canonical_company
-            mapping_company_name_updates += 1
-
-    normalized_rows = db.execute(
-        select(NormalizedPrice).where(NormalizedPrice.company_name.is_not(None))
-    ).scalars().all()
-    for row in normalized_rows:
-        canonical_company = canonical_source_name(row.company_name)
-        if canonical_company and row.company_name != canonical_company:
-            row.company_name = canonical_company
-            normalized_price_company_name_updates += 1
 
     db.commit()
 
