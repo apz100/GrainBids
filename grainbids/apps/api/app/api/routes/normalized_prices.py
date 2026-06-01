@@ -93,6 +93,35 @@ def _user_visible_market_filters(include_non_canonical: bool):
     ]
 
 
+def _staleness_month_key(value: str | None) -> int | None:
+    normalized = normalize_text(value)
+    if normalized is None:
+        return None
+    lowered = normalized.casefold()
+    if "crop" in lowered or "harvest" in lowered:
+        return None
+    key = _month_sort_key_value(normalized)
+    if key is None:
+        return None
+    # Month-only labels without year (for example "May") are intentionally
+    # treated as unspecified and should not be filtered as stale.
+    if key >= 9999 * 12:
+        return None
+    return key
+
+
+def _is_expired_market_period(price: NormalizedPrice) -> bool:
+    current_key = (date.today().year * 12) + date.today().month
+    delivery_value = normalize_text(price.delivery_label) or normalize_text(price.delivery_end) or normalize_text(price.delivery_start)
+    delivery_key = _staleness_month_key(delivery_value)
+    if delivery_key is not None and delivery_key < current_key:
+        return True
+    futures_key = _staleness_month_key(normalize_text(price.futures_month))
+    if futures_key is not None and futures_key < current_key:
+        return True
+    return False
+
+
 def _build_market_period_recency_filters() -> list:
     # Prevent stale month/year market periods (for example, April delivery / May futures)
     # from surfacing in user-facing tables after contracts roll forward.
@@ -663,6 +692,8 @@ def _load_preview_payload(
     deduped_rows: list[tuple[NormalizedPrice, PriceSnapshot]] = []
     seen: set[str] = set()
     for price, snapshot in rows:
+        if _is_expired_market_period(price):
+            continue
         dedupe_key = _preview_row_dedupe_key(
             price,
             company_name_map=company_name_map,
@@ -735,10 +766,17 @@ def list_normalized_prices(
     if filters:
         query = query.where(*filters)
 
-    rows = db.execute(query.limit(limit)).all()
+    rows = db.execute(query.limit(limit * 3)).all()
+    filtered_rows: list[tuple[NormalizedPrice, PriceSnapshot]] = []
+    for price, snapshot in rows:
+        if _is_expired_market_period(price):
+            continue
+        filtered_rows.append((price, snapshot))
+        if len(filtered_rows) >= limit:
+            break
     company_name_map = _load_company_name_map(
         db,
-        company_ids={price.company_id for price, _snapshot in rows if price.company_id is not None},
+        company_ids={price.company_id for price, _snapshot in filtered_rows if price.company_id is not None},
     )
 
     return {
@@ -771,7 +809,7 @@ def list_normalized_prices(
                 "canonical_rank": price.canonical_rank,
                 "canonical_reason": price.canonical_reason,
             }
-            for price, snapshot in rows
+            for price, snapshot in filtered_rows
         ]
     }
 
@@ -1047,10 +1085,17 @@ def top_movers(
     if filters:
         query = query.where(*filters)
 
-    rows = db.execute(query.limit(limit)).all()
+    rows = db.execute(query.limit(limit * 3)).all()
+    filtered_rows: list[tuple[NormalizedPrice, PriceSnapshot]] = []
+    for price, snapshot in rows:
+        if _is_expired_market_period(price):
+            continue
+        filtered_rows.append((price, snapshot))
+        if len(filtered_rows) >= limit:
+            break
     company_name_map = _load_company_name_map(
         db,
-        company_ids={price.company_id for price, _snapshot in rows if price.company_id is not None},
+        company_ids={price.company_id for price, _snapshot in filtered_rows if price.company_id is not None},
     )
 
     return {
@@ -1072,7 +1117,7 @@ def top_movers(
                 "cash_price_mt": _to_float(price.cash_price_mt),
                 "cash_price_mt_change": _coalesce_zero(_to_float(price.cash_price_mt_change)),
             }
-            for price, snapshot in rows
+            for price, snapshot in filtered_rows
         ]
     }
 
