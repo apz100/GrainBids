@@ -9,6 +9,7 @@ from app.api.routes.normalized_prices import (
     _coalesce_zero,
     _canonical_source_filter_values,
     _display_company_name,
+    _display_company_name_for_row,
     _serialize_preview_row,
     _trusted_company_name,
     _source_attribution_name,
@@ -34,6 +35,22 @@ def test_display_company_name_keeps_real_company_source() -> None:
     assert _display_company_name("Hensall HDC") == "Hensall Co-operative"
     assert _display_company_name("Snobelen") == "Snobelen Farms"
     assert _source_attribution_name("GLG") is None
+
+
+def test_display_company_name_location_override_for_aggregator_rows() -> None:
+    price = SimpleNamespace(
+        id=uuid.uuid4(),
+        company_id=None,
+        location_id=None,
+        location="Ingredion Cardinal",
+        source_name="Agricharts",
+    )
+    display = _display_company_name_for_row(
+        price,
+        company_name_map={},
+        location_company_map={},
+    )
+    assert display == "Ingredion"
 
 
 def test_region_source_never_displays_as_company() -> None:

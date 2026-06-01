@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import uuid
 
 from app.api.routes.normalized_prices import (
+    _append_forced_company_rows,
     _build_market_period_recency_filters,
     _build_quality_filters,
     _canonical_month_label,
@@ -57,6 +58,23 @@ def test_prune_facet_rows_respects_minimum_market_count() -> None:
     pruned = _prune_facet_rows(rows, minimum_market_count=2)
 
     assert pruned == [{"id": "1", "name": "GLG", "market_count": 3}]
+
+
+def test_append_forced_company_rows_includes_low_count_overrides() -> None:
+    base_rows = [{"id": "1", "name": "Great Lakes Grain", "market_count": 8}]
+    all_rows_by_key = {
+        "great lakes grain": {"id": "1", "name": "Great Lakes Grain", "market_count": 8},
+        "ingredion": {"id": "2", "name": "Ingredion", "market_count": 1},
+        "greenfield global": {"id": "3", "name": "Greenfield Global", "market_count": 1},
+    }
+
+    merged = _append_forced_company_rows(
+        base_rows,
+        all_company_rows_by_key=all_rows_by_key,
+        forced_company_names={"Ingredion", "Greenfield Global"},
+    )
+
+    assert {row["name"] for row in merged} == {"Great Lakes Grain", "Ingredion", "Greenfield Global"}
 
 
 def test_preview_row_dedupe_key_collapses_month_label_variants() -> None:

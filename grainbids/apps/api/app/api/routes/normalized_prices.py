@@ -37,6 +37,8 @@ router = APIRouter(prefix="/api/normalized-prices", tags=["normalized-prices"])
 QUALITY_SCORE_FIELDS = 7.0
 LOCATION_COMPANY_DISPLAY_OVERRIDES = {
     "prescott": "Port of Prescott",
+    "cardinal": "Ingredion",
+    "johnstown": "Greenfield Global",
 }
 
 
@@ -284,6 +286,23 @@ def _load_company_name_map(
         return {}
     rows = db.execute(select(Company.id, Company.name).where(Company.id.in_(company_ids))).all()
     return {company_id: name for company_id, name in rows if company_id is not None and name}
+
+
+def _load_company_display_identity_map(
+    db: Session,
+    *,
+    org_id: uuid.UUID,
+) -> dict[str, tuple[str, str]]:
+    rows = db.execute(select(Company.id, Company.name).where(Company.org_id == org_id)).all()
+    identities: dict[str, tuple[str, str]] = {}
+    for company_id, raw_name in rows:
+        display_name = canonical_source_name(raw_name) or normalize_text(raw_name)
+        display_key = canonical_key(display_name)
+        if not display_key or not display_name:
+            continue
+        if display_key not in identities:
+            identities[display_key] = (str(company_id), display_name)
+    return identities
 
 
 def _load_location_company_map(
@@ -579,6 +598,35 @@ def _prune_facet_rows(
     if minimum_market_count <= 1:
         return rows
     return [row for row in rows if int(row.get("market_count") or 0) >= minimum_market_count]
+
+
+def _append_forced_company_rows(
+    rows: list[dict[str, object]],
+    *,
+    all_company_rows_by_key: dict[str, dict[str, object]],
+    forced_company_names: set[str],
+) -> list[dict[str, object]]:
+    merged = list(rows)
+    present_keys = {
+        key
+        for key in (
+            canonical_key(str(row.get("name") or ""))
+            for row in rows
+        )
+        if key
+    }
+    for company_name in forced_company_names:
+        key = canonical_key(company_name)
+        if not key or key in present_keys:
+            continue
+        forced_row = all_company_rows_by_key.get(key)
+        if forced_row is None:
+            continue
+        if int(forced_row.get("market_count") or 0) <= 0:
+            continue
+        merged.append(forced_row)
+        present_keys.add(key)
+    return merged
 
 
 def _build_quality_filters() -> list:
@@ -964,8 +1012,50 @@ def facets(
                 "market_count": int(market_count or 0),
             }
 
+    fallback_company_market_counts: dict[str, int] = {}
+    for location_row in deduped_locations.values():
+        location_name = str(location_row.get("name") or "")
+        location_key = canonical_key(location_name)
+        if not location_key:
+            continue
+        fallback_company_name = LOCATION_COMPANY_DISPLAY_OVERRIDES.get(location_key)
+        if not fallback_company_name:
+            continue
+        fallback_key = canonical_key(fallback_company_name)
+        if not fallback_key:
+            continue
+        fallback_company_market_counts[fallback_key] = int(
+            fallback_company_market_counts.get(fallback_key, 0)
+        ) + int(location_row.get("market_count") or 0)
+
+    company_identity_map = _load_company_display_identity_map(db, org_id=context.org_id)
+    for fallback_key, fallback_market_count in fallback_company_market_counts.items():
+        existing = deduped_companies.get(fallback_key)
+        if existing is not None:
+            existing["market_count"] = max(int(existing.get("market_count") or 0), int(fallback_market_count or 0))
+            continue
+        identity = company_identity_map.get(fallback_key)
+        if identity is None:
+            continue
+        company_id, display_name = identity
+        deduped_companies[fallback_key] = {
+            "id": company_id,
+            "name": display_name,
+            "market_count": int(fallback_market_count or 0),
+        }
+
     minimum_market_count = max(1, int(settings.user_visible_facet_min_market_count))
     company_row_values = _prune_facet_rows(list(deduped_companies.values()), minimum_market_count=minimum_market_count)
+    forced_company_names = {
+        company_name
+        for company_name in LOCATION_COMPANY_DISPLAY_OVERRIDES.values()
+        if company_name
+    }
+    company_row_values = _append_forced_company_rows(
+        company_row_values,
+        all_company_rows_by_key=deduped_companies,
+        forced_company_names=forced_company_names,
+    )
     location_row_values = _prune_facet_rows(list(deduped_locations.values()), minimum_market_count=minimum_market_count)
     company_name_values = sorted({str(row["name"]) for row in company_row_values})
     location_name_values = sorted({str(row["name"]) for row in location_row_values})
