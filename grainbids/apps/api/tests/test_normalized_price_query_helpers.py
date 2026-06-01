@@ -53,6 +53,22 @@ def test_display_company_name_location_override_for_aggregator_rows() -> None:
     assert display == "Ingredion"
 
 
+def test_display_company_name_location_override_wins_over_source_display() -> None:
+    price = SimpleNamespace(
+        id=uuid.uuid4(),
+        company_id=None,
+        location_id=None,
+        location="Embrun Co-op",
+        source_name="GLG",
+    )
+    display = _display_company_name_for_row(
+        price,
+        company_name_map={},
+        location_company_map={},
+    )
+    assert display == "Embrun Co-op (GLG)"
+
+
 def test_region_source_never_displays_as_company() -> None:
     assert _display_company_name("Ontario Cash Bids") is None
     assert _trusted_company_name("Ontario Cash Bids") is None

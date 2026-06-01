@@ -39,6 +39,8 @@ LOCATION_COMPANY_DISPLAY_OVERRIDES = {
     "prescott": "Port of Prescott",
     "cardinal": "Ingredion",
     "johnstown": "Greenfield Global",
+    "embrun": "Embrun Co-op (GLG)",
+    "embrun co-op": "Embrun Co-op (GLG)",
 }
 
 
@@ -256,6 +258,11 @@ def _display_company_name_for_row(
     company_name_map: dict[uuid.UUID, str],
     location_company_map: dict[uuid.UUID, uuid.UUID] | None = None,
 ) -> str | None:
+    location_key = canonical_key(canonical_location_name(price.location))
+    if location_key is not None:
+        override = LOCATION_COMPANY_DISPLAY_OVERRIDES.get(location_key)
+        if override:
+            return override
     if price.company_id is not None:
         trusted = _trusted_company_name(company_name_map.get(price.company_id))
         if trusted is not None:
@@ -269,11 +276,6 @@ def _display_company_name_for_row(
     source_display = _display_company_name(price.source_name)
     if source_display is not None:
         return source_display
-    location_key = canonical_key(canonical_location_name(price.location))
-    if location_key is not None:
-        override = LOCATION_COMPANY_DISPLAY_OVERRIDES.get(location_key)
-        if override:
-            return override
     return None
 
 

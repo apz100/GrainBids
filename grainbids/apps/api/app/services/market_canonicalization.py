@@ -22,7 +22,9 @@ LOCATION_CANONICAL_OVERRIDES = {
     "ingredion cardinal": "Cardinal",
     "johnstown ethanol": "Johnstown",
     "johnstown (ethanol)": "Johnstown",
-    "embrun elevator": "Embrun Co-op",
+    "embrun elevator": "Embrun",
+    "embrun co-op": "Embrun",
+    "embrun coop": "Embrun",
     # Source-emitted variants that should map to one market location label
     "toledo": "Toledo Elevator",
     "toledo corn": "Toledo Elevator",

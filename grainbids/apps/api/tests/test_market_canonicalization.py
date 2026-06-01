@@ -39,7 +39,8 @@ class MarketCanonicalizationTests(unittest.TestCase):
         self.assertEqual(canonical_location_name("Prescott Transfer"), "Prescott")
         self.assertEqual(canonical_location_name("Ingredion Cardinal"), "Cardinal")
         self.assertEqual(canonical_location_name("Johnstown Ethanol"), "Johnstown")
-        self.assertEqual(canonical_location_name("Embrun Elevator"), "Embrun Co-op")
+        self.assertEqual(canonical_location_name("Embrun Elevator"), "Embrun")
+        self.assertEqual(canonical_location_name("Embrun Co-op"), "Embrun")
 
     def test_commodity_aliases(self) -> None:
         self.assertEqual(canonical_commodity_name("soybean"), "Soybeans")
