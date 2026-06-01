@@ -174,6 +174,8 @@ def _load_most_recent_prior_rows(
         .join(NormalizedPrice, NormalizedPrice.snapshot_id == PriceSnapshot.id)
         .where(NormalizedPrice.composite_key.in_(composite_keys))
         .where(func.date(PriceSnapshot.captured_at) < current_day)
+        # Treat weekend snapshots as non-trading for strict day-over-day.
+        .where(func.extract("isodow", PriceSnapshot.captured_at).between(1, 5))
     )
     if org_id is not None:
         prior_day_query = (
@@ -208,7 +210,7 @@ def _load_latest_prior_rows(
     captured_at: datetime,
     org_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
-    from sqlalchemy import desc, select
+    from sqlalchemy import desc, func, or_, select
 
     from app.models.normalized_price import NormalizedPrice
     from app.models.price_snapshot import PriceSnapshot
@@ -217,11 +219,20 @@ def _load_latest_prior_rows(
     if not composite_keys:
         return {}
 
+    current_day = captured_at.date()
     query = (
         select(NormalizedPrice, PriceSnapshot.captured_at)
         .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
         .where(NormalizedPrice.composite_key.in_(composite_keys))
         .where(PriceSnapshot.captured_at < captured_at)
+        # Keep same-day prior runs for intraday updates, but otherwise only use
+        # weekday snapshots so Monday compares against Friday (not weekend copies).
+        .where(
+            or_(
+                func.date(PriceSnapshot.captured_at) == current_day,
+                func.extract("isodow", PriceSnapshot.captured_at).between(1, 5),
+            )
+        )
         .order_by(NormalizedPrice.composite_key, desc(PriceSnapshot.captured_at))
     )
     if org_id is not None:
