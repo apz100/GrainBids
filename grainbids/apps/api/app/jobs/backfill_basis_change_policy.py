@@ -1,18 +1,56 @@
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import uuid
 
-from sqlalchemy import select
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import select, text
 
 from app.db.session import get_sessionmaker
 from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
 from app.models.source import Source
-from app.services.price_comparison import apply_historical_changes
+from app.services.price_comparison import (
+    calculate_basis_change_policy,
+    calculate_price_changes,
+)
+
+
+@dataclass(frozen=True)
+class SnapshotInfo:
+    snapshot_id: uuid.UUID
+    captured_at: datetime
+    org_id: uuid.UUID | None
+
+
+@dataclass(frozen=True)
+class HistoricalRow:
+    row_id: uuid.UUID
+    snapshot_id: uuid.UUID
+    captured_at: datetime
+    composite_key: str
+    basis: object
+    cash_price_bu: object
+    cash_price_mt: object
+    basis_change: object
+    basis_change_strict: object
+    basis_last_changed_at: datetime | None
+    cash_price_bu_change: object
+    cash_price_mt_change: object
+
+
+@dataclass(frozen=True)
+class RowState:
+    basis: object
+    cash_price_bu: object
+    cash_price_mt: object
+    basis_change: object
+    basis_change_strict: object
+    basis_last_changed_at: datetime | None
+    cash_price_bu_change: object
+    cash_price_mt_change: object
 
 
 @dataclass
@@ -32,7 +70,7 @@ def run_backfill(
     dry_run: bool,
 ) -> BackfillStats:
     session_factory = get_sessionmaker()
-    session = session_factory()
+    read_session = session_factory()
     stats = BackfillStats()
     cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, int(days)))
 
@@ -48,70 +86,178 @@ def run_backfill(
         if source_id is not None:
             snapshot_query = snapshot_query.where(PriceSnapshot.source_id == source_id)
 
-        snapshots = session.execute(snapshot_query).all()
+        snapshots = [
+            SnapshotInfo(snapshot_id=snapshot_id, captured_at=captured_at, org_id=snapshot_org_id)
+            for snapshot_id, captured_at, snapshot_org_id in read_session.execute(snapshot_query).all()
+        ]
         if max_snapshots is not None and max_snapshots > 0 and len(snapshots) > max_snapshots:
             snapshots = snapshots[-max_snapshots:]
+        if not snapshots:
+            return stats
+
+        snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
+        row_query = (
+            select(
+                NormalizedPrice.id,
+                NormalizedPrice.snapshot_id,
+                PriceSnapshot.captured_at,
+                NormalizedPrice.composite_key,
+                NormalizedPrice.basis,
+                NormalizedPrice.cash_price_bu,
+                NormalizedPrice.cash_price_mt,
+                NormalizedPrice.basis_change,
+                NormalizedPrice.basis_change_strict,
+                NormalizedPrice.basis_last_changed_at,
+                NormalizedPrice.cash_price_bu_change,
+                NormalizedPrice.cash_price_mt_change,
+            )
+            .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
+            .where(NormalizedPrice.snapshot_id.in_(snapshot_ids))
+            .order_by(
+                PriceSnapshot.captured_at.asc(),
+                NormalizedPrice.snapshot_id.asc(),
+                NormalizedPrice.composite_key.asc(),
+                NormalizedPrice.id.asc(),
+            )
+        )
+        if org_id is not None:
+            row_query = row_query.join(Source, Source.id == PriceSnapshot.source_id).where(Source.org_id == org_id)
+        if source_id is not None:
+            row_query = row_query.where(PriceSnapshot.source_id == source_id)
+
+        rows_by_snapshot: dict[uuid.UUID, list[HistoricalRow]] = defaultdict(list)
+        for row in read_session.execute(row_query).all():
+            rows_by_snapshot[row.snapshot_id].append(
+                HistoricalRow(
+                    row_id=row.id,
+                    snapshot_id=row.snapshot_id,
+                    captured_at=row.captured_at,
+                    composite_key=row.composite_key,
+                    basis=row.basis,
+                    cash_price_bu=row.cash_price_bu,
+                    cash_price_mt=row.cash_price_mt,
+                    basis_change=row.basis_change,
+                    basis_change_strict=row.basis_change_strict,
+                    basis_last_changed_at=row.basis_last_changed_at,
+                    cash_price_bu_change=row.cash_price_bu_change,
+                    cash_price_mt_change=row.cash_price_mt_change,
+                )
+            )
+
         commit_batch_size = max(1, int(commit_every))
-        for idx, (snapshot_id, captured_at, snapshot_org_id) in enumerate(snapshots, start=1):
-            stats.snapshots_scanned += 1
-            worker = session_factory()
-            try:
-                rows = worker.execute(
-                    select(NormalizedPrice)
-                    .where(NormalizedPrice.snapshot_id == snapshot_id)
-                    .with_for_update(skip_locked=True)
-                ).scalars().all()
-                if not rows:
-                    if dry_run:
-                        worker.rollback()
-                    else:
-                        worker.commit()
-                    continue
-                stats.rows_scanned += len(rows)
+        updates_stmt = text(
+            """
+            UPDATE normalized_prices
+            SET basis_change = :basis_change,
+                basis_change_strict = :basis_change_strict,
+                basis_last_changed_at = :basis_last_changed_at,
+                cash_price_bu_change = :cash_price_bu_change,
+                cash_price_mt_change = :cash_price_mt_change
+            WHERE id = :row_id
+            """
+        )
 
-                previous_state = {row.id: _state(row) for row in rows}
-                apply_historical_changes(
-                    worker,
-                    normalized_rows=rows,
-                    captured_at=captured_at,
-                    org_id=snapshot_org_id,
-                )
-                for row in rows:
-                    if _state(row) != previous_state[row.id]:
+        current_day: date | None = None
+        last_weekday_state_by_key: dict[str, RowState] = {}
+        day_prior_state_by_key: dict[str, RowState] = {}
+        pending_updates: list[dict[str, object]] = []
+        write_session = session_factory()
+
+        try:
+            for idx, snapshot in enumerate(snapshots, start=1):
+                stats.snapshots_scanned += 1
+                snapshot_day = snapshot.captured_at.date()
+                if snapshot_day != current_day:
+                    current_day = snapshot_day
+                    day_prior_state_by_key = dict(last_weekday_state_by_key)
+
+                snapshot_rows = rows_by_snapshot.get(snapshot.snapshot_id, [])
+                if not snapshot_rows:
+                    if not dry_run:
+                        write_session.commit()
+                    continue
+
+                stats.rows_scanned += len(snapshot_rows)
+                changed_rows_for_snapshot = 0
+
+                for row in snapshot_rows:
+                    prior_day_state = last_weekday_state_by_key.get(row.composite_key)
+                    prior_run_state = day_prior_state_by_key.get(row.composite_key)
+                    changes = calculate_price_changes(
+                        basis=row.basis,
+                        cash_price_bu=row.cash_price_bu,
+                        cash_price_mt=row.cash_price_mt,
+                        prior_basis=prior_day_state.basis if prior_day_state else None,
+                        prior_cash_price_bu=prior_day_state.cash_price_bu if prior_day_state else None,
+                        prior_cash_price_mt=prior_day_state.cash_price_mt if prior_day_state else None,
+                    )
+                    basis_policy = calculate_basis_change_policy(
+                        basis=row.basis,
+                        captured_at=snapshot.captured_at,
+                        prior_day_basis=prior_day_state.basis if prior_day_state else None,
+                        prior_run_basis=prior_run_state.basis if prior_run_state else None,
+                        prior_user_basis_change=prior_run_state.basis_change if prior_run_state else None,
+                        prior_basis_last_changed_at=prior_run_state.basis_last_changed_at if prior_run_state else None,
+                    )
+
+                    desired_state = RowState(
+                        basis=row.basis,
+                        cash_price_bu=row.cash_price_bu,
+                        cash_price_mt=row.cash_price_mt,
+                        basis_change=basis_policy.basis_change,
+                        basis_change_strict=basis_policy.basis_change_strict,
+                        basis_last_changed_at=basis_policy.basis_last_changed_at,
+                        cash_price_bu_change=changes.cash_price_bu_change,
+                        cash_price_mt_change=changes.cash_price_mt_change,
+                    )
+                    current_state = RowState(
+                        basis=row.basis,
+                        cash_price_bu=row.cash_price_bu,
+                        cash_price_mt=row.cash_price_mt,
+                        basis_change=row.basis_change,
+                        basis_change_strict=row.basis_change_strict,
+                        basis_last_changed_at=row.basis_last_changed_at,
+                        cash_price_bu_change=row.cash_price_bu_change,
+                        cash_price_mt_change=row.cash_price_mt_change,
+                    )
+
+                    day_prior_state_by_key[row.composite_key] = desired_state
+
+                    if desired_state != current_state:
+                        changed_rows_for_snapshot += 1
                         stats.rows_updated += 1
+                        pending_updates.append(
+                            {
+                                "row_id": row.row_id,
+                                "basis_change": basis_policy.basis_change,
+                                "basis_change_strict": basis_policy.basis_change_strict,
+                                "basis_last_changed_at": basis_policy.basis_last_changed_at,
+                                "cash_price_bu_change": changes.cash_price_bu_change,
+                                "cash_price_mt_change": changes.cash_price_mt_change,
+                            }
+                        )
 
-                try:
-                    worker.flush()
-                except OperationalError as exc:
-                    worker.rollback()
-                    print(f"warning snapshot={idx}/{len(snapshots)} skipped_due_to_lock_or_timeout error={exc.__class__.__name__}")
-                    continue
+                if snapshot_day.weekday() < 5:
+                    last_weekday_state_by_key = dict(day_prior_state_by_key)
+
                 if dry_run:
-                    worker.rollback()
-                else:
-                    worker.commit()
-                    if idx % commit_batch_size == 0:
-                        print(f"commit snapshot={idx}/{len(snapshots)}")
-            finally:
-                worker.close()
-            if idx == 1 or idx % 25 == 0:
-                print(
-                    f"progress snapshot={idx}/{len(snapshots)} rows_scanned={stats.rows_scanned} "
-                    f"rows_updated={stats.rows_updated}"
-                )
-        return stats
+                    pending_updates.clear()
+                elif pending_updates:
+                    write_session.execute(updates_stmt, pending_updates)
+                    write_session.commit()
+                    pending_updates.clear()
+
+                if idx == 1 or idx % 25 == 0:
+                    print(
+                        f"progress snapshot={idx}/{len(snapshots)} rows_scanned={stats.rows_scanned} "
+                        f"rows_updated={stats.rows_updated}"
+                    )
+
+            return stats
+        finally:
+            write_session.close()
     finally:
-        session.close()
-
-
-def _state(row: NormalizedPrice) -> tuple[object, object, object, object, object]:
-    return (
-        row.basis_change,
-        row.basis_change_strict,
-        row.basis_last_changed_at,
-        row.cash_price_bu_change,
-        row.cash_price_mt_change,
-    )
+        read_session.close()
 
 
 def main() -> int:
