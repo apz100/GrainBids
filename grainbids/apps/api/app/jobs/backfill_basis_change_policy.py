@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
 from app.db.session import get_sessionmaker
 from app.models.normalized_price import NormalizedPrice
@@ -56,7 +57,9 @@ def run_backfill(
             worker = session_factory()
             try:
                 rows = worker.execute(
-                    select(NormalizedPrice).where(NormalizedPrice.snapshot_id == snapshot_id)
+                    select(NormalizedPrice)
+                    .where(NormalizedPrice.snapshot_id == snapshot_id)
+                    .with_for_update(skip_locked=True)
                 ).scalars().all()
                 if not rows:
                     if dry_run:
@@ -77,7 +80,12 @@ def run_backfill(
                     if _state(row) != previous_state[row.id]:
                         stats.rows_updated += 1
 
-                worker.flush()
+                try:
+                    worker.flush()
+                except OperationalError as exc:
+                    worker.rollback()
+                    print(f"warning snapshot={idx}/{len(snapshots)} skipped_due_to_lock_or_timeout error={exc.__class__.__name__}")
+                    continue
                 if dry_run:
                     worker.rollback()
                 else:
