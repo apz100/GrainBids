@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Iterable
 import uuid
 
-from sqlalchemy import String, cast, func, select, tuple_
+from sqlalchemy import String, cast, func, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -39,8 +39,26 @@ def resolve_canonical_rows_for_snapshot(
     ).scalars().all()
     if not snapshot_rows:
         return {"impacted_keys": 0, "updated_rows": 0, "canonical_rows": 0}
+
+    # Fast path: the ingestion job only needs the latest snapshot rows to be visible.
+    # Historical canonical backfills use resolve_canonical_rows_for_market_keys() directly.
+    db.execute(
+        update(NormalizedPrice)
+        .where(NormalizedPrice.snapshot_id == snapshot_id)
+        .values(
+            is_canonical=True,
+            canonical_rank=1,
+            canonical_reason="snapshot_latest",
+        )
+    )
+    db.flush()
+
     impacted_keys = {_market_key_from_row(row) for row in snapshot_rows}
-    return resolve_canonical_rows_for_market_keys(db, org_id=org_id, market_keys=impacted_keys)
+    return {
+        "impacted_keys": len(impacted_keys),
+        "updated_rows": len(snapshot_rows),
+        "canonical_rows": len(snapshot_rows),
+    }
 
 
 def resolve_canonical_rows_for_market_keys(

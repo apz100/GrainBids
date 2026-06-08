@@ -50,7 +50,7 @@ def _build_row(
 def test_market_key_uses_text_fallback_when_ids_missing() -> None:
     row = _build_row(source_name="GLG", company_id=None, location_id=None, location="Any Blenheim Branch Corn")
     key = _market_key_from_row(row)
-    assert key[0] == "glg"
+    assert key[0] == "great lakes grain"
     assert key[1] == "blenheim branch"
 
 
@@ -61,7 +61,7 @@ def test_priority_rank_wins_when_configured() -> None:
     now = datetime.now(timezone.utc)
     ranked = _rank_rows(
         [(row_glg, now), (row_agricharts, now)],
-        priority_map={(company_id, "glg"): 1, (company_id, "agricharts"): 2},
+        priority_map={(company_id, "great lakes grain"): 1, (company_id, "agricharts"): 2},
         min_quality_score=0.8,
     )
     assert ranked[0][0].source_name == "GLG"
