@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from multiprocessing import get_context
+import queue
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import io
@@ -53,6 +54,10 @@ def run_source_refresh(
     deduped_alert_count = 0
 
     for attempt in range(1, max_attempts + 1):
+        print(
+            f"[SOURCE] start name={source.name} adapter={adapter.key} "
+            f"attempt={attempt}/{max_attempts} timeout={timeout_seconds}s"
+        )
         run = IngestionRun(
             source_name=source.name,
             source_identifier=adapter.key,
@@ -106,6 +111,10 @@ def run_source_refresh(
             run.rejected_row_count = upload.rejected_row_count
             run.missing_required_count = upload.missing_required_count
             run.row_reject_reasons_json = upload.row_reject_reasons
+            print(
+                f"[SOURCE] done name={source.name} adapter={adapter.key} status=completed "
+                f"rows={row_count} inserted={upload.inserted_rows} duration_ms={duration_ms}"
+            )
         except Exception as exc:  # noqa: BLE001
             db.rollback()
             run = db.execute(select(IngestionRun).where(IngestionRun.id == run.id)).scalar_one()
@@ -113,6 +122,10 @@ def run_source_refresh(
             status = "failed"
             parse_success_rate = 0.0
             schema_drift_count = max(schema_drift_count, 1)
+            print(
+                f"[SOURCE] fail name={source.name} adapter={adapter.key} "
+                f"attempt={attempt}/{max_attempts} error={last_error}"
+            )
 
         run.status = status
         run.duration_ms = duration_ms
@@ -321,26 +334,60 @@ def poll_due_sources(
     now: datetime | None = None,
 ) -> list[RefreshExecutionResult]:
     results: list[RefreshExecutionResult] = []
-    for source in list_due_sources(db, now=now):
-        results.append(
-            run_source_refresh(
-                db,
-                source=source,
-                commodity_id=commodity_id,
-                trigger_type="scheduled",
-            )
+    due_sources = list_due_sources(db, now=now)
+    print(f"[POLL] due_sources={len(due_sources)}")
+    for index, source in enumerate(due_sources, start=1):
+        print(
+            f"[POLL] source={index}/{len(due_sources)} "
+            f"name={source.name} adapter={source.adapter_key or source.name.strip().lower()}"
         )
+        result = run_source_refresh(
+            db,
+            source=source,
+            commodity_id=commodity_id,
+            trigger_type="scheduled",
+        )
+        results.append(result)
+        print(
+            f"[POLL] source_done name={result.source_name} status={result.status} "
+            f"attempts={result.attempts} duration_ms={result.duration_ms} rows={result.row_count}"
+        )
+    print(f"[POLL] complete sources={len(results)} failures={sum(1 for r in results if r.status != 'completed')}")
     return results
 
 
 def _fetch_with_timeout(adapter_key: str, *, timeout_seconds: int) -> pd.DataFrame:
     adapter = get_adapter(adapter_key)
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(fetch_with_adapter, adapter)
+    ctx = get_context("spawn")
+    result_queue = ctx.Queue(maxsize=1)
+    process = ctx.Process(target=_fetch_with_timeout_worker, args=(result_queue, adapter), daemon=True)
+    process.start()
+    try:
         try:
-            return future.result(timeout=timeout_seconds)
-        except FuturesTimeoutError as exc:
+            status, payload = result_queue.get(timeout=timeout_seconds)
+        except queue.Empty as exc:
+            process.terminate()
+            process.join(timeout=5)
             raise TimeoutError(f"source fetch timed out after {timeout_seconds}s") from exc
+
+        process.join(timeout=5)
+        if status == "ok":
+            if isinstance(payload, pd.DataFrame):
+                return payload
+            raise TypeError(f"Unexpected payload type from source worker for {adapter.key}: {type(payload)!r}")
+        raise RuntimeError(str(payload))
+    finally:
+        if process.is_alive():
+            process.terminate()
+        process.join(timeout=5)
+
+
+def _fetch_with_timeout_worker(result_queue, adapter) -> None:
+    try:
+        df = fetch_with_adapter(adapter)
+        result_queue.put(("ok", df))
+    except Exception as exc:  # noqa: BLE001
+        result_queue.put(("error", repr(exc)))
 
 
 def _to_csv_bytes(rows: list[dict], headers: list[str]) -> bytes:
