@@ -113,7 +113,7 @@ class UploadQualityTests(unittest.TestCase):
         )
         self.assertEqual(reasons, [])
 
-    def test_snobelen_requires_futures_change_and_source_month(self) -> None:
+    def test_snobelen_allows_missing_futures_change_and_source_month(self) -> None:
         reasons = _check_completeness(
             source_name="Snobelen",
             delivery_end="2026-05-31",
@@ -125,10 +125,9 @@ class UploadQualityTests(unittest.TestCase):
             cash_price_bu=Decimal("6.25"),
             cash_price_mt=Decimal("246.00"),
         )
-        self.assertIn("missing_futures_change", reasons)
-        self.assertIn("missing_futures_month_source", reasons)
+        self.assertEqual(reasons, [])
 
-    def test_ganaraska_requires_futures_change(self) -> None:
+    def test_ganaraska_allows_missing_futures_change(self) -> None:
         reasons = _check_completeness(
             source_name="Ganaraska",
             delivery_end="2026-05-31",
@@ -140,7 +139,7 @@ class UploadQualityTests(unittest.TestCase):
             cash_price_bu=Decimal("6.25"),
             cash_price_mt=Decimal("246.00"),
         )
-        self.assertIn("missing_futures_change", reasons)
+        self.assertEqual(reasons, [])
 
     def test_quality_summary(self) -> None:
         summary = summarize_quality(

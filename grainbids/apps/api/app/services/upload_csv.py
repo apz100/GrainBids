@@ -662,11 +662,8 @@ def _check_completeness(
         reasons.append("missing_cash_price_bu")
     if cash_price_mt is None:
         reasons.append("missing_cash_price_mt")
-    source_key = (canonical_source_name(source_name) or source_name or "").strip().casefold()
-    if source_key in {"snobelen", "snobelen farms", "ganaraska", "ganaraska grain"} and futures_change is None:
-        reasons.append("missing_futures_change")
-    if source_key in {"snobelen", "snobelen farms"} and _is_blank(futures_month_raw):
-        reasons.append("missing_futures_month_source")
+    # Futures change is useful when present, but missing values should not hard-fail ingestion.
+    # Several sources already expose it directly; others can omit it without making the row unusable.
     return reasons
 
 
