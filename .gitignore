@@ -55,6 +55,22 @@ debug_*.py
 **/debug/
 api_prices*.json
 
+# ---------- Multi-agent workflow state ----------
+.agent/
+.worktrees/
+
+# ---------- Local research / handoff artifacts ----------
+GrainBidder plans.docx
+GrainBidderElevatorMapping.pdf
+agricharts_*.csv
+seed_*.csv
+retry_*.csv
+unmapped_*.csv
+**/agricharts_*.csv
+**/seed_*.csv
+**/retry_*.csv
+**/unmapped_*.csv
+
 # ---------- Generated exports ----------
 *_output.csv
 *_output.xlsx
