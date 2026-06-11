@@ -216,6 +216,7 @@ def _serialize_export_row(
         "delivery_label": price.delivery_label,
         "futures_month": price.futures_month,
         "futures_price": _as_float(price.futures_price),
+        "futures_change": _as_float(getattr(price, "futures_change", None)),
         "basis": _as_float(price.basis),
         "cash_price_bu": cash_bu,
         "cash_price_mt": cash_mt,

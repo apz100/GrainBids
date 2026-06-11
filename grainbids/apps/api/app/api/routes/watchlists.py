@@ -230,6 +230,7 @@ def preview_watchlist(
                 "delivery_label": normalize_text(price.delivery_label) or normalize_text(price.delivery_end),
                 "futures_month": normalize_text(price.futures_month),
                 "futures_price": _to_float(price.futures_price),
+                "futures_change": _to_float(getattr(price, "futures_change", None)),
                 "basis": _to_basis_float(price.basis),
                 "cash_price_bu": _to_float(price.cash_price_bu),
                 "cash_price_mt": _to_float(price.cash_price_mt),

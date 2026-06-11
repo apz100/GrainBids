@@ -37,6 +37,7 @@ class NormalizedPrice(Base):
 
     futures_month: Mapped[str | None] = mapped_column(String(50), nullable=True)
     futures_price: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
+    futures_change: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
     basis: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
     cash_price_bu: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)
     cash_price_mt: Mapped[float | None] = mapped_column(Numeric(18, 6), nullable=True)

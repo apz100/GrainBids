@@ -20,6 +20,7 @@ type TopMover = {
   commodity_name: string;
   source_name: string | null;
   source_attribution?: string | null;
+  futures_change: number | null;
   basis_change: number | null;
   cash_price_bu_change: number | null;
   captured_at: string | null;
@@ -38,6 +39,7 @@ type PreviewRow = {
   delivery_label: string | null;
   futures_month: string | null;
   futures_price: number | null;
+  futures_change: number | null;
   basis: number | null;
   basis_change: number | null;
   cash_price_bu: number | null;
@@ -511,6 +513,7 @@ export default function DashboardPage() {
                 <th className="px-3 py-2">Delivery</th>
                 <th className="px-3 py-2">Futures</th>
                 <th className="px-3 py-2 text-right">Futures Price</th>
+                <th className="px-3 py-2 text-right">Fut Chg</th>
                 <th className="px-3 py-2 text-right">Basis</th>
                 <th className="px-3 py-2 text-right">Basis Chg</th>
                 <th className="px-3 py-2 text-right">Cash/Bu</th>
@@ -522,7 +525,7 @@ export default function DashboardPage() {
             <tbody>
               {previewRows.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-3 py-8 text-center text-sm text-black/55">
+                  <td colSpan={13} className="px-3 py-8 text-center text-sm text-black/55">
                     No rows for the selected filters.
                   </td>
                 </tr>
@@ -539,6 +542,7 @@ export default function DashboardPage() {
                     <td className="px-3 py-2">{row.delivery_label || "-"}</td>
                     <td className="px-3 py-2">{row.futures_month || "-"}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.futures_price)}</td>
+                    <td className={`px-3 py-2 text-right ${toneForDelta(row.futures_change)}`}>{formatSigned(row.futures_change)}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.basis)}</td>
                     <td className={`px-3 py-2 text-right ${toneForDelta(row.basis_change)}`}>{formatSigned(row.basis_change)}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.cash_price_bu)}</td>
@@ -598,14 +602,15 @@ export default function DashboardPage() {
                 {selectedRow.company_name || "Unknown buyer"} / {selectedRow.commodity_name}
                 {selectedRow.source_attribution ? ` · Source: ${selectedRow.source_attribution}` : ""}
               </p>
-              <p className="mt-1 text-black/60">Delivery: {selectedRow.delivery_label || "-"}</p>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                <p>Cash/Bu: <span className="font-semibold">{formatNumber(selectedRow.cash_price_bu)}</span></p>
-                <p>Basis: <span className="font-semibold">{formatNumber(selectedRow.basis)}</span></p>
-                <p>Futures: <span className="font-semibold">{selectedRow.futures_month || "-"}</span></p>
-                <p>Futures Price: <span className="font-semibold">{formatNumber(selectedRow.futures_price)}</span></p>
-              </div>
-            </article>
+                <p className="mt-1 text-black/60">Delivery: {selectedRow.delivery_label || "-"}</p>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                  <p>Cash/Bu: <span className="font-semibold">{formatNumber(selectedRow.cash_price_bu)}</span></p>
+                  <p>Basis: <span className="font-semibold">{formatNumber(selectedRow.basis)}</span></p>
+                  <p>Futures: <span className="font-semibold">{selectedRow.futures_month || "-"}</span></p>
+                  <p>Futures Price: <span className="font-semibold">{formatNumber(selectedRow.futures_price)}</span></p>
+                  <p>Futures Chg: <span className={`font-semibold ${toneForDelta(selectedRow.futures_change)}`}>{formatSigned(selectedRow.futures_change)}</span></p>
+                </div>
+              </article>
 
             <div className="space-y-3">
               <div className="rounded-md border border-black/10 bg-white p-3">
@@ -817,6 +822,7 @@ export default function DashboardPage() {
                   {mover.company_name || "Unknown buyer"} / {mover.commodity_name}
                   {mover.source_attribution ? ` · Source: ${mover.source_attribution}` : ""}
                 </p>
+                <p className={`mt-1 text-sm ${toneForDelta(mover.futures_change)}`}>Futures: {formatSigned(mover.futures_change)}</p>
                 <p className={`mt-2 text-sm ${toneForDelta(mover.basis_change)}`}>Basis: {formatSigned(mover.basis_change)}</p>
                 <p className={`text-xs ${toneForDelta(mover.cash_price_bu_change)}`}>Cash/Bu: {formatSigned(mover.cash_price_bu_change)}</p>
               </article>

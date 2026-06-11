@@ -366,6 +366,7 @@ def _serialize_preview_row(
         location_company_map=location_company_map,
     )
     basis_change = _to_basis_float(price.basis_change)
+    futures_change = _to_float(getattr(price, "futures_change", None))
     cash_price_bu_change = _to_float(price.cash_price_bu_change)
     cash_price_mt_change = _to_float(price.cash_price_mt_change)
     source_attribution = _source_attribution_name(price.source_name)
@@ -382,6 +383,7 @@ def _serialize_preview_row(
         "delivery_label": _canonical_month_label(normalize_text(price.delivery_label) or normalize_text(price.delivery_end)),
         "futures_month": _canonical_month_label(normalize_text(price.futures_month)),
         "futures_price": _to_float(price.futures_price),
+        "futures_change": futures_change if futures_change is not None else 0.0,
         "basis": _to_basis_float(price.basis),
         "basis_change": basis_change if basis_change is not None else 0.0,
         "basis_last_changed_at": price.basis_last_changed_at.isoformat() if price.basis_last_changed_at else None,
@@ -858,6 +860,7 @@ def list_normalized_prices(
                 "delivery_label": _canonical_month_label(normalize_text(price.delivery_label)),
                 "futures_month": _canonical_month_label(normalize_text(price.futures_month)),
                 "futures_price": _to_float(price.futures_price),
+                "futures_change": _coalesce_zero(_to_float(getattr(price, "futures_change", None))),
                 "basis": _to_basis_float(price.basis),
                 "cash_price_bu": _to_float(price.cash_price_bu),
                 "cash_price_mt": _to_float(price.cash_price_mt),
@@ -1215,6 +1218,7 @@ def top_movers(
                 "basis": _to_basis_float(price.basis),
                 "basis_change": _coalesce_zero(_to_basis_float(price.basis_change)),
                 "basis_last_changed_at": price.basis_last_changed_at.isoformat() if price.basis_last_changed_at else None,
+                "futures_change": _coalesce_zero(_to_float(getattr(price, "futures_change", None))),
                 "cash_price_bu": _to_float(price.cash_price_bu),
                 "cash_price_bu_change": _coalesce_zero(_to_float(price.cash_price_bu_change)),
                 "cash_price_mt": _to_float(price.cash_price_mt),

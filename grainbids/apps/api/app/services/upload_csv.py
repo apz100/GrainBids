@@ -505,6 +505,7 @@ def persist_normalized_rows(
             delivery_label=delivery_label or None,
             futures_month=futures_month or None,
             futures_price=futures_price,
+            futures_change=futures_change,
             basis=basis,
             cash_price_bu=cash_price_bu,
             cash_price_mt=cash_price_mt,

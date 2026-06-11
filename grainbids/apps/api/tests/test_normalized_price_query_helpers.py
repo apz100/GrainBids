@@ -96,6 +96,7 @@ def test_serialize_preview_row_includes_basis_last_changed_at() -> None:
         delivery_start=None,
         futures_month="July 2026",
         futures_price=Decimal("450.75"),
+        futures_change=Decimal("0.15"),
         basis=Decimal("2.30"),
         basis_change=Decimal("0.23"),
         basis_last_changed_at=datetime(2026, 5, 28, 20, 56, 26, tzinfo=timezone.utc),
@@ -117,3 +118,4 @@ def test_serialize_preview_row_includes_basis_last_changed_at() -> None:
         location_company_map={},
     )
     assert row["basis_last_changed_at"] == "2026-05-28T20:56:26+00:00"
+    assert row["futures_change"] == 0.15
