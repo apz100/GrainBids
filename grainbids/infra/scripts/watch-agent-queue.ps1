@@ -37,37 +37,7 @@ function Invoke-TaskTestCommand {
     [Parameter(Mandatory = $true)][string]$RepoRoot,
     [Parameter(Mandatory = $true)][string]$CommandText
   )
-
-  $pythonExe = Join-Path (Join-Path $RepoRoot 'grainbids\apps\api') '.venv\Scripts\python.exe'
-  $normalizedCommand = $CommandText.Trim()
-  if ($normalizedCommand -match '^(?i)pytest(\s|$)') {
-    if (!(Test-Path $pythonExe)) {
-      throw "Repo Python executable not found: $pythonExe"
-    }
-    $rest = $normalizedCommand.Substring(6).TrimStart()
-    $normalizedCommand = "& `"$pythonExe`" -m pytest"
-    if (-not [string]::IsNullOrWhiteSpace($rest)) {
-      $normalizedCommand += " $rest"
-    }
-  } elseif ($normalizedCommand -match '^(?i)python\s+-m\s+pytest(\s|$)') {
-    if (!(Test-Path $pythonExe)) {
-      throw "Repo Python executable not found: $pythonExe"
-    }
-    $rest = [regex]::Replace($normalizedCommand, '^(?i)python\s+-m\s+pytest\s*', '').Trim()
-    $normalizedCommand = "& `"$pythonExe`" -m pytest"
-    if (-not [string]::IsNullOrWhiteSpace($rest)) {
-      $normalizedCommand += " $rest"
-    }
-  }
-
-  Push-Location $Worktree
-  try {
-    & powershell -NoProfile -ExecutionPolicy Bypass -Command $normalizedCommand
-    return $LASTEXITCODE
-  }
-  finally {
-    Pop-Location
-  }
+  return Invoke-AgentCommand -WorkingDirectory $Worktree -CommandText $CommandText -RepoRoot $RepoRoot
 }
 
 function Start-And-Process-Task {

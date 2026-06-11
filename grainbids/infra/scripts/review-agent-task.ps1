@@ -25,14 +25,12 @@ git -C $worktree status --short
 git -C $worktree diff --stat
 
 if ($TestCommand) {
+  $normalizedTestCommand = Normalize-AgentCommand -CommandText $TestCommand -RepoRoot $repoRoot
   Write-Host "Running test command:"
-  Write-Host "  $TestCommand"
-  Push-Location $worktree
-  try {
-    Invoke-Expression $TestCommand
-  }
-  finally {
-    Pop-Location
+  Write-Host "  $normalizedTestCommand"
+  $exitCode = Invoke-AgentCommand -WorkingDirectory $worktree -CommandText $TestCommand -RepoRoot $repoRoot
+  if ($exitCode -ne 0) {
+    throw "Review test command failed with exit code $exitCode"
   }
 }
 
@@ -41,4 +39,3 @@ $updatedPath = Move-AgentTaskFile -SourcePath $TaskPath -TargetFolder $reviewFol
 
 Write-Host "Moved to review:"
 Write-Host "  $updatedPath"
-

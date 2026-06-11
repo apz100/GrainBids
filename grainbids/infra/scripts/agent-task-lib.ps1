@@ -146,3 +146,73 @@ function Move-AgentTaskFile {
   Remove-Item -LiteralPath $SourcePath -Force
   return $targetPath
 }
+
+function Resolve-AgentPythonExe {
+  param(
+    [string]$RepoRoot
+  )
+
+  if (-not $RepoRoot) {
+    $RepoRoot = Get-AgentRepoRoot
+  }
+
+  $pythonExe = Join-Path (Join-Path $RepoRoot 'grainbids\apps\api') '.venv\Scripts\python.exe'
+  if (-not (Test-Path $pythonExe)) {
+    throw "Repo Python executable not found: $pythonExe"
+  }
+
+  return $pythonExe
+}
+
+function Normalize-AgentCommand {
+  param(
+    [Parameter(Mandatory = $true)][string]$CommandText,
+    [string]$RepoRoot
+  )
+
+  $normalizedCommand = $CommandText.Trim()
+  if ([string]::IsNullOrWhiteSpace($normalizedCommand)) {
+    return $normalizedCommand
+  }
+
+  if (-not $RepoRoot) {
+    $RepoRoot = Get-AgentRepoRoot
+  }
+
+  if (
+    $normalizedCommand -match '^(?i)pytest(\s|$)' -or
+    $normalizedCommand -match '^(?i)python\s+-m\s+pytest(\s|$)'
+  ) {
+    $pythonExe = Resolve-AgentPythonExe -RepoRoot $RepoRoot
+    $rest = $normalizedCommand
+    $rest = [regex]::Replace($rest, '^(?i)pytest\s*', '')
+    $rest = [regex]::Replace($rest, '^(?i)python\s+-m\s+pytest\s*', '')
+    $rest = $rest.Trim()
+
+    $normalizedCommand = "& `"$pythonExe`" -m pytest"
+    if (-not [string]::IsNullOrWhiteSpace($rest)) {
+      $normalizedCommand += " $rest"
+    }
+  }
+
+  return $normalizedCommand
+}
+
+function Invoke-AgentCommand {
+  param(
+    [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+    [Parameter(Mandatory = $true)][string]$CommandText,
+    [string]$RepoRoot
+  )
+
+  $normalizedCommand = Normalize-AgentCommand -CommandText $CommandText -RepoRoot $RepoRoot
+
+  Push-Location $WorkingDirectory
+  try {
+    & powershell -NoProfile -ExecutionPolicy Bypass -Command $normalizedCommand | Out-Host
+    return $LASTEXITCODE
+  }
+  finally {
+    Pop-Location
+  }
+}

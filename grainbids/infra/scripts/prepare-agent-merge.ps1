@@ -90,17 +90,12 @@ if ($dirty) {
 }
 
 if (-not [string]::IsNullOrWhiteSpace($resolvedTestCommand)) {
+  $normalizedTestCommand = Normalize-AgentCommand -CommandText $resolvedTestCommand -RepoRoot $repoRoot
   Write-Host "Running merge-prep tests in approved worktree:"
-  Write-Host "  $resolvedTestCommand"
-  Push-Location $worktree
-  try {
-    & powershell -NoProfile -ExecutionPolicy Bypass -Command $resolvedTestCommand
-    if ($LASTEXITCODE -ne 0) {
-      throw "Merge-prep tests failed with exit code $LASTEXITCODE"
-    }
-  }
-  finally {
-    Pop-Location
+  Write-Host "  $normalizedTestCommand"
+  $exitCode = Invoke-AgentCommand -WorkingDirectory $worktree -CommandText $resolvedTestCommand -RepoRoot $repoRoot
+  if ($exitCode -ne 0) {
+    throw "Merge-prep tests failed with exit code $exitCode"
   }
 }
 else {
@@ -116,4 +111,3 @@ $updatedTaskPath = Move-AgentTaskFile -SourcePath $TaskPath -TargetFolder $doneF
 
 Write-Host "Merged and marked done:"
 Write-Host "  $updatedTaskPath"
-
