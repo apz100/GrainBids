@@ -18,8 +18,9 @@
 - Likely files: `apps/api/app/services/market_canonicalization.py`, `apps/api/app/services/location_company_seed_docx.py`, `apps/api/tests/test_location_company_seed_docx.py`, `apps/api/tests/test_market_canonicalization.py`.
 - Files that must not be touched: `apps/web/**`, Alembic migrations, ingestion routes, alert routes.
 - Dependencies: None.
-- Acceptance criteria: `pytest -q tests/test_location_company_seed_docx.py tests/test_market_canonicalization.py` passes.
-- Tests: The two files above, plus a focused import/collection check for the DOCX service module.
+- Status: Completed and approved in commit `1c95a3a` after review.
+- Acceptance criteria: `pytest -q tests/test_location_company_seed_docx.py tests/test_market_canonicalization.py` and `pytest -q tests/test_backfill_source_company_identity.py` pass; full API suite passes.
+- Tests: `pytest -q tests/test_location_company_seed_docx.py`, `pytest -q tests/test_backfill_source_company_identity.py`, `pytest -q tests/test_market_canonicalization.py`, and `pytest -q`.
 - Risk level: Low.
 - Can run in parallel: Yes, but not with Task 2 if both change shared canonicalization semantics.
 
@@ -30,6 +31,7 @@
 - Likely files: `apps/api/app/jobs/backfill_source_company_identity.py`, `apps/api/tests/test_backfill_source_company_identity.py`.
 - Files that must not be touched: `apps/api/app/api/routes/*`, `apps/web/**`, `apps/api/app/services/source_file_ingestion.py`.
 - Dependencies: Task 1 if the canonicalization helper surface is changed there.
+- Status: Completed and approved in commit `1c95a3a` after review.
 - Acceptance criteria: `pytest -q tests/test_backfill_source_company_identity.py` passes.
 - Tests: The backfill unit test file plus the relevant helper tests if lookup semantics move.
 - Risk level: Medium.

@@ -9,6 +9,8 @@
 - Saved searches and watchlists exist with CRUD and preview flows.
 - Alerts exist with rule CRUD, recent-alert views, acknowledgement, resolution, and email notification hooks.
 - Quote export exists.
+- The DOCX benchmark filtering helper contract is restored and the DOCX seed path is back to passing collection and tests.
+- Source-company backfill alias resolution for GLG-style cases is fixed and covered by tests.
 
 ## Partial
 - The dashboard is responsive in CSS terms, but it is still a dense desktop-first table UI.
@@ -25,8 +27,6 @@
 - Watchlists are CRUD + preview only; there is no scheduled watchlist execution/alert loop exposed to users.
 - Price alerts exist, but the provider abstraction is still effectively email-only.
 - Access control is header-based and implicit. There is no real auth/session layer in the active app.
-- The location/company DOCX seed extraction path is currently broken because of the missing benchmark-label helper import.
-- Backfill logic for source-derived company identities is currently failing tests for GLG-style aliases.
 
 ## Obsolete or Misleading
 - `docs/architecture/module-plan.md` says several areas are scaffold-only, but those areas are now implemented.
@@ -39,4 +39,3 @@
 - Admins can prioritize source winners, but they cannot yet directly maintain all company/location mappings from the product UI.
 - Users can create alerts and watchlists, but there is no clear delivery history or scheduled monitoring experience tied to them.
 - The app can be operated locally and via scripts, but production-grade access control is not yet represented in the app itself.
-

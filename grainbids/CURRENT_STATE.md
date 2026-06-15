@@ -35,6 +35,7 @@
 - `app/services/source_health.py` records per-source health snapshots and confidence scores.
 - `app/services/alert_evaluator.py` evaluates alert rules against snapshots and deduplicates open alerts.
 - `app/services/alert_notifier.py` can send email notifications and writes `notification_logs` rows for sent, skipped, and failed deliveries.
+- The DOCX benchmark-label helper contract and source-company backfill alias resolution defects from the audit have been fixed in committed Task 1 changes.
 
 ### Web surface
 - `app/page.tsx` renders the market dashboard shell and then mounts the dashboard page.
@@ -70,14 +71,12 @@
 - The docs in `docs/architecture/module-plan.md` and `docs/product/sprint-01-core-parity.md` are not reliable indicators of current implementation; they describe some features as scaffolds even though the code now exists.
 
 ## Verified Breaks
-- Full backend test collection fails because `app/services/location_company_seed_docx.py` imports `is_benchmark_location_label` from `app/services/market_canonicalization.py`, but that symbol is not defined there.
-- After ignoring that file, `tests/test_backfill_source_company_identity.py` still fails two assertions around `_desired_company_id_for_row`.
-- With those two suites ignored, the rest of the API tests pass.
-- `npm run build` in `apps/web` failed on this machine with `spawn EPERM` from Next worker startup, so the web production build is not currently verified in this environment.
+- The Task 1 backend defects were resolved in commit `1c95a3a` and reviewed as approved.
+- The remaining known verification gap from the earlier audit is that `npm run build` in `apps/web` failed on this machine with `spawn EPERM` from Next worker startup.
 
 ## Verification Run
-- `pytest -q` in `apps/api` stopped at collection with the missing `is_benchmark_location_label` import.
-- `pytest -q --ignore=tests/test_location_company_seed_docx.py` in `apps/api` produced 2 failures in `tests/test_backfill_source_company_identity.py`.
-- `pytest -q --ignore=tests/test_location_company_seed_docx.py --ignore=tests/test_backfill_source_company_identity.py` passed 90 tests.
-- `npm run build` in `apps/web` failed with `spawn EPERM`.
-
+- `pytest -q tests/test_location_company_seed_docx.py` passed with 2 tests.
+- `pytest -q tests/test_backfill_source_company_identity.py` passed with 6 tests.
+- `pytest -q tests/test_market_canonicalization.py` passed with 8 tests.
+- `pytest -q` in `apps/api` passed with 99 tests and 1 warning.
+- `npm run build` in `apps/web` previously failed with `spawn EPERM` and remains the outstanding web verification gap.
