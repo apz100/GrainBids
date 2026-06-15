@@ -126,6 +126,8 @@ const EASTERN_ONTARIO_LOCATION_SEARCH_TERMS = [
 type FilterState = {
   commodity: string;
   location_id: string;
+  origin_location_id: string;
+  radius_miles: string;
   company_id: string;
   region: string;
   captured_date: string;
@@ -136,6 +138,8 @@ type FilterState = {
 const DEFAULT_FILTERS: FilterState = {
   commodity: "Corn",
   location_id: "",
+  origin_location_id: "",
+  radius_miles: "50",
   company_id: "",
   region: "",
   captured_date: "",
@@ -251,7 +255,7 @@ export default function DashboardPage() {
     setError((prev) => (prev.startsWith("Missing NEXT_PUBLIC_") ? prev : ""));
     try {
       const enforceEasternOntarioDefault =
-        !filters.location_id && !filters.company_id && !filters.region;
+        !filters.location_id && !filters.company_id && !filters.region && !filters.origin_location_id;
       const selectedLocationName =
         (facets.location_rows || []).find((row) => row.id === filters.location_id)?.name || "";
       const query = buildMarketQuery(filters, selectedLocationName);
@@ -482,6 +486,38 @@ export default function DashboardPage() {
             Reset
           </button>
         </div>
+        <div className="mt-2 grid gap-2 md:grid-cols-[1fr_160px]">
+          <select
+            value={filters.origin_location_id}
+            onChange={(event) =>
+              setFilters((prev) => ({
+                ...prev,
+                origin_location_id: event.target.value,
+              }))
+            }
+            className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
+          >
+            <option value="">All origins</option>
+            {(facets.location_rows || []).map((location) => (
+              <option key={location.id} value={location.id}>
+                {location.name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            min="1"
+            max="1000"
+            step="1"
+            value={filters.radius_miles}
+            onChange={(event) => setFilters((prev) => ({ ...prev, radius_miles: event.target.value }))}
+            placeholder="Radius (mi)"
+            className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm"
+          />
+        </div>
+        <p className="mt-2 text-xs text-black/55">
+          Radius search uses the selected origin location and skips rows without usable coordinates.
+        </p>
         {canUseDebugView ? (
           <label className="mt-2 inline-flex items-center gap-2 text-xs text-black/65">
             <input
@@ -1032,6 +1068,11 @@ function buildMarketQuery(filters: FilterState, selectedLocationName?: string) {
     params.set("location", selectedLocationName);
   } else if (filters.location_id) {
     params.set("location_id", filters.location_id);
+  }
+  const radiusMiles = Number(filters.radius_miles);
+  if (filters.origin_location_id && Number.isFinite(radiusMiles) && radiusMiles > 0) {
+    params.set("origin_location_id", filters.origin_location_id);
+    params.set("radius_miles", filters.radius_miles);
   }
   if (filters.company_id) params.set("company_id", filters.company_id);
   if (filters.region) params.set("region", filters.region);

@@ -35,6 +35,7 @@ from app.services.market_canonicalization import (
 
 router = APIRouter(prefix="/api/normalized-prices", tags=["normalized-prices"])
 QUALITY_SCORE_FIELDS = 7.0
+EARTH_RADIUS_MILES = 3958.7613
 LOCATION_COMPANY_DISPLAY_OVERRIDES = {
     "prescott": "Port of Prescott",
     "cardinal": "Ingredion",
@@ -168,6 +169,8 @@ def _build_filters(
     captured_date: date | None,
     company_id: uuid.UUID | None = None,
     location_id: uuid.UUID | None = None,
+    origin_location_id: uuid.UUID | None = None,
+    radius_miles: float | None = None,
 ):
     filters = []
 
@@ -193,8 +196,46 @@ def _build_filters(
         start_dt = datetime.combine(captured_date, time.min, tzinfo=timezone.utc)
         end_dt = datetime.combine(captured_date, time.max, tzinfo=timezone.utc)
         filters.append(and_(PriceSnapshot.captured_at >= start_dt, PriceSnapshot.captured_at <= end_dt))
+    filters.extend(_build_origin_radius_filters(origin_location_id=origin_location_id, radius_miles=radius_miles))
 
     return filters
+
+
+def _build_origin_radius_filters(
+    *,
+    origin_location_id: uuid.UUID | None,
+    radius_miles: float | None,
+) -> list:
+    if origin_location_id is None or radius_miles is None:
+        return []
+    if radius_miles <= 0:
+        return [false()]
+
+    origin_lat = select(Location.latitude).where(Location.id == origin_location_id).scalar_subquery()
+    origin_lon = select(Location.longitude).where(Location.id == origin_location_id).scalar_subquery()
+    origin_has_coords = and_(origin_lat.is_not(None), origin_lon.is_not(None))
+    location_has_coords = and_(Location.latitude.is_not(None), Location.longitude.is_not(None))
+    origin_lat_rad = func.radians(origin_lat)
+    origin_lon_rad = func.radians(origin_lon)
+    location_lat_rad = func.radians(Location.latitude)
+    location_lon_rad = func.radians(Location.longitude)
+    half_dlat = (location_lat_rad - origin_lat_rad) / 2
+    half_dlon = (location_lon_rad - origin_lon_rad) / 2
+    haversine_a = (
+        func.sin(half_dlat) * func.sin(half_dlat)
+        + func.cos(origin_lat_rad) * func.cos(location_lat_rad) * func.sin(half_dlon) * func.sin(half_dlon)
+    )
+    distance_expr = (2 * EARTH_RADIUS_MILES) * func.asin(func.sqrt(func.least(1.0, func.greatest(0.0, haversine_a))))
+
+    return [
+        NormalizedPrice.location_id.is_not(None),
+        NormalizedPrice.location_id.in_(
+            select(Location.id)
+            .where(location_has_coords)
+            .where(origin_has_coords)
+            .where(distance_expr <= radius_miles)
+        ),
+    ]
 
 
 def _canonical_source_filter_values(source_name: str | None) -> list[str]:
@@ -725,6 +766,8 @@ def _load_preview_payload(
     region: str | None,
     company_id: uuid.UUID | None,
     location_id: uuid.UUID | None,
+    origin_location_id: uuid.UUID | None,
+    radius_miles: float | None,
     captured_date: date | None,
     include_non_canonical: bool,
     sort: str,
@@ -739,6 +782,8 @@ def _load_preview_payload(
         captured_date=captured_date,
         company_id=company_id,
         location_id=location_id,
+        origin_location_id=origin_location_id,
+        radius_miles=radius_miles,
     )
     query: Select = _base_query(context, enforce_latest=enforce_latest)
     query = query.where(*_user_visible_market_filters(include_non_canonical))
@@ -808,6 +853,8 @@ def list_normalized_prices(
     region: str | None = Query(None),
     company_id: uuid.UUID | None = Query(None),
     location_id: uuid.UUID | None = Query(None),
+    origin_location_id: uuid.UUID | None = Query(None),
+    radius_miles: float | None = Query(None, gt=0, le=1000),
     captured_date: date | None = Query(None),
     include_non_canonical: bool = Query(False),
     limit: int = Query(200, ge=1, le=1000),
@@ -825,6 +872,8 @@ def list_normalized_prices(
         captured_date=captured_date,
         company_id=company_id,
         location_id=location_id,
+        origin_location_id=origin_location_id,
+        radius_miles=radius_miles,
     )
     if filters:
         query = query.where(*filters)
@@ -882,6 +931,8 @@ def list_normalized_prices(
 def facets(
     captured_date: date | None = Query(None),
     include_non_canonical: bool = Query(False),
+    origin_location_id: uuid.UUID | None = Query(None),
+    radius_miles: float | None = Query(None, gt=0, le=1000),
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
@@ -893,6 +944,8 @@ def facets(
         source_name=None,
         region=None,
         captured_date=captured_date,
+        origin_location_id=origin_location_id,
+        radius_miles=radius_miles,
     )
     commodity_query = (
         select(func.distinct(NormalizedPrice.commodity_name))
@@ -1084,6 +1137,8 @@ def preview(
     region: str | None = Query(None),
     company_id: uuid.UUID | None = Query(None),
     location_id: uuid.UUID | None = Query(None),
+    origin_location_id: uuid.UUID | None = Query(None),
+    radius_miles: float | None = Query(None, gt=0, le=1000),
     captured_date: date | None = Query(None),
     include_non_canonical: bool = Query(False),
     sort: str = Query(
@@ -1104,6 +1159,8 @@ def preview(
             region=region,
             company_id=company_id,
             location_id=location_id,
+            origin_location_id=origin_location_id,
+            radius_miles=radius_miles,
             captured_date=captured_date,
             include_non_canonical=include_non_canonical,
             sort=sort,
@@ -1120,6 +1177,8 @@ def preview_grouped(
     region: str | None = Query(None),
     company_id: uuid.UUID | None = Query(None),
     location_id: uuid.UUID | None = Query(None),
+    origin_location_id: uuid.UUID | None = Query(None),
+    radius_miles: float | None = Query(None, gt=0, le=1000),
     captured_date: date | None = Query(None),
     include_non_canonical: bool = Query(False),
     sort: str = Query(
@@ -1140,6 +1199,8 @@ def preview_grouped(
         region=region,
         company_id=company_id,
         location_id=location_id,
+        origin_location_id=origin_location_id,
+        radius_miles=radius_miles,
         captured_date=captured_date,
         include_non_canonical=include_non_canonical,
         sort=sort,
@@ -1159,6 +1220,8 @@ def top_movers(
     region: str | None = Query(None),
     company_id: uuid.UUID | None = Query(None),
     location_id: uuid.UUID | None = Query(None),
+    origin_location_id: uuid.UUID | None = Query(None),
+    radius_miles: float | None = Query(None, gt=0, le=1000),
     captured_date: date | None = Query(None),
     include_non_canonical: bool = Query(False),
     limit: int = Query(10, ge=1, le=100),
@@ -1187,6 +1250,8 @@ def top_movers(
         captured_date=captured_date,
         company_id=company_id,
         location_id=location_id,
+        origin_location_id=origin_location_id,
+        radius_miles=radius_miles,
     )
     if filters:
         query = query.where(*filters)
@@ -1237,6 +1302,8 @@ def summary(
     region: str | None = Query(None),
     company_id: uuid.UUID | None = Query(None),
     location_id: uuid.UUID | None = Query(None),
+    origin_location_id: uuid.UUID | None = Query(None),
+    radius_miles: float | None = Query(None, gt=0, le=1000),
     captured_date: date | None = Query(None),
     include_non_canonical: bool = Query(False),
     context: RequestContext = Depends(get_request_context),
@@ -1252,6 +1319,8 @@ def summary(
         captured_date=captured_date,
         company_id=company_id,
         location_id=location_id,
+        origin_location_id=origin_location_id,
+        radius_miles=radius_miles,
     )
 
     normalized_basis_expr = case(
