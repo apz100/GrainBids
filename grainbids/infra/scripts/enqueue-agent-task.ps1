@@ -41,10 +41,18 @@ $taskPath = Join-Path $queueFolder $fileName
 $branch = "agent/$slug"
 $worktree = Join-Path $repoRoot ".worktrees\$slug"
 
-$existingActive = Find-AgentTasks -RepoRoot $repoRoot -Slug $slug -Branch $branch -States @('queued', 'in-progress', 'review', 'approved')
+$existingActive = @(
+  Find-AgentTasks -RepoRoot $repoRoot -Slug $slug -Branch $branch -States @('queued', 'in-progress', 'review', 'approved', 'blocked', 'done') -IncludeMergePrep
+)
 if ($existingActive.Count -gt 0) {
   $first = $existingActive[0]
-  Write-Host "Task already exists in active queue state:"
+  $alreadyApplied = Test-AgentBranchMergedIntoMain -Branch $branch -RepoRoot $repoRoot
+  if ($alreadyApplied -or $first.State -in @('done', 'merge-prep')) {
+    Write-Host "Task already exists or has already been applied:"
+  }
+  else {
+    Write-Host "Task already exists in active queue state:"
+  }
   Write-Host "  state: $($first.State)"
   Write-Host "  path:  $($first.Path)"
   exit 0

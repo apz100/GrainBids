@@ -21,6 +21,14 @@ function Get-AgentQueueRoot {
   return Join-Path $RepoRoot ".agent\queue"
 }
 
+function Get-AgentMergePrepFolder {
+  param([string]$RepoRoot)
+  if (-not $RepoRoot) {
+    $RepoRoot = Get-AgentRepoRoot
+  }
+  return Join-Path $RepoRoot '.agent\merge-prep'
+}
+
 function Get-AgentStateFolder {
   param(
     [Parameter(Mandatory = $true)]
@@ -238,7 +246,8 @@ function Find-AgentTasks {
     [string]$RepoRoot,
     [string]$Slug,
     [string]$Branch,
-    [string[]]$States
+    [string[]]$States,
+    [switch]$IncludeMergePrep
   )
 
   if (-not $RepoRoot) {
@@ -254,6 +263,13 @@ function Find-AgentTasks {
     $stateFolders = $stateFolders | Where-Object { $allowed.ContainsKey($_.State) }
   }
 
+  if ($IncludeMergePrep) {
+    $stateFolders += [pscustomobject]@{
+      State  = 'merge-prep'
+      Folder = Get-AgentMergePrepFolder -RepoRoot $RepoRoot
+    }
+  }
+
   $matches = New-Object System.Collections.Generic.List[object]
   foreach ($entry in $stateFolders) {
     if (-not (Test-Path $entry.Folder)) {
@@ -266,10 +282,18 @@ function Find-AgentTasks {
       $task = Read-AgentTaskFile -Path $file.FullName
       $taskSlug = $task.Metadata['slug']
       $taskBranch = $task.Metadata['branch']
-      if (
+      $isMatch = $false
+      if ([string]::IsNullOrWhiteSpace($Slug) -and [string]::IsNullOrWhiteSpace($Branch)) {
+        $isMatch = $true
+      }
+      elseif (
         ($Slug -and $taskSlug -eq $Slug) -or
         ($Branch -and $taskBranch -eq $Branch)
       ) {
+        $isMatch = $true
+      }
+
+      if ($isMatch) {
         $matches.Add([pscustomobject]@{
           State = $entry.State
           Path = $file.FullName
@@ -280,6 +304,39 @@ function Find-AgentTasks {
   }
 
   return $matches
+}
+
+function Test-AgentBranchMergedIntoMain {
+  param(
+    [Parameter(Mandatory = $true)][string]$Branch,
+    [string]$RepoRoot,
+    [string]$MainBranch = 'main'
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Branch)) {
+    return $false
+  }
+
+  if (-not $RepoRoot) {
+    $RepoRoot = Get-AgentRepoRoot
+  }
+
+  $mainRefs = @("origin/$MainBranch", $MainBranch)
+  $targetRef = $null
+  foreach ($ref in $mainRefs) {
+    & git -C $RepoRoot rev-parse --verify --quiet "$ref^{commit}" | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+      $targetRef = $ref
+      break
+    }
+  }
+
+  if (-not $targetRef) {
+    return $false
+  }
+
+  & git -C $RepoRoot merge-base --is-ancestor $Branch $targetRef | Out-Null
+  return ($LASTEXITCODE -eq 0)
 }
 
 function Test-AgentWorktreeHasImplementation {

@@ -78,6 +78,7 @@ Recommended scripts:
 - `infra/scripts/prepare-agent-merge.ps1`
 - `infra/scripts/close-agent-task.ps1`
 - `infra/scripts/list-agent-tasks.ps1`
+- `infra/scripts/verify-agent-queue.ps1`
 - `infra/scripts/watch-agent-queue.ps1`
 
 ## Suggested Process

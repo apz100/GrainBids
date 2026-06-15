@@ -109,5 +109,17 @@ git -C $repoRoot push origin $mainBranch
 $doneFolder = Get-AgentStateFolder -State 'done' -RepoRoot $repoRoot
 $updatedTaskPath = Move-AgentTaskFile -SourcePath $TaskPath -TargetFolder $doneFolder -NewState 'done'
 
+$staleArtifacts = @(
+  Find-AgentTasks -RepoRoot $repoRoot -Branch $branch -States @('queued', 'in-progress', 'review', 'approved', 'blocked', 'done') -IncludeMergePrep
+)
+foreach ($artifact in $staleArtifacts) {
+  if ($artifact.Path -eq $updatedTaskPath) {
+    continue
+  }
+  Remove-Item -LiteralPath $artifact.Path -Force
+  Write-Host "Removed stale queue artifact:"
+  Write-Host "  $($artifact.Path)"
+}
+
 Write-Host "Merged and marked done:"
 Write-Host "  $updatedTaskPath"

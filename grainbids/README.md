@@ -49,7 +49,7 @@ Web:
 - Guide: `docs/operations/multi-agent-workflow.md`
 - Task template: `docs/operations/TASK.template.md`
 - Worktree bootstrap: `infra/scripts/new-agent-worktree.ps1`
-- Queue tools: `infra/scripts/enqueue-agent-task.ps1`, `infra/scripts/start-next-agent-task.ps1`, `infra/scripts/start-agent-task.ps1`, `infra/scripts/review-agent-task.ps1`, `infra/scripts/prepare-agent-merge.ps1`, `infra/scripts/close-agent-task.ps1`, `infra/scripts/list-agent-tasks.ps1`, `infra/scripts/watch-agent-queue.ps1`
+- Queue tools: `infra/scripts/enqueue-agent-task.ps1`, `infra/scripts/start-next-agent-task.ps1`, `infra/scripts/start-agent-task.ps1`, `infra/scripts/review-agent-task.ps1`, `infra/scripts/prepare-agent-merge.ps1`, `infra/scripts/close-agent-task.ps1`, `infra/scripts/list-agent-tasks.ps1`, `infra/scripts/verify-agent-queue.ps1`, `infra/scripts/watch-agent-queue.ps1`
 - Use one worktree per task and keep task scope narrow enough for review in one diff.
 
 DB migrate:
