@@ -10,6 +10,7 @@ from app.core.request_context import RequestContext, get_request_context, requir
 from app.db.session import get_db
 from app.models.alert import Alert
 from app.models.alert_rule import AlertRule
+from app.models.notification_log import NotificationLog
 from app.models.saved_search import SavedSearch
 
 
@@ -22,7 +23,7 @@ ALERT_STATUSES = OPEN_ALERT_STATUSES | {"acknowledged", "resolved"}
 def module_info():
     return {
         "module": "alerts",
-        "primary_routes": ["/api/alerts/rules", "/api/alerts/recent"],
+        "primary_routes": ["/api/alerts/rules", "/api/alerts/recent", "/api/alerts/notification-logs"],
     }
 
 
@@ -92,6 +93,21 @@ def list_recent_alerts(
             for alert, rule in rows
         ]
     }
+
+
+@router.get("/notification-logs")
+def list_notification_logs(
+    limit: int = Query(50, ge=1, le=200),
+    context: RequestContext = Depends(get_request_context),
+    db: Session = Depends(get_db),
+):
+    rows = db.execute(
+        select(NotificationLog)
+        .where(NotificationLog.org_id == context.org_id)
+        .order_by(desc(NotificationLog.created_at), desc(NotificationLog.id))
+        .limit(limit)
+    ).scalars().all()
+    return {"rows": [_serialize_notification_log(row) for row in rows]}
 
 
 @router.patch("/{alert_id}/status")
@@ -247,3 +263,16 @@ def _parse_delivery_months(raw: str | None) -> list[str] | None:
     values = [chunk.strip() for chunk in raw.split(",")]
     normalized = [value for value in values if value]
     return normalized or None
+
+
+def _serialize_notification_log(row: NotificationLog) -> dict[str, str | None]:
+    return {
+        "id": str(row.id),
+        "alert_id": str(row.alert_id) if row.alert_id else None,
+        "channel": row.channel,
+        "recipient": row.recipient,
+        "status": row.status,
+        "provider_message_id": row.provider_message_id,
+        "error_message": row.error_message,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }

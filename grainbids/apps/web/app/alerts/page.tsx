@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { API_BASE, buildApiHeaders } from "@/lib/api";
+import {
+  formatNotificationTimestamp,
+  formatNotificationValue,
+  notificationStatusClass,
+} from "@/lib/alerts-history.mjs";
 
 type AlertRuleRow = {
   id: string;
@@ -34,11 +39,23 @@ type RecentAlert = {
   location: string | null;
 };
 
+type NotificationLogRow = {
+  id: string;
+  alert_id: string | null;
+  channel: string;
+  recipient: string | null;
+  status: string;
+  provider_message_id: string | null;
+  error_message: string | null;
+  created_at: string | null;
+};
+
 export default function AlertsPage() {
   const headers = buildApiHeaders();
   const [rules, setRules] = useState<AlertRuleRow[]>([]);
   const [savedSearches, setSavedSearches] = useState<SavedSearchRow[]>([]);
   const [alerts, setAlerts] = useState<RecentAlert[]>([]);
+  const [notificationLogs, setNotificationLogs] = useState<NotificationLogRow[]>([]);
   const [openOnly, setOpenOnly] = useState(true);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -60,16 +77,19 @@ export default function AlertsPage() {
     setError("");
     try {
       const openOnlyQuery = openOnly ? "&open_only=true" : "";
-      const [rulesRes, alertsRes] = await Promise.all([
+      const [rulesRes, alertsRes, logsRes] = await Promise.all([
         fetch(`${API_BASE}/api/alerts/rules`, { cache: "no-store", headers }),
         fetch(`${API_BASE}/api/alerts/recent?limit=25${openOnlyQuery}`, { cache: "no-store", headers }),
+        fetch(`${API_BASE}/api/alerts/notification-logs?limit=25`, { cache: "no-store", headers }),
       ]);
       const savedSearchesRes = await fetch(`${API_BASE}/api/saved-searches`, { cache: "no-store", headers });
       const rulesJson = rulesRes.ok ? await rulesRes.json() : { rows: [] };
       const alertsJson = alertsRes.ok ? await alertsRes.json() : { rows: [] };
+      const logsJson = logsRes.ok ? await logsRes.json() : { rows: [] };
       const savedSearchesJson = savedSearchesRes.ok ? await savedSearchesRes.json() : { rows: [] };
       setRules(rulesJson.rows || []);
       setAlerts(alertsJson.rows || []);
+      setNotificationLogs(logsJson.rows || []);
       setSavedSearches(savedSearchesJson.rows || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -405,10 +425,68 @@ export default function AlertsPage() {
             </tbody>
           </table>
         </div>
-        <Link href="/bids" className="mt-4 inline-flex rounded-md border border-black/20 bg-white/80 px-3 py-2 text-sm hover:border-black/40">
-          Back to market
-        </Link>
       </section>
+
+      <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Notification history</h2>
+            <p className="mt-2 text-sm text-black/65">
+              Delivery attempts from the notifier, including sent, skipped, and failed records.
+            </p>
+          </div>
+          <button
+            disabled={loading}
+            onClick={() => loadData()}
+            className="rounded-md border border-black/20 bg-white px-3 py-2 text-xs disabled:opacity-50"
+          >
+            Refresh
+          </button>
+        </div>
+
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/50">
+                <th className="px-2 py-2">Timestamp</th>
+                <th className="px-2 py-2">Status</th>
+                <th className="px-2 py-2">Channel</th>
+                <th className="px-2 py-2">Recipient</th>
+                <th className="px-2 py-2">Provider Message ID</th>
+                <th className="px-2 py-2">Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {notificationLogs.length === 0 ? (
+                <tr>
+                  <td className="px-2 py-4 text-black/55" colSpan={6}>
+                    No notification history yet.
+                  </td>
+                </tr>
+              ) : (
+                notificationLogs.map((row) => (
+                  <tr key={row.id} className="border-b border-black/5">
+                    <td className="px-2 py-2">{formatNotificationTimestamp(row.created_at)}</td>
+                    <td className="px-2 py-2">
+                      <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${notificationStatusClass(row.status)}`}>
+                        {formatNotificationValue(row.status)}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2">{formatNotificationValue(row.channel)}</td>
+                    <td className="px-2 py-2">{formatNotificationValue(row.recipient)}</td>
+                    <td className="px-2 py-2 text-xs">{formatNotificationValue(row.provider_message_id)}</td>
+                    <td className="px-2 py-2 text-xs text-black/70">{formatNotificationValue(row.error_message)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <Link href="/bids" className="mt-4 inline-flex rounded-md border border-black/20 bg-white/80 px-3 py-2 text-sm hover:border-black/40">
+        Back to market
+      </Link>
     </main>
   );
 }
