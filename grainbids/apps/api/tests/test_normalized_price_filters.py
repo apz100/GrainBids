@@ -7,6 +7,7 @@ from app.api.routes.normalized_prices import (
     _append_forced_company_rows,
     _build_market_period_recency_filters,
     _build_quality_filters,
+    _build_filters,
     _canonical_month_label,
     _canonical_and_quality_filters,
     _group_preview_rows_by_delivery,
@@ -31,6 +32,16 @@ def test_user_visible_market_filters_for_alternates_still_include_quality_gate()
     quality_filters = _build_quality_filters()
 
     assert len(combined_filters) >= len(quality_filters)
+
+
+def test_build_filters_requires_origin_and_radius_for_radius_search() -> None:
+    origin_location_id = uuid.uuid4()
+
+    no_radius_filters = _build_filters(None, None, None, None, None, origin_location_id=origin_location_id)
+    radius_filters = _build_filters(None, None, None, None, None, origin_location_id=origin_location_id, radius_miles=50)
+
+    assert no_radius_filters == []
+    assert len(radius_filters) == 2
 
 
 def test_group_preview_rows_by_delivery_sorts_months_and_limits_rows() -> None:

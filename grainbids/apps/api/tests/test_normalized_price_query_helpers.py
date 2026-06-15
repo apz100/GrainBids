@@ -5,9 +5,13 @@ from decimal import Decimal
 from types import SimpleNamespace
 import uuid
 
+from sqlalchemy import and_, select
+from sqlalchemy.dialects import postgresql
+
 from app.api.routes.normalized_prices import (
     _coalesce_zero,
     _canonical_source_filter_values,
+    _build_origin_radius_filters,
     _display_company_name,
     _display_company_name_for_row,
     _serialize_preview_row,
@@ -119,3 +123,16 @@ def test_serialize_preview_row_includes_basis_last_changed_at() -> None:
     )
     assert row["basis_last_changed_at"] == "2026-05-28T20:56:26+00:00"
     assert row["futures_change"] == 0.15
+
+
+def test_build_origin_radius_filters_compile_to_coordinate_distance_clause() -> None:
+    origin_location_id = uuid.uuid4()
+    filters = _build_origin_radius_filters(origin_location_id=origin_location_id, radius_miles=50)
+    statement = select(1).where(and_(*filters))
+    sql = str(statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+
+    assert "locations.latitude" in sql
+    assert "locations.longitude" in sql
+    assert "asin" in sql.lower()
+    assert str(origin_location_id) in sql
+    assert "50" in sql
