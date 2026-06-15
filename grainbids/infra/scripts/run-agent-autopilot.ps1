@@ -115,6 +115,11 @@ function Process-ReviewTask {
     return $true
   }
 
+  if (-not (Test-AgentWorktreeHasImplementation -Worktree $worktree -RepoRoot $repoRoot)) {
+    Move-ToBlocked -TaskPath $TaskFile.FullName -Reason "Review task '$taskTitle' has no implementation changes beyond TASK.md."
+    return $true
+  }
+
   $testCommand = Resolve-TaskTestCommand -TaskPath $TaskFile.FullName
   if ([string]::IsNullOrWhiteSpace($testCommand)) {
     Move-ToBlocked -TaskPath $TaskFile.FullName -Reason "No review test_command set for '$taskTitle'."
@@ -146,6 +151,16 @@ function Process-ApprovedTask {
   }
 
   $taskTitle = Get-TaskTitle -TaskPath $TaskFile.FullName
+  $task = Read-AgentTaskFile -Path $TaskFile.FullName
+  $worktree = $task.Metadata['worktree']
+  if ([string]::IsNullOrWhiteSpace($worktree) -or -not (Test-Path $worktree)) {
+    Move-ToBlocked -TaskPath $TaskFile.FullName -Reason "Approved task worktree missing for '$taskTitle'."
+    return $true
+  }
+  if (-not (Test-AgentWorktreeHasImplementation -Worktree $worktree -RepoRoot $repoRoot)) {
+    Move-ToBlocked -TaskPath $TaskFile.FullName -Reason "Approved task '$taskTitle' has no implementation changes to merge."
+    return $true
+  }
   Write-Host "Auto-merging approved task '$taskTitle'..."
   $mergeScript = Join-Path $repoRoot 'grainbids\infra\scripts\prepare-agent-merge.ps1'
   try {

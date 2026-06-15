@@ -32,6 +32,22 @@ function Get-AgentStateFolder {
   return Join-Path $queueRoot $State
 }
 
+function Get-AgentTaskStateFolders {
+  param([string]$RepoRoot)
+
+  if (-not $RepoRoot) {
+    $RepoRoot = Get-AgentRepoRoot
+  }
+
+  $states = @('queued', 'in-progress', 'review', 'approved', 'blocked', 'done')
+  return $states | ForEach-Object {
+    [pscustomobject]@{
+      State  = $_
+      Folder = Get-AgentStateFolder -State $_ -RepoRoot $RepoRoot
+    }
+  }
+}
+
 function Read-AgentTaskFile {
   param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -215,4 +231,84 @@ function Invoke-AgentCommand {
   finally {
     Pop-Location
   }
+}
+
+function Find-AgentTasks {
+  param(
+    [string]$RepoRoot,
+    [string]$Slug,
+    [string]$Branch,
+    [string[]]$States
+  )
+
+  if (-not $RepoRoot) {
+    $RepoRoot = Get-AgentRepoRoot
+  }
+
+  $stateFolders = Get-AgentTaskStateFolders -RepoRoot $RepoRoot
+  if ($States -and $States.Count -gt 0) {
+    $allowed = @{}
+    foreach ($state in $States) {
+      $allowed[$state] = $true
+    }
+    $stateFolders = $stateFolders | Where-Object { $allowed.ContainsKey($_.State) }
+  }
+
+  $matches = New-Object System.Collections.Generic.List[object]
+  foreach ($entry in $stateFolders) {
+    if (-not (Test-Path $entry.Folder)) {
+      continue
+    }
+    foreach ($file in Get-ChildItem -Path $entry.Folder -Filter *.md -File) {
+      if ($file.Name -eq '.gitkeep') {
+        continue
+      }
+      $task = Read-AgentTaskFile -Path $file.FullName
+      $taskSlug = $task.Metadata['slug']
+      $taskBranch = $task.Metadata['branch']
+      if (
+        ($Slug -and $taskSlug -eq $Slug) -or
+        ($Branch -and $taskBranch -eq $Branch)
+      ) {
+        $matches.Add([pscustomobject]@{
+          State = $entry.State
+          Path = $file.FullName
+          Metadata = $task.Metadata
+        })
+      }
+    }
+  }
+
+  return $matches
+}
+
+function Test-AgentWorktreeHasImplementation {
+  param(
+    [Parameter(Mandatory = $true)][string]$Worktree,
+    [string]$RepoRoot,
+    [string]$MainBranch = 'main'
+  )
+
+  if (-not $RepoRoot) {
+    $RepoRoot = Get-AgentRepoRoot
+  }
+
+  if (-not (Test-Path $Worktree)) {
+    return $false
+  }
+
+  $trackedStatus = git -C $Worktree status --short
+  $meaningfulStatus = @($trackedStatus | Where-Object {
+    $_ -and
+    ($_ -notmatch '^\?\?\s+TASK\.md$') -and
+    ($_ -notmatch '^\s*M\s+TASK\.md$') -and
+    ($_ -notmatch '^M\s+TASK\.md$')
+  })
+  if ($meaningfulStatus.Count -gt 0) {
+    return $true
+  }
+
+  git -C $RepoRoot fetch origin --prune | Out-Null
+  $ahead = git -C $Worktree rev-list --right-only --count "origin/$MainBranch...HEAD"
+  return ([int]$ahead -gt 0)
 }

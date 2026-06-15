@@ -41,6 +41,15 @@ $taskPath = Join-Path $queueFolder $fileName
 $branch = "agent/$slug"
 $worktree = Join-Path $repoRoot ".worktrees\$slug"
 
+$existingActive = Find-AgentTasks -RepoRoot $repoRoot -Slug $slug -Branch $branch -States @('queued', 'in-progress', 'review', 'approved')
+if ($existingActive.Count -gt 0) {
+  $first = $existingActive[0]
+  Write-Host "Task already exists in active queue state:"
+  Write-Host "  state: $($first.State)"
+  Write-Host "  path:  $($first.Path)"
+  exit 0
+}
+
 $frontMatter = @{}
 $frontMatter['task_title'] = $TaskTitle
 $frontMatter['slug'] = $slug
