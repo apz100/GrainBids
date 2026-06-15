@@ -114,7 +114,7 @@ def list_notification_logs(
 def update_alert_status(
     alert_id: uuid.UUID,
     status: str = Query(..., min_length=2, max_length=50),
-    context: RequestContext = Depends(get_request_context),
+    context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     normalized_status = status.strip().lower()
@@ -152,7 +152,7 @@ def update_alert_status(
 @router.post("/{alert_id}/ack")
 def acknowledge_alert(
     alert_id: uuid.UUID,
-    context: RequestContext = Depends(get_request_context),
+    context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     return update_alert_status(

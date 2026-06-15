@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     api_cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
     api_enable_docs: bool = True
     allow_implicit_org: bool = True
+    auth_context_mode: str = "local_headers"
+    allow_local_header_auth: bool = True
     daily_source_file_path: str = ""
     daily_source_name: str = "daily_source_file"
     daily_source_id: str = ""
@@ -46,13 +48,21 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_runtime(self) -> "Settings":
         env = self.app_env.strip().lower()
+        auth_context_mode = self.auth_context_mode.strip().lower()
+        if auth_context_mode not in {"local_headers", "trusted_proxy"}:
+            raise ValueError("AUTH_CONTEXT_MODE must be either local_headers or trusted_proxy")
         if env in {"production", "prod"}:
             if not self.database_url.strip():
                 raise ValueError("DATABASE_URL is required when APP_ENV=production")
             if self.allow_implicit_org:
                 raise ValueError("ALLOW_IMPLICIT_ORG must be false when APP_ENV=production")
+            if auth_context_mode != "trusted_proxy":
+                raise ValueError("AUTH_CONTEXT_MODE must be trusted_proxy when APP_ENV=production")
+            if self.allow_local_header_auth:
+                raise ValueError("ALLOW_LOCAL_HEADER_AUTH must be false when APP_ENV=production")
             if not self.api_cors_origins_list:
                 raise ValueError("API_CORS_ORIGINS must include at least one origin when APP_ENV=production")
+        self.auth_context_mode = auth_context_mode
         return self
 
 

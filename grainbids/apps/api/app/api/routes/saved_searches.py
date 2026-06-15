@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Select, desc, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.request_context import RequestContext, get_request_context
+from app.core.request_context import RequestContext, get_request_context, require_admin
 from app.db.session import get_db
 from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
@@ -85,7 +85,7 @@ def create_saved_search(
     target_cash_price_bu: float | None = Query(None),
     target_basis: float | None = Query(None),
     is_active: bool = Query(True),
-    context: RequestContext = Depends(get_request_context),
+    context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     filters = _build_filters_json(
@@ -125,7 +125,7 @@ def update_saved_search(
     target_cash_price_bu: float | None = Query(None),
     target_basis: float | None = Query(None),
     is_active: bool | None = Query(None),
-    context: RequestContext = Depends(get_request_context),
+    context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     row = db.execute(
@@ -163,7 +163,7 @@ def update_saved_search(
 @router.delete("/{saved_search_id}")
 def delete_saved_search(
     saved_search_id: uuid.UUID,
-    context: RequestContext = Depends(get_request_context),
+    context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     row = db.execute(

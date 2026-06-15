@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from sqlalchemy import Select, desc, select
 from sqlalchemy.orm import Session
 
+from app.core.request_context import RequestContext, get_request_context, require_admin
 from app.db.session import get_db
 from app.models.raw_upload import RawUpload
+from app.models.source import Source
 from app.services.upload_csv import process_csv_upload
 
 
@@ -20,9 +22,12 @@ router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 def list_uploads(
     source_id: uuid.UUID | None = None,
     limit: int = Query(25, ge=1, le=200),
+    context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
-    query: Select[tuple[RawUpload]] = select(RawUpload)
+    query: Select[tuple[RawUpload]] = select(RawUpload).join(Source, Source.id == RawUpload.source_id).where(
+        Source.org_id == context.org_id
+    )
     if source_id is not None:
         query = query.where(RawUpload.source_id == source_id)
 
@@ -56,8 +61,11 @@ async def upload_csv(
     captured_at: datetime | None = Form(None),
     column_map_json: str | None = Form(None),
     file: UploadFile = File(...),
+    context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
+    _assert_source_org_scope(db, source_id=source_id, org_id=context.org_id)
+
     if not file.filename:
         raise HTTPException(status_code=400, detail="file is required")
 
@@ -99,3 +107,9 @@ async def upload_csv(
         "headers": result.headers,
         "mapping": result.mapping,
     }
+
+
+def _assert_source_org_scope(db: Session, *, source_id: uuid.UUID, org_id: uuid.UUID) -> None:
+    source = db.execute(select(Source.id).where(Source.id == source_id, Source.org_id == org_id)).scalar_one_or_none()
+    if source is None:
+        raise HTTPException(status_code=404, detail="source not found for this organization")

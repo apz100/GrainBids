@@ -36,12 +36,36 @@ class RuntimeConfigTests(unittest.TestCase):
             app_env="production",
             database_url="postgresql+psycopg://test:test@localhost:5432/test",
             allow_implicit_org=False,
+            auth_context_mode="trusted_proxy",
+            allow_local_header_auth=False,
             api_cors_origins="https://grainbids.com,https://www.grainbids.com",
         )
         self.assertEqual(
             settings.api_cors_origins_list,
             ["https://grainbids.com", "https://www.grainbids.com"],
         )
+
+    def test_production_requires_trusted_auth_context(self) -> None:
+        with self.assertRaises(ValidationError):
+            Settings(
+                app_env="production",
+                database_url="postgresql+psycopg://test:test@localhost:5432/test",
+                allow_implicit_org=False,
+                auth_context_mode="local_headers",
+                allow_local_header_auth=False,
+                api_cors_origins="https://grainbids.com",
+            )
+
+    def test_production_rejects_local_header_auth(self) -> None:
+        with self.assertRaises(ValidationError):
+            Settings(
+                app_env="production",
+                database_url="postgresql+psycopg://test:test@localhost:5432/test",
+                allow_implicit_org=False,
+                auth_context_mode="trusted_proxy",
+                allow_local_header_auth=True,
+                api_cors_origins="https://grainbids.com",
+            )
 
 
 if __name__ == "__main__":

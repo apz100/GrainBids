@@ -30,6 +30,8 @@ API:
 
 Optional API env values:
 - `ALLOW_IMPLICIT_ORG=true` allows local dev requests without `X-Org-Id`.
+- `AUTH_CONTEXT_MODE=local_headers` allows local dev role/email headers; production must use `trusted_proxy`.
+- `ALLOW_LOCAL_HEADER_AUTH=true` allows local dev users that are not seeded in the `users` table.
 - `ALERT_EMAIL_*` + `ALERT_SMTP_*` enable outbound email when alert events are created.
 - `API_CORS_ORIGINS` controls allowed frontend origins.
 - `API_ENABLE_DOCS=false` can disable Swagger/OpenAPI in production.
@@ -43,7 +45,7 @@ Web:
 - This is the single active runtime architecture for GrainBids.
 - Legacy Flask/SQLite and old orchestration code are archived under `archive/`.
 - Alembic migrations live in `apps/api/alembic/versions`.
-- Admin-only routes (source refresh/seed, quote export, ingestion run trigger) accept `X-User-Role: admin`.
+- Admin-only routes accept `X-User-Role: admin` only in local-header development mode. Production resolves role from the active `users` row identified by `X-Auth-User-Id`.
 
 ## Parallel coding workflow
 - Guide: `docs/operations/multi-agent-workflow.md`
@@ -80,10 +82,14 @@ API (`apps/api`) required env:
 - `APP_ENV=production`
 - `DATABASE_URL=<supabase postgres url>`
 - `ALLOW_IMPLICIT_ORG=false`
+- `AUTH_CONTEXT_MODE=trusted_proxy`
+- `ALLOW_LOCAL_HEADER_AUTH=false`
 - `API_CORS_ORIGINS=https://grainbids.com,https://www.grainbids.com,https://<your-vercel-domain>`
 
 Web (`apps/web`) required env:
 - `NEXT_PUBLIC_API_URL=https://<your-api-domain>`
+- `NEXT_PUBLIC_ORG_ID=<org-uuid>`
+- `NEXT_PUBLIC_AUTH_USER_ID=<trusted auth user id>`
 
 Health checks:
 - Liveness: `GET /health/live`
