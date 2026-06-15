@@ -5,6 +5,7 @@
 - Tasks that touch the same canonicalization or dashboard surfaces should not run concurrently.
 - I have kept each task narrow enough to fit in one reviewable diff.
 - The persistent task specifications live under `docs/operations/tasks/wave-1/`.
+- Wave 1 Tasks 1-3 are complete and merged.
 
 ## Task Files
 - [01-stabilize-docx-backfill.md](docs/operations/tasks/wave-1/01-stabilize-docx-backfill.md)
@@ -18,7 +19,7 @@
 - Likely files: `apps/api/app/services/market_canonicalization.py`, `apps/api/app/services/location_company_seed_docx.py`, `apps/api/tests/test_location_company_seed_docx.py`, `apps/api/tests/test_market_canonicalization.py`.
 - Files that must not be touched: `apps/web/**`, Alembic migrations, ingestion routes, alert routes.
 - Dependencies: None.
-- Status: Completed and approved in commit `1c95a3a` after review.
+- Status: Completed and approved in commit `1c95a3a`; planning state recorded in `59859a6`.
 - Acceptance criteria: `pytest -q tests/test_location_company_seed_docx.py tests/test_market_canonicalization.py` and `pytest -q tests/test_backfill_source_company_identity.py` pass; full API suite passes.
 - Tests: `pytest -q tests/test_location_company_seed_docx.py`, `pytest -q tests/test_backfill_source_company_identity.py`, `pytest -q tests/test_market_canonicalization.py`, and `pytest -q`.
 - Risk level: Low.
@@ -31,7 +32,7 @@
 - Likely files: `apps/api/app/jobs/backfill_source_company_identity.py`, `apps/api/tests/test_backfill_source_company_identity.py`.
 - Files that must not be touched: `apps/api/app/api/routes/*`, `apps/web/**`, `apps/api/app/services/source_file_ingestion.py`.
 - Dependencies: Task 1 if the canonicalization helper surface is changed there.
-- Status: Completed and approved in commit `1c95a3a` after review.
+- Status: Completed and approved in commit `1c95a3a`; merged into `main` in merge commit `bc0dbfc0ee73456d79983bb28f30990ef0a65b13`.
 - Acceptance criteria: `pytest -q tests/test_backfill_source_company_identity.py` passes.
 - Tests: The backfill unit test file plus the relevant helper tests if lookup semantics move.
 - Risk level: Medium.
@@ -44,6 +45,7 @@
 - Likely files: `apps/api/app/api/routes/normalized_prices.py`, `apps/api/app/models/location.py` if model helpers are needed, `apps/web/app/dashboard/page.tsx`, `apps/web/lib/api.ts` if query helpers need to change, `apps/api/tests/test_normalized_price_filters.py`, `apps/api/tests/test_normalized_price_query_helpers.py`.
 - Files that must not be touched: Alert evaluator, watchlist CRUD, quote export, ingestion jobs.
 - Dependencies: Task 1 and Task 2 should be stabilized first so location/company identity stays consistent.
+- Status: Completed and approved in commit `1d82231788b763c01333d7cd5b2bb87b2cbd5666`; merged into `main` in merge commit `bc0dbfc0ee73456d79983bb28f30990ef0a65b13`.
 - Acceptance criteria: The API can filter by origin + radius, the dashboard can submit the new filter, and the results remain deterministic when coordinates are missing.
 - Tests: Existing normalized-price filter tests plus new radius-search coverage and a web build check if the environment allows it.
 - Risk level: Medium to high.
@@ -63,6 +65,7 @@
 
 ## Task 5. Add notification history and delivery status visibility
 - Spec file: [docs/operations/tasks/wave-1/03-alert-notification-history.md](docs/operations/tasks/wave-1/03-alert-notification-history.md)
+- Status: Completed and approved in commit `dd38bdce0de3ada37fecfa65eca7db376db4a6fe`; already present on `main`.
 - Objective: Make alert delivery outcomes visible and durable.
 - Exact scope: Expose `notification_logs` through the API, surface delivery status in the UI, and keep the notifier writing a visible record for sent, skipped, and failed deliveries.
 - Likely files: `apps/api/app/services/alert_notifier.py`, `apps/api/app/api/routes/alerts.py` or a dedicated notification route, `apps/api/app/models/notification_log.py`, `apps/web/app/alerts/page.tsx` or `apps/web/app/dashboard/open-alerts-panel.tsx`.
@@ -98,7 +101,6 @@
 - Can run in parallel: Yes, but only after the feature tasks are merged or frozen.
 
 ## Conflict Summary
-- Task 1 and Task 2 should not run concurrently if they both change the shared canonicalization model.
-- Task 3 and Task 4 should not run concurrently because they both touch the dashboard and location-selection flow.
+- Task 4 remains the main known conflict surface with future dashboard/location-selection work.
 - Task 5 and Task 6 should not run concurrently because they both affect admin-facing mutation and request-context behavior.
 - Task 7 should wait until the product-facing tasks are settled, otherwise the docs will go stale immediately.

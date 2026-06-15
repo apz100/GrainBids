@@ -10,10 +10,10 @@
 
 ### API surface
 - `app/main.py` wires real routers for bids, sources, ingestion, normalized prices, alerts, quotes, watchlists, saved searches, signals, settings, and reference data.
-- `app/api/routes/normalized_prices.py` is the core discovery API. It already supports summary, facets, preview, grouped preview, and top movers.
+- `app/api/routes/normalized_prices.py` is the core discovery API. It already supports summary, facets, preview, grouped preview, top movers, and origin-location/radius search.
 - `app/api/routes/ingestion.py` exposes ingestion runs, SLA, diagnostics, basis-change diagnostics, and source-file reprocessing.
 - `app/api/routes/sources.py` exposes source listing, seed, refresh, canonical coverage, and per-company source priority management.
-- `app/api/routes/alerts.py` exposes alert rules, recent alerts, status updates, and rule CRUD.
+- `app/api/routes/alerts.py` exposes alert rules, recent alerts, notification logs, status updates, and rule CRUD.
 - `app/api/routes/saved_searches.py` and `app/api/routes/watchlists.py` both provide CRUD plus preview endpoints.
 - `app/api/routes/quotes.py` provides quote-run history and delivered-value export generation.
 - `app/api/routes/signals.py` exposes forecast rows and a health check.
@@ -36,13 +36,14 @@
 - `app/services/alert_evaluator.py` evaluates alert rules against snapshots and deduplicates open alerts.
 - `app/services/alert_notifier.py` can send email notifications and writes `notification_logs` rows for sent, skipped, and failed deliveries.
 - The DOCX benchmark-label helper contract and source-company backfill alias resolution defects from the audit have been fixed in committed Task 1 changes.
+- Radius search and notification-history visibility were added in approved Wave 1 Task 2 and Task 3 changes.
 
 ### Web surface
 - `app/page.tsx` renders the market dashboard shell and then mounts the dashboard page.
-- `app/dashboard/page.tsx` is a real table-first market UI with commodity tabs, location/company/region filters, date and sort filters, summary stats, live preview rows, grouped monthly preview, top movers, watchlist creation, alert creation, and an open-alerts panel.
+- `app/dashboard/page.tsx` is a real table-first market UI with commodity tabs, location/company/region filters, date and sort filters, origin/radius search, summary stats, live preview rows, grouped monthly preview, top movers, watchlist creation, alert creation, and an open-alerts panel.
 - `app/bids/page.tsx` reuses the dashboard.
 - `app/sources/page.tsx` is a real admin source-management page with SLA cards, canonical coverage, source priority controls, ingestion runs, alert triage, and manual ingestion triggers.
-- `app/alerts/page.tsx` is a real alert management page with rule CRUD, alert filters, and alert acknowledgement/resolution.
+- `app/alerts/page.tsx` is a real alert management page with rule CRUD, alert filters, alert acknowledgement/resolution, and notification history visibility.
 - `app/watchlists/page.tsx` is a real watchlist and saved-search CRUD page with previews.
 - `app/quotes/page.tsx` is a real delivered-value export page.
 - `app/signals/page.tsx` is a real forecast viewer, albeit isolated from the core market flow.
@@ -71,12 +72,14 @@
 - The docs in `docs/architecture/module-plan.md` and `docs/product/sprint-01-core-parity.md` are not reliable indicators of current implementation; they describe some features as scaffolds even though the code now exists.
 
 ## Verified Breaks
-- The Task 1 backend defects were resolved in commit `1c95a3a` and reviewed as approved.
-- The remaining known verification gap from the earlier audit is that `npm run build` in `apps/web` failed on this machine with `spawn EPERM` from Next worker startup.
+- No verified backend breaks remain from the Wave 1 audit tasks.
+- The remaining known verification gap from the Wave 1 worker reports is that `npm run build` in `apps/web` failed on this machine with `spawn EPERM` from Next worker startup.
 
 ## Verification Run
 - `pytest -q tests/test_location_company_seed_docx.py` passed with 2 tests.
 - `pytest -q tests/test_backfill_source_company_identity.py` passed with 6 tests.
 - `pytest -q tests/test_market_canonicalization.py` passed with 8 tests.
-- `pytest -q` in `apps/api` passed with 99 tests and 1 warning.
+- `pytest -q tests/test_normalized_price_filters.py tests/test_normalized_price_query_helpers.py` passed with 16 tests and 1 warning.
+- `pytest -q tests/test_alert_evaluator.py tests/test_alert_notification_logs.py` passed with 7 tests and 1 warning.
+- `pytest -q` in `apps/api` passed in the worker reports for Wave 1 tasks, with totals ranging from 99 to 101 tests and 1 warning.
 - `npm run build` in `apps/web` previously failed with `spawn EPERM` and remains the outstanding web verification gap.
