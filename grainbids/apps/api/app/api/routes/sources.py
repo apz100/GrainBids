@@ -286,6 +286,7 @@ def seed_company_source_priority_defaults(
     context: RequestContext = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
+    aggregator_keys = settings.canonical_aggregator_sources_set | FILE_AGGREGATOR_KEYS
     companies = db.execute(select(Company).where(Company.org_id == context.org_id)).scalars().all()
     seeded_companies = 0
     touched_rows = 0
