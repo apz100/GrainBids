@@ -15,6 +15,7 @@
 - `app/api/routes/sources.py` exposes source listing, seed, refresh, canonical coverage, and per-company source priority management.
 - `app/api/routes/alerts.py` exposes alert rules, recent alerts, notification logs, status updates, and rule CRUD.
 - `app/api/routes/saved_searches.py` and `app/api/routes/watchlists.py` both provide CRUD plus preview endpoints.
+- `app/core/request_context.py` now resolves org and user identity explicitly. In production it requires `AUTH_CONTEXT_MODE=trusted_proxy`, `X-Auth-User-Id`, and an active `users.auth_user_id` match; local header fallback is only available where deliberately enabled for local development.
 - `app/api/routes/quotes.py` provides quote-run history and delivered-value export generation.
 - `app/api/routes/signals.py` exposes forecast rows and a health check.
 - `app/api/routes/reference.py` exposes source and commodity reference lists.
@@ -37,6 +38,7 @@
 - `app/services/alert_notifier.py` can send email notifications and writes `notification_logs` rows for sent, skipped, and failed deliveries.
 - The DOCX benchmark-label helper contract and source-company backfill alias resolution defects from the audit have been fixed in committed Task 1 changes.
 - Radius search and notification-history visibility were added in approved Wave 1 Task 2 and Task 3 changes.
+- Production-grade request-context hardening and admin-gated mutation enforcement were added in Task 6 and merged on top of Wave 1.
 
 ### Web surface
 - `app/page.tsx` renders the market dashboard shell and then mounts the dashboard page.
@@ -72,8 +74,8 @@
 - The docs in `docs/architecture/module-plan.md` and `docs/product/sprint-01-core-parity.md` are not reliable indicators of current implementation; they describe some features as scaffolds even though the code now exists.
 
 ## Verified Breaks
-- No verified backend breaks remain from the Wave 1 audit tasks.
-- The remaining known verification gap from the Wave 1 worker reports is that `npm run build` in `apps/web` failed on this machine with `spawn EPERM` from Next worker startup.
+- No verified backend breaks remain from the Wave 1 audit tasks or Task 6.
+- The Task 6 worker verification reported a successful `npm run build` in `apps/web` after the access-control changes.
 
 ## Verification Run
 - `pytest -q tests/test_location_company_seed_docx.py` passed with 2 tests.
@@ -81,5 +83,6 @@
 - `pytest -q tests/test_market_canonicalization.py` passed with 8 tests.
 - `pytest -q tests/test_normalized_price_filters.py tests/test_normalized_price_query_helpers.py` passed with 16 tests and 1 warning.
 - `pytest -q tests/test_alert_evaluator.py tests/test_alert_notification_logs.py` passed with 7 tests and 1 warning.
+- `pytest -q tests/test_config_runtime.py tests/test_request_context.py tests/test_route_authorization.py tests/test_alert_notification_logs.py` passed with 14 tests and 1 warning.
 - `pytest -q` in `apps/api` passed in the worker reports for Wave 1 tasks, with totals ranging from 99 to 101 tests and 1 warning.
-- `npm run build` in `apps/web` previously failed with `spawn EPERM` and remains the outstanding web verification gap.
+- `npm run build` in `apps/web` passed in the Task 6 worker verification after the request-context changes.

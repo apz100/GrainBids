@@ -13,6 +13,7 @@
 - The DOCX benchmark filtering helper contract is restored and the DOCX seed path is back to passing collection and tests.
 - Source-company backfill alias resolution for GLG-style cases is fixed and covered by tests.
 - Notification delivery history is now visible in the Alerts UI and API.
+- Production request-context hardening now exists: explicit org/user identity in production, deliberate local fallback only where configured, and admin-gated mutation routes.
 
 ## Partial
 - The dashboard is responsive in CSS terms, but it is still a dense desktop-first table UI.
@@ -25,7 +26,7 @@
 - There is no dedicated company/location mapping editor in the web UI.
 - Watchlists are CRUD + preview only; there is no scheduled watchlist execution/alert loop exposed to users.
 - Price alerts exist, but the provider abstraction is still effectively email-only.
-- Access control is header-based and implicit. There is no real auth/session layer in the active app.
+- Access control is still not a full external auth/session product, but it is no longer purely implicit header-based behavior in production.
 
 ## Obsolete or Misleading
 - `docs/architecture/module-plan.md` says several areas are scaffold-only, but those areas are now implemented.
@@ -37,4 +38,4 @@
 - The core discovery loop is usable, and location search is now radius-aware instead of string-based.
 - Admins can prioritize source winners, but they cannot yet directly maintain all company/location mappings from the product UI.
 - Users can create alerts and watchlists, and alert delivery history is visible, but there is still no scheduled monitoring experience tied to watchlists.
-- The app can be operated locally and via scripts, but production-grade access control is not yet represented in the app itself.
+- The app can be operated locally and via scripts, and production-grade access control is now represented through explicit request-context enforcement and mutation gating.

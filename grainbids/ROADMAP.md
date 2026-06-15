@@ -77,6 +77,7 @@
 - Can run in parallel: Not with Task 6 if the request-context or admin-gating model changes the alert UI.
 
 ## Task 6. Harden org/user access control
+- Status: completed in `d46d340` (`Harden request context access control`)
 - Spec file: not yet assigned
 - Objective: Replace the current implicit header-driven access model with a real production-grade request-context strategy.
 - Exact scope: Make org and user identity explicit in production, keep local dev support only where it is intentional, and tighten admin gating on mutation routes.
