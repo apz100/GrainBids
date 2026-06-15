@@ -30,6 +30,8 @@ LOCATION_CANONICAL_OVERRIDES = {
     "toledo corn": "Toledo Elevator",
     "toledo soybeans": "Toledo Elevator",
 }
+BENCHMARK_LOCATION_TOKENS = ("benchmark", "fob", "avg", "rep", "feed")
+BENCHMARK_LOCATION_PHRASES = ("regional price", "price index", "u.s. rep")
 
 
 def normalize_text(value: str | None) -> str | None:
@@ -129,6 +131,16 @@ def canonical_location_name(location_name: str | None) -> str | None:
         return None
     override = LOCATION_CANONICAL_OVERRIDES.get(value.casefold())
     return override or value
+
+
+def is_benchmark_location_label(location_name: str | None) -> bool:
+    normalized = canonical_location_name(location_name) or normalize_text(location_name)
+    if normalized is None:
+        return False
+    lowered = normalized.casefold()
+    if any(phrase in lowered for phrase in BENCHMARK_LOCATION_PHRASES):
+        return True
+    return any(token in lowered.split() for token in BENCHMARK_LOCATION_TOKENS)
 
 
 def source_scope(source_name: str | None) -> tuple[str, str | None]:

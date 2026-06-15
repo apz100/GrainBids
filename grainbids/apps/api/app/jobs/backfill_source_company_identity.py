@@ -47,10 +47,18 @@ def _company_lookup_maps(
         company_name_map[company_id] = company_name
         if not _source_creates_company_identity(company_name):
             continue
-        key = canonical_key(canonical_source_name(company_name))
-        if key:
+        for key in _source_lookup_keys(company_name):
             trusted_company_lookup[key] = company_id
     return company_name_map, trusted_company_lookup
+
+
+def _source_lookup_keys(source_name: str | None) -> tuple[str, ...]:
+    keys: list[str] = []
+    for candidate in (source_name, canonical_source_name(source_name)):
+        key = canonical_key(candidate)
+        if key and key not in keys:
+            keys.append(key)
+    return tuple(keys)
 
 
 def _is_trusted_company_id(
@@ -88,14 +96,16 @@ def _desired_company_id_for_row(
     trusted_company_lookup: dict[str, uuid.UUID],
 ) -> uuid.UUID | None:
     if _source_creates_company_identity(source_name):
-        source_key = canonical_key(canonical_source_name(source_name))
+        source_keys = _source_lookup_keys(source_name)
         if _is_trusted_company_id(current_company_id, company_name_map=company_name_map):
             current_company_name = company_name_map.get(current_company_id)
             current_key = canonical_key(canonical_source_name(current_company_name))
-            if current_key == source_key:
+            if current_key is not None and current_key in source_keys:
                 return current_company_id
-        if source_key:
-            return trusted_company_lookup.get(source_key)
+        for source_key in source_keys:
+            trusted_company_id = trusted_company_lookup.get(source_key)
+            if trusted_company_id is not None:
+                return trusted_company_id
         return None
     return trusted_location_company_id
 

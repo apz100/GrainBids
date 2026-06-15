@@ -11,6 +11,7 @@ from app.services.market_canonicalization import (  # noqa: E402
     canonical_commodity_name,
     canonical_location_name,
     canonical_source_name,
+    is_benchmark_location_label,
     region_source_names,
     source_scope,
 )
@@ -41,6 +42,10 @@ class MarketCanonicalizationTests(unittest.TestCase):
         self.assertEqual(canonical_location_name("Johnstown Ethanol"), "Johnstown")
         self.assertEqual(canonical_location_name("Embrun Elevator"), "Embrun")
         self.assertEqual(canonical_location_name("Embrun Co-op"), "Embrun")
+
+    def test_benchmark_location_labels(self) -> None:
+        self.assertTrue(is_benchmark_location_label("Benchmark"))
+        self.assertFalse(is_benchmark_location_label("Mitchell"))
 
     def test_commodity_aliases(self) -> None:
         self.assertEqual(canonical_commodity_name("soybean"), "Soybeans")
