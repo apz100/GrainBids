@@ -41,7 +41,7 @@
 - Production-grade request-context hardening and admin-gated mutation enforcement were added in Task 6 and merged on top of Wave 1.
 
 ### Web surface
-- `app/page.tsx` renders the market dashboard shell and then mounts the dashboard page.
+- `app/page.tsx` renders a lightweight product entry page and links into the active market dashboard at `/bids`; `/dashboard` remains the underlying dashboard route.
 - `app/dashboard/page.tsx` is a real table-first market UI with commodity tabs, location/company/region filters, date and sort filters, origin/radius search, summary stats, live preview rows, grouped monthly preview, top movers, watchlist creation, alert creation, and an open-alerts panel.
 - `app/bids/page.tsx` reuses the dashboard.
 - `app/sources/page.tsx` is a real admin source-management page with SLA cards, canonical coverage, source priority controls, ingestion runs, alert triage, and manual ingestion triggers.
@@ -70,7 +70,7 @@
 - `app/api/routes/signals.py` is real, but it is still a standalone feature island.
 - `app/modules/market_sources` is a compatibility shim that points callers to `app/platform/market_data/sources`.
 - `app/modules/imports` still contains legacy normalization helpers.
-- `app/page.tsx` renders the dashboard again below the landing content, which duplicates the `/dashboard` experience.
+- `app/page.tsx` is now a lightweight entry page; the duplicate dashboard experience no longer appears on `/`.
 - The docs in `docs/architecture/module-plan.md` and `docs/product/sprint-01-core-parity.md` are not reliable indicators of current implementation; they describe some features as scaffolds even though the code now exists.
 
 ## Verified Breaks
