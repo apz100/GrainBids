@@ -9,12 +9,13 @@ BasisBoard is the bids/market module inside GrainBids, not a separate product.
 - `packages/*`: shared package placeholders
 
 ## Product modules
-- `GrainBids / Bids`: upload, normalization, basis tracking, and market comparison
-- `GrainBids / Alerts`: threshold rules and triggered alerts
+- `GrainBids / Market`: canonical bid discovery, radius search, basis/cash movement, top movers, and watchlist/alert creation
+- `GrainBids / Sources`: source definitions, source health, ingestion runs, canonical coverage, source priority controls, and manual ingestion triggers
+- `GrainBids / Alerts`: threshold rules, open alert triage, delivery status, and notification history
 - `GrainBids / Quotes`: delivered-value and quote sheet generation
-- `GrainBids / Sources`: source definitions, mappings, and ingest
-- `GrainBids / Watchlists`: tracked markets and priority rows
-- `GrainBids / Admin`: org settings and access controls
+- `GrainBids / Watchlists`: saved market views, saved searches, CRUD, and previews
+- `GrainBids / Signals`: forecast rows and signal health
+- `GrainBids / Settings`: admin shell for organization defaults and access controls
 
 ## Local dev
 1. Copy `.env.example` to `.env` in repo root.
@@ -43,6 +44,8 @@ Web:
 
 ## Notes
 - This is the single active runtime architecture for GrainBids.
+- `/` is a lightweight product entry page. The active market dashboard is `/bids`, with `/dashboard` preserved as the underlying dashboard route.
+- `/upload` and `/uploads` are deprecated web compatibility routes that redirect to `/sources`.
 - Legacy Flask/SQLite and old orchestration code are archived under `archive/`.
 - Alembic migrations live in `apps/api/alembic/versions`.
 - Admin-only routes accept `X-User-Role: admin` only in local-header development mode. Production resolves role from the active `users` row identified by `X-Auth-User-Id`.

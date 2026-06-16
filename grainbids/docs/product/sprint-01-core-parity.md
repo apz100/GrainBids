@@ -2,6 +2,8 @@
 
 Scope: stabilize GrainBids runtime, then implement Farmbucks-style core flow (ingestion -> market search -> watchlist -> alerts).
 
+Status note: this is now a historical sprint backlog. Use `CURRENT_STATE.md`, `PRODUCT_GAPS.md`, and `docs/architecture/module-plan.md` for the live product surface.
+
 ## Phase 0 (Hardening, must finish first)
 
 1. Single active runtime path
@@ -27,35 +29,26 @@ Scope: stabilize GrainBids runtime, then implement Farmbucks-style core flow (in
 ## Sprint Backlog (Execution order)
 
 ### 1) Ingestion reliability (P0)
-- Canonicalize source/company/location names during normalization.
-- Add deterministic dedupe keys for repeated "Any <Branch>" style rows.
-- Keep scheduled runs at 08:00 and 15:00 America/Toronto.
-- Add ingestion run triage view (top reject reasons by source).
+- Done: source/company/location canonicalization exists in the ingestion flow.
+- Done: repeated source rows are handled through deterministic normalized-price persistence and diagnostics.
+- Done: scheduled ingestion scripts target 08:00 and 15:00 America/Toronto.
+- Done: ingestion SLA, run history, diagnostics, and reject-quality visibility are available from the API and Sources UI.
 
 ### 2) Market search parity (P0)
-- Add canonical entities:
-  - `companies`
-  - `locations` (with postal/lat/lng fields)
-  - mapping table between company + location
-- Build market search endpoint for:
-  - commodity
-  - location origin
-  - radius
-  - delivery month
-- Return grouped rows by delivery month and sorted by price.
+- Done: canonical `companies` and `locations` tables exist, including postal code and latitude/longitude on locations.
+- Done: market search supports commodity, company, region/location text, delivery month, and origin/radius search.
+- Done: grouped monthly preview, top movers, and sorted preview rows are exposed through normalized-price APIs and the dashboard.
 
 ### 3) Watchlists + alerts parity (P0)
-- Add `saved_searches` with month scoping and target values.
-- Extend alert rules to support saved-search linkage + month windows.
-- Add notification log table and provider abstraction (email now, SMS next).
+- Done: saved searches and watchlists exist with CRUD and preview flows.
+- Done: alert rules exist with CRUD, recent-alert visibility, acknowledgement, and resolution.
+- Done: notification logs are durable and visible; the active provider path is email.
+- Still open: scheduled watchlist execution and non-email notification providers are not productized.
 
 ### 4) Dashboard UX parity (P1)
-- Keep `/bids` table-first layout:
-  - first fold: quick filters + live table
-  - second fold: top basis movers
-  - third fold: open alerts actions
-- Add grouped month sections and "top N bids per month" panel.
-- Keep `/sources` admin-only.
+- Done: `/bids` is the table-first market layout with quick filters, live table, grouped preview, top movers, alert creation, watchlist creation, and open-alert actions.
+- Done: `/sources` is admin-only in the navigation and exposes source health, canonical coverage, source priority, ingestion runs, and manual ingestion triggers.
+- Current route posture: `/` is a lightweight entry page, not a duplicate dashboard; deprecated `/upload` and `/uploads` routes redirect to `/sources`.
 
 ## Definition of Done (Sprint 01)
 
@@ -64,3 +57,9 @@ Scope: stabilize GrainBids runtime, then implement Farmbucks-style core flow (in
 3. Location and company filters are canonicalized and de-duplicated.
 4. At least one scheduled ingestion cycle/day updates market data successfully.
 5. Saved search + alert trigger loop works end-to-end for one pilot org.
+
+## Remaining Follow-Up
+- Productize a dedicated company/location mapping editor.
+- Productize scheduled watchlist execution.
+- Expand notification providers beyond email.
+- Complete the Settings surface for organization defaults, billing, and access controls.

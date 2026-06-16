@@ -17,7 +17,8 @@ This file tracks legacy -> GrainBids migration boundaries.
 - Selected source adapters from root `*_source.py`
 - Legacy test intent from `app/tests/*` into API service tests
 
-- Grain price source pullers promoted into main API module path: `app/modules/market_sources` (copied from legacy archive).
+- Grain price source pullers live under `app/platform/market_data/sources`.
+- `app/modules/market_sources` remains only as a deprecated compatibility import shim.
 - Grain price platform layer established at `app/platform/market_data`; GrainBids modules consume this shared backend service layer.
 
 
