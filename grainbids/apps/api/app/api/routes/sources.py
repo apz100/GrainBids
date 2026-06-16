@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import case, desc, func, select
 from sqlalchemy.orm import Session
 
@@ -13,6 +14,7 @@ from app.db.session import get_db
 from app.models.commodity import Commodity
 from app.models.company import Company
 from app.models.company_source_priority import CompanySourcePriority
+from app.models.location import Location
 from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
 from app.models.source import Source
@@ -28,6 +30,10 @@ FILE_AGGREGATOR_KEYS = {
     "eastern ontario daily file",
     "eastern ontario cash bids",
 }
+
+
+class LocationCompanyMappingUpdate(BaseModel):
+    company_id: uuid.UUID | None = None
 
 
 @router.get("/module")
@@ -277,6 +283,40 @@ def put_company_source_priority(
         "company_id": str(company_id),
         "company_name": company.name,
         "source_keys": ordered_keys,
+    }
+
+
+@router.put("/locations/{location_id}/company")
+def update_location_company_mapping(
+    location_id: uuid.UUID,
+    payload: LocationCompanyMappingUpdate,
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    location = db.execute(
+        select(Location).where(Location.id == location_id, Location.org_id == context.org_id)
+    ).scalar_one_or_none()
+    if location is None:
+        raise HTTPException(status_code=404, detail="location not found")
+
+    company: Company | None = None
+    if payload.company_id is not None:
+        company = db.execute(
+            select(Company).where(Company.id == payload.company_id, Company.org_id == context.org_id)
+        ).scalar_one_or_none()
+        if company is None:
+            raise HTTPException(status_code=404, detail="company not found")
+
+    location.company_id = payload.company_id
+    db.commit()
+    db.refresh(location)
+
+    return {
+        "location_id": str(location.id),
+        "location_name": location.name,
+        "location_region": location.region,
+        "company_id": str(location.company_id) if location.company_id is not None else None,
+        "company_name": company.name if company is not None else None,
     }
 
 

@@ -119,6 +119,25 @@ type CompanyPriorityCandidateRow = {
   policy_rank: number;
 };
 
+type AmbiguousLocationCompanyRow = {
+  location_id: string;
+  location_name: string;
+  location_region: string | null;
+  candidate_company_count: number;
+  candidate_row_count: number;
+  current_company_id: string | null;
+  current_company_name: string | null;
+  candidate_companies: {
+    company_id: string;
+    company_name: string;
+    row_count: number;
+  }[];
+  top_sources: {
+    source_name: string;
+    row_count: number;
+  }[];
+};
+
 export default function SourcesPage() {
   const headers = buildApiHeaders();
   const adminAllowed = isAdminRole();
@@ -143,16 +162,20 @@ export default function SourcesPage() {
   const [coverageRows, setCoverageRows] = useState<CanonicalCoverageRow[]>([]);
   const [priorityCandidates, setPriorityCandidates] = useState<CompanyPriorityCandidateRow[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [mappingRows, setMappingRows] = useState<AmbiguousLocationCompanyRow[]>([]);
+  const [mappingSelectionByLocation, setMappingSelectionByLocation] = useState<Record<string, string>>({});
+  const [updatingMappingLocationId, setUpdatingMappingLocationId] = useState("");
 
   async function loadData() {
     const openOnlyQuery = openAlertsOnly ? "&open_only=true" : "";
-    const [runsRes, sourcesRes, slaRes, alertsRes, facetsRes, coverageRes] = await Promise.all([
+    const [runsRes, sourcesRes, slaRes, alertsRes, facetsRes, coverageRes, mappingsRes] = await Promise.all([
       fetch(`${API_BASE}/api/ingestion/runs?limit=25`, { cache: "no-store", headers }),
       fetch(`${API_BASE}/api/sources`, { cache: "no-store", headers }),
       fetch(`${API_BASE}/api/ingestion/sla`, { cache: "no-store", headers }),
       fetch(`${API_BASE}/api/alerts/recent?limit=10${openOnlyQuery}`, { cache: "no-store", headers }),
       fetch(`${API_BASE}/api/normalized-prices/facets`, { cache: "no-store", headers }),
       fetch(`${API_BASE}/api/sources/canonical-coverage?days=7`, { cache: "no-store", headers }),
+      fetch(`${API_BASE}/api/ingestion/company-identity/ambiguous-locations?limit=50`, { cache: "no-store", headers }),
     ]);
     const runsJson = runsRes.ok ? await runsRes.json() : { rows: [] };
     const sourcesJson = sourcesRes.ok ? await sourcesRes.json() : { rows: [] };
@@ -160,12 +183,18 @@ export default function SourcesPage() {
     const alertsJson = alertsRes.ok ? await alertsRes.json() : { rows: [] };
     const facetsJson: FacetsResponse = facetsRes.ok ? await facetsRes.json() : { company_rows: [] };
     const coverageJson = coverageRes.ok ? await coverageRes.json() : { rows: [] };
+    const mappingsJson = mappingsRes.ok ? await mappingsRes.json() : { rows: [] };
     setRuns(runsJson.rows || []);
     setSources(sourcesJson.rows || []);
     setSla(slaJson);
     setAlerts(alertsJson.rows || []);
     setCompanyRows(Array.isArray(facetsJson.company_rows) ? facetsJson.company_rows : []);
     setCoverageRows(Array.isArray(coverageJson.rows) ? coverageJson.rows : []);
+    const nextMappingRows: AmbiguousLocationCompanyRow[] = Array.isArray(mappingsJson.rows) ? mappingsJson.rows : [];
+    setMappingRows(nextMappingRows);
+    setMappingSelectionByLocation(
+      Object.fromEntries(nextMappingRows.map((row) => [row.location_id, row.current_company_id || ""]))
+    );
   }
 
   useEffect(() => {
@@ -329,6 +358,30 @@ export default function SourcesPage() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSavingPriority(false);
+    }
+  }
+
+  async function updateLocationCompanyMapping(locationId: string, companyId: string | null) {
+    setUpdatingMappingLocationId(locationId);
+    setMessage("");
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/sources/locations/${locationId}/company`, {
+        method: "PUT",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ company_id: companyId }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof json.detail === "string" ? json.detail : "Failed to update mapping");
+      }
+      setMessage(`Updated company mapping for ${json.location_name}.`);
+      setMappingSelectionByLocation((current) => ({ ...current, [locationId]: json.company_id || "" }));
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUpdatingMappingLocationId("");
     }
   }
 
@@ -549,6 +602,126 @@ export default function SourcesPage() {
                     <td className="px-2 py-2 text-right">{row.policy_rank}</td>
                   </tr>
                 ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="mt-8 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Company/location mappings</h2>
+            <p className="mt-2 text-sm text-black/70">
+              Review ambiguous locations from ingestion diagnostics and assign the canonical company for each location.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadData()}
+            className="rounded-md border border-black/20 bg-white px-3 py-2 text-sm"
+          >
+            Refresh mappings
+          </button>
+        </div>
+        <div className="mt-4 overflow-x-auto rounded-md border border-black/10 bg-white">
+          <table className="min-w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/50">
+                <th className="px-2 py-2">Location</th>
+                <th className="px-2 py-2">Current company</th>
+                <th className="px-2 py-2">Candidate evidence</th>
+                <th className="px-2 py-2">Top sources</th>
+                <th className="px-2 py-2">Assign company</th>
+                <th className="px-2 py-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mappingRows.length === 0 ? (
+                <tr>
+                  <td className="px-2 py-4 text-black/55" colSpan={6}>
+                    No ambiguous company/location mappings found.
+                  </td>
+                </tr>
+              ) : (
+                mappingRows.map((row) => {
+                  const selectedCompanyId = mappingSelectionByLocation[row.location_id] ?? row.current_company_id ?? "";
+                  return (
+                    <tr key={row.location_id} className="border-b border-black/5 align-top">
+                      <td className="px-2 py-2">
+                        <div className="font-medium">{row.location_name}</div>
+                        <div className="text-xs text-black/55">{row.location_region || "-"}</div>
+                        <div className="mt-1 text-xs text-black/50">
+                          {row.candidate_company_count} candidates, {row.candidate_row_count} rows
+                        </div>
+                      </td>
+                      <td className="px-2 py-2">{row.current_company_name || "Unassigned"}</td>
+                      <td className="px-2 py-2">
+                        <div className="flex max-w-sm flex-wrap gap-1">
+                          {row.candidate_companies.map((company) => (
+                            <button
+                              type="button"
+                              key={company.company_id}
+                              onClick={() =>
+                                setMappingSelectionByLocation((current) => ({
+                                  ...current,
+                                  [row.location_id]: company.company_id,
+                                }))
+                              }
+                              className="rounded-md border border-black/15 bg-white px-2 py-1 text-xs"
+                            >
+                              {company.company_name} ({company.row_count})
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-xs text-black/70">
+                        {row.top_sources.length === 0
+                          ? "-"
+                          : row.top_sources.map((source) => `${source.source_name}:${source.row_count}`).join(", ")}
+                      </td>
+                      <td className="px-2 py-2">
+                        <select
+                          value={selectedCompanyId}
+                          onChange={(event) =>
+                            setMappingSelectionByLocation((current) => ({
+                              ...current,
+                              [row.location_id]: event.target.value,
+                            }))
+                          }
+                          className="min-w-56 rounded-md border border-black/15 bg-white px-2 py-1 text-sm"
+                        >
+                          <option value="">Unassigned</option>
+                          {companyRows.map((company) => (
+                            <option key={company.id} value={company.id}>
+                              {company.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-2 py-2">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={updatingMappingLocationId === row.location_id}
+                            onClick={() => void updateLocationCompanyMapping(row.location_id, selectedCompanyId || null)}
+                            className="rounded-md border border-black/20 bg-black px-3 py-1 text-xs text-white disabled:opacity-50"
+                          >
+                            {updatingMappingLocationId === row.location_id ? "Saving..." : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={updatingMappingLocationId === row.location_id || !row.current_company_id}
+                            onClick={() => void updateLocationCompanyMapping(row.location_id, null)}
+                            className="rounded-md border border-black/20 bg-white px-3 py-1 text-xs disabled:opacity-50"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
