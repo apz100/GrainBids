@@ -20,7 +20,7 @@
 - The sources page exposes meaningful admin controls, but most mapping work is read-only or priority-based rather than a true editor for companies, locations, and source relationships.
 - Signals exists as a product area, but it is not integrated into the core discovery workflow.
 - `settings` is still a shell, so organization defaults, billing, and access controls are not productized in the UI.
-- Root `/` duplicates the dashboard content instead of acting as a distinct landing experience.
+- Root `/` is now a lightweight entry page; `/bids` is the active market dashboard, so the homepage is no longer a dashboard duplicate.
 
 ## Missing
 - There is no dedicated company/location mapping editor in the web UI.
