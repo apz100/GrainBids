@@ -29,8 +29,8 @@
 - Access control is still not a full external auth/session product, but it is no longer purely implicit header-based behavior in production.
 
 ## Obsolete or Misleading
-- `docs/architecture/module-plan.md` says several areas are scaffold-only, but those areas are now implemented.
-- `docs/product/sprint-01-core-parity.md` is useful as a historical backlog, not as a reliable live-state document.
+- `docs/architecture/module-plan.md` has been synchronized with the current implementation and should be treated as the active architecture reference.
+- `docs/product/sprint-01-core-parity.md` remains a historical backlog record, not a reliable live-state document.
 - `app/api/routes/bids.py`, `app/api/routes/settings.py`, and the `/upload` and `/uploads` redirect pages are thin compatibility surfaces rather than feature work.
 - `app/modules/market_sources` and `app/modules/imports` are compatibility layers that should be treated as migration support, not new product surfaces.
 

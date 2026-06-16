@@ -71,7 +71,7 @@
 - `app/modules/market_sources` is a compatibility shim that points callers to `app/platform/market_data/sources`.
 - `app/modules/imports` still contains legacy normalization helpers.
 - `app/page.tsx` is now a lightweight entry page; the duplicate dashboard experience no longer appears on `/`.
-- The docs in `docs/architecture/module-plan.md` and `docs/product/sprint-01-core-parity.md` are not reliable indicators of current implementation; they describe some features as scaffolds even though the code now exists.
+- `docs/architecture/module-plan.md` and `docs/product/sprint-01-core-parity.md` have been synchronized with the active product posture; `sprint-01-core-parity.md` remains a historical planning record, not a live-state source of truth.
 
 ## Verified Breaks
 - No verified backend breaks remain from the Wave 1 audit tasks or Task 6.
