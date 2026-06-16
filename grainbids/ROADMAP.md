@@ -4,13 +4,15 @@
 - This list is dependency-ordered for execution.
 - Tasks that touch the same canonicalization or dashboard surfaces should not run concurrently.
 - I have kept each task narrow enough to fit in one reviewable diff.
-- The persistent task specifications live under `docs/operations/tasks/wave-1/`.
+- The persistent task specifications live under `docs/operations/tasks/`.
 - Wave 1 Tasks 1-3 are complete and merged.
+- Wave 2 begins with Task 4.
 
 ## Task Files
 - [01-stabilize-docx-backfill.md](docs/operations/tasks/wave-1/01-stabilize-docx-backfill.md)
 - [02-radius-bid-search.md](docs/operations/tasks/wave-1/02-radius-bid-search.md)
 - [03-alert-notification-history.md](docs/operations/tasks/wave-1/03-alert-notification-history.md)
+- [04-admin-mapping-editor.md](docs/operations/tasks/wave-2/04-admin-mapping-editor.md)
 
 ## Task 1. Restore DOCX benchmark filtering
 - Spec file: [docs/operations/tasks/wave-1/01-stabilize-docx-backfill.md](docs/operations/tasks/wave-1/01-stabilize-docx-backfill.md)
@@ -52,16 +54,16 @@
 - Can run in parallel: No with Task 4 because both will touch the dashboard filter surface.
 
 ## Task 4. Build a real admin mapping editor
-- Spec file: not yet assigned
+- Spec file: [docs/operations/tasks/wave-2/04-admin-mapping-editor.md](docs/operations/tasks/wave-2/04-admin-mapping-editor.md)
 - Objective: Give admins a direct surface for company/location mappings and source priority maintenance.
-- Exact scope: Add UI and backing endpoints for inspecting and editing company-to-location relationships, while keeping source priority controls and canonical coverage visible.
-- Likely files: `apps/api/app/api/routes/sources.py` or a new mapping route module, `apps/api/app/jobs/backfill_canonical_companies.py`, `apps/api/app/jobs/backfill_canonical_locations.py`, `apps/web/app/sources/page.tsx`, possibly a new admin page under `apps/web/app/settings/`.
-- Files that must not be touched: Normalized-price query helpers, quote export, alert evaluation logic.
-- Dependencies: Task 2 should be stable first; Task 3 should already define the location selector semantics if the editor reuses it.
-- Acceptance criteria: Admins can inspect and save mapping changes without leaving the product, and the source-priority views still work.
+- Exact scope: Add admin-facing UI and backing endpoints for inspecting and editing company-to-location relationships, while keeping source priority controls and canonical coverage visible on the same surface.
+- Likely files: `apps/api/app/api/routes/sources.py`, `apps/api/app/api/routes/ingestion.py` if a diagnostic adapter is needed, `apps/api/tests/test_source_company_identity_diagnostics.py`, `apps/api/tests/test_sources_location_company_mapping.py`, `apps/web/app/sources/page.tsx`, `apps/web/lib/api.ts` if the page needs a small contract helper.
+- Files that must not be touched: `apps/api/app/api/routes/normalized_prices.py`, `apps/web/app/dashboard/page.tsx`, `apps/web/app/bids/page.tsx`, `apps/api/app/jobs/backfill_canonical_companies.py`, `apps/api/app/jobs/backfill_canonical_locations.py`, `apps/api/app/jobs/consolidate_company_aliases.py`, `apps/api/app/services/source_file_ingestion.py`, `apps/api/app/services/upload_csv.py`, `apps/web/app/alerts/page.tsx`, `apps/web/app/watchlists/page.tsx`, `apps/web/app/quotes/page.tsx`.
+- Dependencies: Task 6 request-context hardening is already merged; Task 7 cleanup is already merged; future dashboard/location-selection work should stay separate.
+- Acceptance criteria: Admins can inspect and update location/company mappings without leaving the product, and the source-priority and canonical-coverage views still work.
 - Tests: Route tests for the mapping API plus a web build or type-check pass.
 - Risk level: High.
-- Can run in parallel: No with Task 3 because both touch the dashboard/admin location-selection surface.
+- Can run in parallel: No with any other task that edits `apps/web/app/sources/page.tsx` or location-selection semantics.
 
 ## Task 5. Add notification history and delivery status visibility
 - Spec file: [docs/operations/tasks/wave-1/03-alert-notification-history.md](docs/operations/tasks/wave-1/03-alert-notification-history.md)
@@ -90,18 +92,19 @@
 - Can run in parallel: No with Task 5 because both affect admin-facing request context and mutation flows.
 
 ## Task 7. Clean up obsolete routes and stale docs
+- Status: completed and approved in commits `9f64c4e`, `cb8eb6b`, `4fd96a5`, and `e7e22d2`; no further execution needed.
 - Spec file: not yet assigned
 - Objective: Remove or clearly demote compatibility surfaces that no longer represent the active product.
 - Exact scope: Align the README and architecture docs with current behavior, decide whether root `/` should remain a dashboard duplicate, and keep redirect-only upload routes clearly marked as deprecated.
 - Likely files: `README.md`, `docs/architecture/module-plan.md`, `docs/product/sprint-01-core-parity.md`, `apps/web/app/page.tsx`, `apps/web/app/upload/page.tsx`, `apps/web/app/uploads/page.tsx`, `app/modules/market_sources/README.md`.
 - Files that must not be touched: Any files that implement the core market, ingestion, alert, or mapping flows.
-- Dependencies: Do this after the functional tasks so the documentation matches the final surface.
+- Dependencies: Do this after the functional tasks so the documentation matches the final surface. Already completed.
 - Acceptance criteria: The docs no longer describe live features as scaffolds, and the compatibility routes are either intentionally preserved or explicitly deprecated.
 - Tests: A docs-only review plus a minimal web sanity check.
 - Risk level: Low.
-- Can run in parallel: Yes, but only after the feature tasks are merged or frozen.
+- Can run in parallel: Yes, but only after the feature tasks are merged or frozen. Already completed.
 
 ## Conflict Summary
 - Task 4 remains the main known conflict surface with future dashboard/location-selection work.
 - Task 5 and Task 6 should not run concurrently because they both affect admin-facing mutation and request-context behavior.
-- Task 7 should wait until the product-facing tasks are settled, otherwise the docs will go stale immediately.
+- Task 7 is complete; any future docs maintenance should be treated as a low-risk follow-up.
