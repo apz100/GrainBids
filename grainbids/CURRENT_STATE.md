@@ -12,7 +12,7 @@
 - `app/main.py` wires real routers for bids, sources, ingestion, normalized prices, alerts, quotes, watchlists, saved searches, signals, settings, and reference data.
 - `app/api/routes/normalized_prices.py` is the core discovery API. It already supports summary, facets, preview, grouped preview, top movers, and origin-location/radius search.
 - `app/api/routes/ingestion.py` exposes ingestion runs, SLA, diagnostics, basis-change diagnostics, and source-file reprocessing.
-- `app/api/routes/sources.py` exposes source listing, seed, refresh, canonical coverage, and per-company source priority management.
+- `app/api/routes/sources.py` exposes source listing, seed, refresh, canonical coverage, per-company source priority management, and the location company mapping editor endpoint.
 - `app/api/routes/alerts.py` exposes alert rules, recent alerts, notification logs, status updates, and rule CRUD.
 - `app/api/routes/saved_searches.py` and `app/api/routes/watchlists.py` both provide CRUD plus preview endpoints.
 - `app/core/request_context.py` now resolves org and user identity explicitly. In production it requires `AUTH_CONTEXT_MODE=trusted_proxy`, `X-Auth-User-Id`, and an active `users.auth_user_id` match; local header fallback is only available where deliberately enabled for local development.
@@ -44,7 +44,7 @@
 - `app/page.tsx` renders a lightweight product entry page and links into the active market dashboard at `/bids`; `/dashboard` remains the underlying dashboard route.
 - `app/dashboard/page.tsx` is a real table-first market UI with commodity tabs, location/company/region filters, date and sort filters, origin/radius search, summary stats, live preview rows, grouped monthly preview, top movers, watchlist creation, alert creation, and an open-alerts panel.
 - `app/bids/page.tsx` reuses the dashboard.
-- `app/sources/page.tsx` is a real admin source-management page with SLA cards, canonical coverage, source priority controls, ingestion runs, alert triage, and manual ingestion triggers.
+- `app/sources/page.tsx` is a real admin source-management page with SLA cards, canonical coverage, source priority controls, company/location mapping editor controls, ingestion runs, alert triage, and manual ingestion triggers.
 - `app/alerts/page.tsx` is a real alert management page with rule CRUD, alert filters, alert acknowledgement/resolution, and notification history visibility.
 - `app/watchlists/page.tsx` is a real watchlist and saved-search CRUD page with previews.
 - `app/quotes/page.tsx` is a real delivered-value export page.
@@ -84,5 +84,9 @@
 - `pytest -q tests/test_normalized_price_filters.py tests/test_normalized_price_query_helpers.py` passed with 16 tests and 1 warning.
 - `pytest -q tests/test_alert_evaluator.py tests/test_alert_notification_logs.py` passed with 7 tests and 1 warning.
 - `pytest -q tests/test_config_runtime.py tests/test_request_context.py tests/test_route_authorization.py tests/test_alert_notification_logs.py` passed with 14 tests and 1 warning.
+- `pytest -q tests/test_source_company_identity_diagnostics.py tests/test_sources_location_company_mapping.py` passed with 7 tests and 2 warnings.
 - `pytest -q` in `apps/api` passed in the worker reports for Wave 1 tasks, with totals ranging from 99 to 101 tests and 1 warning.
+- `pytest -q` in `apps/api` passed in the Wave 2 Task 4 worker report with 117 tests and 2 warnings.
 - `npm run build` in `apps/web` passed in the Task 6 worker verification after the request-context changes.
+- `npx tsc --noEmit --pretty false` passed in the Wave 2 Task 4 worker report using the local TypeScript binary.
+- `npm run build` in `apps/web` passed in the Wave 2 Task 4 worker report after the worker reran it with escalation.

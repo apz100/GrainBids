@@ -60,6 +60,7 @@
 - Likely files: `apps/api/app/api/routes/sources.py`, `apps/api/app/api/routes/ingestion.py` if a diagnostic adapter is needed, `apps/api/tests/test_source_company_identity_diagnostics.py`, `apps/api/tests/test_sources_location_company_mapping.py`, `apps/web/app/sources/page.tsx`, `apps/web/lib/api.ts` if the page needs a small contract helper.
 - Files that must not be touched: `apps/api/app/api/routes/normalized_prices.py`, `apps/web/app/dashboard/page.tsx`, `apps/web/app/bids/page.tsx`, `apps/api/app/jobs/backfill_canonical_companies.py`, `apps/api/app/jobs/backfill_canonical_locations.py`, `apps/api/app/jobs/consolidate_company_aliases.py`, `apps/api/app/services/source_file_ingestion.py`, `apps/api/app/services/upload_csv.py`, `apps/web/app/alerts/page.tsx`, `apps/web/app/watchlists/page.tsx`, `apps/web/app/quotes/page.tsx`.
 - Dependencies: Task 6 request-context hardening is already merged; Task 7 cleanup is already merged; future dashboard/location-selection work should stay separate.
+- Status: Completed and merged in commit `0375b14` (`Add admin location company mapping editor`).
 - Acceptance criteria: Admins can inspect and update location/company mappings without leaving the product, and the source-priority and canonical-coverage views still work.
 - Tests: Route tests for the mapping API plus a web build or type-check pass.
 - Risk level: High.
@@ -105,6 +106,6 @@
 - Can run in parallel: Yes, but only after the feature tasks are merged or frozen. Already completed.
 
 ## Conflict Summary
-- Task 4 remains the main known conflict surface with future dashboard/location-selection work.
+- Task 4 is completed; future dashboard/location-selection work should still treat `apps/web/app/sources/page.tsx` and mapping semantics as shared surfaces.
 - Task 5 and Task 6 should not run concurrently because they both affect admin-facing mutation and request-context behavior.
 - Task 7 is complete; any future docs maintenance should be treated as a low-risk follow-up.

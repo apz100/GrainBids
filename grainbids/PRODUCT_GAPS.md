@@ -17,13 +17,12 @@
 
 ## Partial
 - The dashboard is responsive in CSS terms, but it is still a dense desktop-first table UI.
-- The sources page exposes meaningful admin controls, but most mapping work is read-only or priority-based rather than a true editor for companies, locations, and source relationships.
+- The sources page exposes meaningful admin controls, including company/location mapping editor controls, but the workflow is still narrower than a full bulk-management workspace.
 - Signals exists as a product area, but it is not integrated into the core discovery workflow.
 - `settings` is still a shell, so organization defaults, billing, and access controls are not productized in the UI.
 - Root `/` is now a lightweight entry page; `/bids` is the active market dashboard, so the homepage is no longer a dashboard duplicate.
 
 ## Missing
-- There is no dedicated company/location mapping editor in the web UI.
 - Watchlists are CRUD + preview only; there is no scheduled watchlist execution/alert loop exposed to users.
 - Price alerts exist, but the provider abstraction is still effectively email-only.
 - Access control is still not a full external auth/session product, but it is no longer purely implicit header-based behavior in production.
@@ -36,6 +35,6 @@
 
 ## Product-Level Consequences
 - The core discovery loop is usable, and location search is now radius-aware instead of string-based.
-- Admins can prioritize source winners, but they cannot yet directly maintain all company/location mappings from the product UI.
+- Admins can prioritize source winners and directly maintain company/location mappings from the product UI.
 - Users can create alerts and watchlists, and alert delivery history is visible, but there is still no scheduled monitoring experience tied to watchlists.
 - The app can be operated locally and via scripts, and production-grade access control is now represented through explicit request-context enforcement and mutation gating.

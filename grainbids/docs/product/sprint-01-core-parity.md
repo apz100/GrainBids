@@ -47,7 +47,7 @@ Status note: this is now a historical sprint backlog. Use `CURRENT_STATE.md`, `P
 
 ### 4) Dashboard UX parity (P1)
 - Done: `/bids` is the table-first market layout with quick filters, live table, grouped preview, top movers, alert creation, watchlist creation, and open-alert actions.
-- Done: `/sources` is admin-only in the navigation and exposes source health, canonical coverage, source priority, ingestion runs, and manual ingestion triggers.
+- Done: `/sources` is admin-only in the navigation and exposes source health, canonical coverage, source priority, company/location mapping editor controls, ingestion runs, and manual ingestion triggers.
 - Current route posture: `/` is a lightweight entry page, not a duplicate dashboard; deprecated `/upload` and `/uploads` routes redirect to `/sources`.
 
 ## Definition of Done (Sprint 01)
@@ -59,7 +59,6 @@ Status note: this is now a historical sprint backlog. Use `CURRENT_STATE.md`, `P
 5. Saved search + alert trigger loop works end-to-end for one pilot org.
 
 ## Remaining Follow-Up
-- Productize a dedicated company/location mapping editor.
 - Productize scheduled watchlist execution.
 - Expand notification providers beyond email.
 - Complete the Settings surface for organization defaults, billing, and access controls.
