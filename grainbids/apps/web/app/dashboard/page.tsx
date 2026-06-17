@@ -77,6 +77,22 @@ type WatchlistRow = {
   is_active: boolean;
 };
 
+type SignalHealth = {
+  forecast_count: number;
+  latest_generated_at: string | null;
+  stale_minutes: number | null;
+  healthy: boolean;
+};
+
+type SignalForecastRow = {
+  id: string;
+  composite_key: string;
+  basis_forecast: number | null;
+  cash_price_bu_forecast: number | null;
+  confidence_score: number | null;
+  generated_at: string | null;
+};
+
 type SlaSummary = {
   active_sources: number;
   fresh_sources: number;
@@ -165,6 +181,8 @@ export default function DashboardPage() {
   const [movers, setMovers] = useState<TopMover[]>([]);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [sla, setSla] = useState<SlaSummary | null>(null);
+  const [signalHealth, setSignalHealth] = useState<SignalHealth | null>(null);
+  const [signalForecasts, setSignalForecasts] = useState<SignalForecastRow[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [error, setError] = useState("");
@@ -324,6 +342,13 @@ export default function DashboardPage() {
       } else {
         setError(`Summary unavailable: ${await readFailure(summaryRes)}`);
       }
+
+      const [signalHealthRes, signalForecastRes] = await Promise.all([
+        fetch(`${API_BASE}/api/signals/health`, { cache: "no-store", ...requestInit }),
+        fetch(`${API_BASE}/api/signals/forecast?limit=5`, { cache: "no-store", ...requestInit }),
+      ]);
+      setSignalHealth(signalHealthRes.ok ? await signalHealthRes.json() : null);
+      setSignalForecasts(signalForecastRes.ok ? (await signalForecastRes.json()).rows || [] : []);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -865,6 +890,61 @@ export default function DashboardPage() {
             ))
           )}
         </div>
+      </section>
+
+      <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Signals</h2>
+        {signalHealth ? (
+          <div className="mt-2 flex flex-wrap items-center gap-4 text-xs">
+            <span>
+              Status:{" "}
+              <span className={signalHealth.healthy ? "font-semibold text-emerald-700" : "font-semibold text-rose-700"}>
+                {signalHealth.healthy ? "Healthy" : "Stale"}
+              </span>
+            </span>
+            <span>Forecasts: {signalHealth.forecast_count}</span>
+            <span>
+              Latest:{" "}
+              {signalHealth.latest_generated_at
+                ? new Date(signalHealth.latest_generated_at).toLocaleString()
+                : "—"}
+            </span>
+            <span>
+              Stale: {signalHealth.stale_minutes != null ? `${signalHealth.stale_minutes} min` : "—"}
+            </span>
+            <Link href="/signals" className="rounded-md border border-black/20 bg-white px-2 py-1 hover:border-black/40">
+              View all signals
+            </Link>
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-black/55">No signal data available.</p>
+        )}
+        {signalForecasts.length > 0 && (
+          <div className="mt-3 overflow-x-auto">
+            <table className="min-w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-black/10 text-black/50">
+                  <th className="px-2 py-1 font-normal">Key</th>
+                  <th className="px-2 py-1 font-normal text-right">Basis Forecast</th>
+                  <th className="px-2 py-1 font-normal text-right">Cash/Bu Forecast</th>
+                  <th className="px-2 py-1 font-normal text-right">Confidence</th>
+                  <th className="px-2 py-1 font-normal">Generated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {signalForecasts.map((row) => (
+                  <tr key={row.id} className="border-b border-black/5">
+                    <td className="px-2 py-1">{row.composite_key}</td>
+                    <td className="px-2 py-1 text-right">{row.basis_forecast != null ? row.basis_forecast.toFixed(2) : "—"}</td>
+                    <td className="px-2 py-1 text-right">{row.cash_price_bu_forecast != null ? row.cash_price_bu_forecast.toFixed(2) : "—"}</td>
+                    <td className="px-2 py-1 text-right">{row.confidence_score != null ? `${(row.confidence_score * 100).toFixed(0)}%` : "—"}</td>
+                    <td className="px-2 py-1">{row.generated_at ? new Date(row.generated_at).toLocaleString() : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <OpenAlertsPanel />
