@@ -13,6 +13,7 @@ from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
 from app.models.saved_search import SavedSearch
 from app.models.source import Source
+from app.services.market_search_filters import row_matches_market_search_filters
 
 
 OPEN_ALERT_STATUSES = ("new", "open", "pending")
@@ -26,6 +27,7 @@ class AlertEvaluationResult:
     evaluated_rows: int
     created_alerts: int
     deduped_alerts: int
+    created_alert_ids: list[uuid.UUID]
 
 
 def evaluate_alert_rules_for_snapshot(
@@ -60,6 +62,7 @@ def evaluate_alert_rules_for_snapshot(
     created_alerts = 0
     deduped_alerts = 0
     evaluated_rows = 0
+    created_alert_ids: list[uuid.UUID] = []
 
     for rule in rules:
         if rule.commodity_id and rule.commodity_id != snapshot.commodity_id:
@@ -105,13 +108,14 @@ def evaluate_alert_rules_for_snapshot(
                 deduped_alerts += 1
                 continue
 
-            db.add(
-                Alert(
-                    alert_rule_id=rule.id,
-                    message=message,
-                    status="new",
-                )
+            alert = Alert(
+                alert_rule_id=rule.id,
+                message=message,
+                status="new",
             )
+            db.add(alert)
+            db.flush()
+            created_alert_ids.append(alert.id)
             created_alerts += 1
 
     if created_alerts > 0:
@@ -124,6 +128,7 @@ def evaluate_alert_rules_for_snapshot(
         evaluated_rows=evaluated_rows,
         created_alerts=created_alerts,
         deduped_alerts=deduped_alerts,
+        created_alert_ids=created_alert_ids,
     )
 
 
@@ -136,6 +141,7 @@ def _extract_metric_value(rule_type: str, row: NormalizedPrice) -> Decimal | Non
         "cash_price_mt": row.cash_price_mt,
         "cash_price_bu_change": row.cash_price_bu_change,
         "cash_price_mt_change": row.cash_price_mt_change,
+        "saved_search_match": Decimal("1"),
     }
     return _to_decimal(field_map.get(key))
 
@@ -199,27 +205,7 @@ def _load_saved_search_map(db: Session, rules: list[AlertRule]) -> dict[uuid.UUI
 def _saved_search_matches(saved_search: SavedSearch | None, row: NormalizedPrice) -> bool:
     if saved_search is None:
         return True
-    filters = saved_search.filters_json or {}
-    location_filter = str(filters.get("location", "") or "").strip().lower()
-    commodity_filter = str(filters.get("commodity_name", "") or "").strip().lower()
-    source_filter = str(filters.get("source_name", "") or "").strip().lower()
-    region_filter = str(filters.get("region", "") or "").strip().lower()
-    location_id_filter = str(filters.get("location_id", "") or "").strip()
-    company_id_filter = str(filters.get("company_id", "") or "").strip()
-
-    if location_filter and not _contains_casefold(row.location, location_filter):
-        return False
-    if commodity_filter and not _contains_casefold(row.commodity_name, commodity_filter):
-        return False
-    if source_filter and not _contains_casefold(row.source_name, source_filter):
-        return False
-    if region_filter and not _contains_casefold(row.source_name, region_filter):
-        return False
-    if location_id_filter and (row.location_id is None or str(row.location_id) != location_id_filter):
-        return False
-    if company_id_filter and (row.company_id is None or str(row.company_id) != company_id_filter):
-        return False
-    return True
+    return row_matches_market_search_filters(row, filters=saved_search.filters_json or {})
 
 
 def _month_scope_matches(month_scope: list[str] | None, row: NormalizedPrice) -> bool:
@@ -239,7 +225,3 @@ def _month_scope_matches(month_scope: list[str] | None, row: NormalizedPrice) ->
     return any(token in row_tokens for token in values)
 
 
-def _contains_casefold(value: str | None, needle: str) -> bool:
-    if not value:
-        return False
-    return needle in value.strip().lower()

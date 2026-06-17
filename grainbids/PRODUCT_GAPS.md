@@ -9,6 +9,7 @@
 - Ingestion monitoring, run history, source freshness, and data-quality visibility are present.
 - Saved searches and watchlists exist with CRUD and preview flows.
 - Alerts exist with rule CRUD, recent-alert views, notification history, acknowledgement, resolution, and email notification hooks.
+- Watchlists now have scheduled automation support: enable/disable, daily digest runs, linked saved-search-backed alert promotion, and digest history visibility.
 - Quote export exists.
 - The DOCX benchmark filtering helper contract is restored and the DOCX seed path is back to passing collection and tests.
 - Source-company backfill alias resolution for GLG-style cases is fixed and covered by tests.
@@ -23,7 +24,6 @@
 - Root `/` is now a lightweight entry page; `/bids` is the active market dashboard, so the homepage is no longer a dashboard duplicate.
 
 ## Missing
-- Watchlists are CRUD + preview only; there is no scheduled watchlist execution/alert loop exposed to users.
 - Price alerts exist, but the provider abstraction is still effectively email-only.
 - Access control is still not a full external auth/session product, but it is no longer purely implicit header-based behavior in production.
 
@@ -36,5 +36,5 @@
 ## Product-Level Consequences
 - The core discovery loop is usable, and location search is now radius-aware instead of string-based.
 - Admins can prioritize source winners and directly maintain company/location mappings from the product UI.
-- Users can create alerts and watchlists, and alert delivery history is visible, but there is still no scheduled monitoring experience tied to watchlists.
+- Users can create alerts and watchlists, and both alert and watchlist delivery history are visible; watchlists can now run scheduled automation loops that promote matching filters into alert rules.
 - The app can be operated locally and via scripts, and production-grade access control is now represented through explicit request-context enforcement and mutation gating.

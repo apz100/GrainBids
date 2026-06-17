@@ -14,7 +14,7 @@
 - `app/api/routes/ingestion.py` exposes ingestion runs, SLA, diagnostics, basis-change diagnostics, and source-file reprocessing.
 - `app/api/routes/sources.py` exposes source listing, seed, refresh, canonical coverage, per-company source priority management, and the location company mapping editor endpoint.
 - `app/api/routes/alerts.py` exposes alert rules, recent alerts, notification logs, status updates, and rule CRUD.
-- `app/api/routes/saved_searches.py` and `app/api/routes/watchlists.py` both provide CRUD plus preview endpoints.
+- `app/api/routes/saved_searches.py` and `app/api/routes/watchlists.py` both provide CRUD plus preview endpoints; `watchlists.py` now also exposes watchlist automation inspection, enable/disable, run-now, and preview endpoints backed by a persisted automation record.
 - `app/core/request_context.py` now resolves org and user identity explicitly. In production it requires `AUTH_CONTEXT_MODE=trusted_proxy`, `X-Auth-User-Id`, and an active `users.auth_user_id` match; local header fallback is only available where deliberately enabled for local development.
 - `app/api/routes/quotes.py` provides quote-run history and delivered-value export generation.
 - `app/api/routes/signals.py` exposes forecast rows and a health check.
@@ -36,6 +36,7 @@
 - `app/services/source_health.py` records per-source health snapshots and confidence scores.
 - `app/services/alert_evaluator.py` evaluates alert rules against snapshots and deduplicates open alerts.
 - `app/services/alert_notifier.py` can send email notifications and writes `notification_logs` rows for sent, skipped, and failed deliveries.
+- `app/services/watchlist_automation.py` links active watchlists to saved-search-backed alert rules, runs daily digest notifications, and records digest history in `notification_logs`.
 - The DOCX benchmark-label helper contract and source-company backfill alias resolution defects from the audit have been fixed in committed Task 1 changes.
 - Radius search and notification-history visibility were added in approved Wave 1 Task 2 and Task 3 changes.
 - Production-grade request-context hardening and admin-gated mutation enforcement were added in Task 6 and merged on top of Wave 1.
@@ -46,7 +47,7 @@
 - `app/bids/page.tsx` reuses the dashboard.
 - `app/sources/page.tsx` is a real admin source-management page with SLA cards, canonical coverage, source priority controls, company/location mapping editor controls, ingestion runs, alert triage, and manual ingestion triggers.
 - `app/alerts/page.tsx` is a real alert management page with rule CRUD, alert filters, alert acknowledgement/resolution, and notification history visibility.
-- `app/watchlists/page.tsx` is a real watchlist and saved-search CRUD page with previews.
+- `app/watchlists/page.tsx` is a real watchlist and saved-search CRUD page with previews, automation status, linked alert state, and digest history.
 - `app/quotes/page.tsx` is a real delivered-value export page.
 - `app/signals/page.tsx` is a real forecast viewer, albeit isolated from the core market flow.
 - `app/settings/page.tsx` is still a scaffolded admin shell.
@@ -58,6 +59,7 @@
 - `infra/scripts/run-web.ps1` starts Next.js and bootstraps npm deps if needed.
 - `infra/scripts/run-all.ps1` starts both services and can restart existing listeners.
 - `infra/scripts/run-daily-ingestion.ps1` runs the daily ingestion job and writes `.runlogs/daily-ingestion-*.log`.
+- `infra/scripts/run-watchlist-automation.ps1` runs the daily watchlist automation digest job and writes `.runlogs/watchlist-automation-*.log`.
 - `infra/scripts/run-fetch-and-ingest.ps1` runs source fetchers, optionally uploads files to Supabase, and can trigger cloud ingestion.
 - `infra/scripts/run-source-poller.ps1` runs the polling job.
 - `infra/scripts/reprocess-latest-file-source.ps1` reprocesses the latest file-backed snapshot.
@@ -85,8 +87,12 @@
 - `pytest -q tests/test_alert_evaluator.py tests/test_alert_notification_logs.py` passed with 7 tests and 1 warning.
 - `pytest -q tests/test_config_runtime.py tests/test_request_context.py tests/test_route_authorization.py tests/test_alert_notification_logs.py` passed with 14 tests and 1 warning.
 - `pytest -q tests/test_source_company_identity_diagnostics.py tests/test_sources_location_company_mapping.py` passed with 7 tests and 2 warnings.
+- `pytest -q tests/test_watchlist_automation.py tests/test_alert_evaluator.py tests/test_alert_notification_logs.py tests/test_route_authorization.py` passed with 13 tests and 1 warning.
 - `pytest -q` in `apps/api` passed in the worker reports for Wave 1 tasks, with totals ranging from 99 to 101 tests and 1 warning.
+- `pytest -q` in `apps/api` passed locally after the watchlist automation implementation with 119 tests and 1 warning.
 - `pytest -q` in `apps/api` passed in the Wave 2 Task 4 worker report with 117 tests and 2 warnings.
 - `npm run build` in `apps/web` passed in the Task 6 worker verification after the request-context changes.
 - `npx tsc --noEmit --pretty false` passed in the Wave 2 Task 4 worker report using the local TypeScript binary.
 - `npm run build` in `apps/web` passed in the Wave 2 Task 4 worker report after the worker reran it with escalation.
+- `npx tsc --noEmit --pretty false` passed locally after the watchlist automation UI changes.
+- `npm run build` in `apps/web` still fails locally with `spawn EPERM` from Next.js worker startup; the failure appears environment-specific because typecheck succeeds.

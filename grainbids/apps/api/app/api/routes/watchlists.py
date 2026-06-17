@@ -10,15 +10,15 @@ from sqlalchemy.orm import Session
 
 from app.core.request_context import RequestContext, get_request_context, require_admin
 from app.db.session import get_db
-from app.models.normalized_price import NormalizedPrice
-from app.models.price_snapshot import PriceSnapshot
-from app.models.source import Source
 from app.models.watchlist import Watchlist
-from app.services.market_canonicalization import (
-    canonical_commodity_name,
-    canonical_location_name,
-    canonical_source_name,
-    normalize_text,
+from app.models.watchlist_automation import WatchlistAutomation
+from app.services.watchlist_automation import (
+    delete_watchlist_automation,
+    load_watchlist_preview_rows,
+    run_watchlist_digest,
+    serialize_watchlist_automation,
+    set_watchlist_automation,
+    sync_watchlist_automation_after_watchlist_update,
 )
 
 
@@ -58,6 +58,10 @@ def list_watchlists(
     context: RequestContext = Depends(get_request_context),
     db: Session = Depends(get_db),
 ):
+    automation_rows = db.execute(
+        select(WatchlistAutomation).where(WatchlistAutomation.org_id == context.org_id)
+    ).scalars().all()
+    automation_by_watchlist_id = {row.watchlist_id: row for row in automation_rows}
     rows = db.execute(
         select(Watchlist).where(Watchlist.org_id == context.org_id).order_by(desc(Watchlist.updated_at))
     ).scalars().all()
@@ -71,6 +75,7 @@ def list_watchlists(
                 "is_active": row.is_active,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
                 "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+                "automation": _serialize_watchlist_automation_row(automation_by_watchlist_id.get(row.id)),
             }
             for row in rows
         ]
@@ -141,6 +146,7 @@ def update_watchlist(
     db.add(row)
     db.commit()
     db.refresh(row)
+    sync_watchlist_automation_after_watchlist_update(db, watchlist=row)
     return {"id": str(row.id), "name": row.name, "is_active": row.is_active}
 
 
@@ -155,6 +161,7 @@ def delete_watchlist(
     ).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="watchlist not found")
+    delete_watchlist_automation(db, watchlist=row)
     db.delete(row)
     db.commit()
     return {"deleted": str(watchlist_id)}
@@ -173,46 +180,7 @@ def preview_watchlist(
     if watchlist is None:
         raise HTTPException(status_code=404, detail="watchlist not found")
 
-    filters = watchlist.filters_json or {}
-    query = (
-        select(NormalizedPrice, PriceSnapshot)
-        .join(PriceSnapshot, PriceSnapshot.id == NormalizedPrice.snapshot_id)
-        .join(Source, Source.id == PriceSnapshot.source_id)
-        .where(Source.org_id == context.org_id)
-    )
-
-    location = str(filters.get("location", "") or "").strip()
-    commodity_name = str(filters.get("commodity_name", "") or "").strip()
-    source_name = str(filters.get("source_name", "") or "").strip()
-    if location:
-        query = query.where(NormalizedPrice.location.ilike(f"%{location}%"))
-    if commodity_name:
-        query = query.where(NormalizedPrice.commodity_name.ilike(f"%{commodity_name}%"))
-    if source_name:
-        query = query.where(NormalizedPrice.source_name.ilike(f"%{source_name}%"))
-
-    rows = db.execute(
-        query.order_by(desc(PriceSnapshot.captured_at), desc(NormalizedPrice.cash_price_bu)).limit(limit)
-    ).all()
-    deduped_rows: list[tuple[NormalizedPrice, PriceSnapshot]] = []
-    seen: set[str] = set()
-    for price, snapshot in rows:
-        dedupe_key = "|".join(
-            [
-                canonical_location_name(price.location) or "-",
-                canonical_source_name(price.source_name) or "-",
-                canonical_commodity_name(price.commodity_name) or "-",
-                normalize_text(price.delivery_label) or normalize_text(price.delivery_end) or "-",
-                normalize_text(price.futures_month) or "-",
-            ]
-        ).lower()
-        if dedupe_key in seen:
-            continue
-        seen.add(dedupe_key)
-        deduped_rows.append((price, snapshot))
-        if len(deduped_rows) >= limit:
-            break
-
+    rows = load_watchlist_preview_rows(db, watchlist=watchlist, limit=limit)
     return {
         "watchlist": {
             "id": str(watchlist.id),
@@ -220,21 +188,112 @@ def preview_watchlist(
             "filters_json": watchlist.filters_json or {},
             "is_active": watchlist.is_active,
         },
-        "rows": [
-            {
-                "id": str(price.id),
-                "captured_at": snapshot.captured_at.isoformat() if snapshot.captured_at else None,
-                "location": canonical_location_name(price.location) or "-",
-                "commodity_name": canonical_commodity_name(price.commodity_name) or "-",
-                "source_name": canonical_source_name(price.source_name),
-                "delivery_label": normalize_text(price.delivery_label) or normalize_text(price.delivery_end),
-                "futures_month": normalize_text(price.futures_month),
-                "futures_price": _to_float(price.futures_price),
-                "futures_change": _to_float(getattr(price, "futures_change", None)),
-                "basis": _to_basis_float(price.basis),
-                "cash_price_bu": _to_float(price.cash_price_bu),
-                "cash_price_mt": _to_float(price.cash_price_mt),
-            }
-            for price, snapshot in deduped_rows
-        ],
+        "rows": rows,
+    }
+
+
+@router.get("/{watchlist_id}/automation")
+def get_watchlist_automation(
+    watchlist_id: uuid.UUID,
+    context: RequestContext = Depends(get_request_context),
+    db: Session = Depends(get_db),
+):
+    watchlist = db.execute(
+        select(Watchlist).where(Watchlist.id == watchlist_id, Watchlist.org_id == context.org_id)
+    ).scalar_one_or_none()
+    if watchlist is None:
+        raise HTTPException(status_code=404, detail="watchlist not found")
+    return serialize_watchlist_automation(db, watchlist=watchlist)
+
+
+@router.put("/{watchlist_id}/automation")
+def set_watchlist_automation_route(
+    watchlist_id: uuid.UUID,
+    is_enabled: bool = Query(True),
+    digest_enabled: bool = Query(True),
+    alert_promotion_enabled: bool = Query(True),
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    watchlist = db.execute(
+        select(Watchlist).where(Watchlist.id == watchlist_id, Watchlist.org_id == context.org_id)
+    ).scalar_one_or_none()
+    if watchlist is None:
+        raise HTTPException(status_code=404, detail="watchlist not found")
+    result = set_watchlist_automation(
+        db,
+        watchlist=watchlist,
+        is_enabled=is_enabled,
+        digest_enabled=digest_enabled,
+        alert_promotion_enabled=alert_promotion_enabled,
+    )
+    return {
+        "automation": {
+            "id": str(result.automation_id),
+            "watchlist_id": str(result.watchlist_id),
+            "saved_search_id": str(result.saved_search_id) if result.saved_search_id else None,
+            "alert_rule_id": str(result.alert_rule_id) if result.alert_rule_id else None,
+            "is_enabled": result.is_enabled,
+            "digest_enabled": result.digest_enabled,
+            "alert_promotion_enabled": result.alert_promotion_enabled,
+        }
+    }
+
+
+@router.get("/{watchlist_id}/automation/preview")
+def preview_watchlist_automation(
+    watchlist_id: uuid.UUID,
+    limit: int = Query(30, ge=1, le=200),
+    context: RequestContext = Depends(get_request_context),
+    db: Session = Depends(get_db),
+):
+    watchlist = db.execute(
+        select(Watchlist).where(Watchlist.id == watchlist_id, Watchlist.org_id == context.org_id)
+    ).scalar_one_or_none()
+    if watchlist is None:
+        raise HTTPException(status_code=404, detail="watchlist not found")
+    return serialize_watchlist_automation(db, watchlist=watchlist, limit=limit)
+
+
+@router.post("/{watchlist_id}/automation/run")
+def run_watchlist_automation_route(
+    watchlist_id: uuid.UUID,
+    limit: int = Query(50, ge=1, le=200),
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    watchlist = db.execute(
+        select(Watchlist).where(Watchlist.id == watchlist_id, Watchlist.org_id == context.org_id)
+    ).scalar_one_or_none()
+    if watchlist is None:
+        raise HTTPException(status_code=404, detail="watchlist not found")
+    result = run_watchlist_digest(db, watchlist=watchlist, limit=limit)
+    return {
+        "automation_run": {
+            "automation_id": str(result.automation_id),
+            "watchlist_id": str(result.watchlist_id),
+            "row_count": result.row_count,
+            "sent": result.sent,
+            "status": result.status,
+            "error_message": result.error_message,
+        }
+    }
+
+
+def _serialize_watchlist_automation_row(row: WatchlistAutomation | None) -> dict | None:
+    if row is None:
+        return None
+    return {
+        "id": str(row.id),
+        "watchlist_id": str(row.watchlist_id),
+        "is_enabled": row.is_enabled,
+        "digest_enabled": row.digest_enabled,
+        "alert_promotion_enabled": row.alert_promotion_enabled,
+        "linked_saved_search_id": str(row.linked_saved_search_id) if row.linked_saved_search_id else None,
+        "linked_alert_rule_id": str(row.linked_alert_rule_id) if row.linked_alert_rule_id else None,
+        "last_run_at": row.last_run_at.isoformat() if row.last_run_at else None,
+        "last_digest_row_count": row.last_digest_row_count,
+        "last_error_message": row.last_error_message,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }

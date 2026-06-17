@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Select, desc, or_, select
+from sqlalchemy import Select, desc, select
 from sqlalchemy.orm import Session
 
 from app.core.request_context import RequestContext, get_request_context, require_admin
@@ -13,6 +13,7 @@ from app.models.price_snapshot import PriceSnapshot
 from app.models.saved_search import SavedSearch
 from app.models.source import Source
 from app.services.market_canonicalization import canonical_key, canonical_commodity_name, canonical_location_name, canonical_source_name
+from app.services.market_search_filters import apply_market_search_filters
 
 
 router = APIRouter(prefix="/api/saved-searches", tags=["saved-searches"])
@@ -243,44 +244,4 @@ def _parse_csv_values(raw: str | None) -> list[str] | None:
 
 
 def _apply_saved_search_filters(query: Select, row: SavedSearch) -> Select:
-    filters = row.filters_json or {}
-    commodity_name = str(filters.get("commodity_name", "") or "").strip()
-    location = str(filters.get("location", "") or "").strip()
-    source_name = str(filters.get("source_name", "") or "").strip()
-    region = str(filters.get("region", "") or "").strip()
-    location_id = str(filters.get("location_id", "") or "").strip()
-    company_id = str(filters.get("company_id", "") or "").strip()
-    if commodity_name:
-        query = query.where(NormalizedPrice.commodity_name.ilike(f"%{commodity_name}%"))
-    if location:
-        query = query.where(NormalizedPrice.location.ilike(f"%{location}%"))
-    if source_name:
-        query = query.where(NormalizedPrice.source_name.ilike(f"%{source_name}%"))
-    if region:
-        query = query.where(NormalizedPrice.source_name.ilike(f"%{region}%"))
-    if location_id:
-        parsed_location_id = _parse_uuid(location_id)
-        if parsed_location_id is not None:
-            query = query.where(NormalizedPrice.location_id == parsed_location_id)
-    if company_id:
-        parsed_company_id = _parse_uuid(company_id)
-        if parsed_company_id is not None:
-            query = query.where(NormalizedPrice.company_id == parsed_company_id)
-
-    month_scope = [token.strip().lower() for token in (row.delivery_months_json or []) if token and token.strip()]
-    if month_scope:
-        like_clauses = []
-        for token in month_scope:
-            like_clauses.append(NormalizedPrice.delivery_label.ilike(f"%{token}%"))
-            like_clauses.append(NormalizedPrice.futures_month.ilike(f"%{token}%"))
-        if like_clauses:
-            query = query.where(or_(*like_clauses))
-
-    return query
-
-
-def _parse_uuid(raw: str) -> uuid.UUID | None:
-    try:
-        return uuid.UUID(raw)
-    except (ValueError, TypeError):
-        return None
+    return apply_market_search_filters(query, filters=row.filters_json or {}, delivery_months=row.delivery_months_json or [])

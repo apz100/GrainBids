@@ -6,6 +6,7 @@
 - I have kept each task narrow enough to fit in one reviewable diff.
 - The persistent task specifications live under `docs/operations/tasks/`.
 - Wave 1 Tasks 1-3 are complete and merged.
+- Watchlist automation and alert promotion have since been implemented in the active branch; they are no longer a future roadmap gap.
 - Wave 2 begins with Task 4.
 
 ## Task Files

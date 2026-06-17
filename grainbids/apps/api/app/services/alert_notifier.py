@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from email.message import EmailMessage
-import smtplib
-import ssl
 import uuid
 
 from sqlalchemy import select
@@ -12,6 +9,7 @@ from app.core.config import settings
 from app.models.alert import Alert
 from app.models.alert_rule import AlertRule
 from app.models.notification_log import NotificationLog
+from app.services.notification_delivery import send_email_message
 
 
 def notify_new_alerts(db: Session, *, alert_ids: list[uuid.UUID]) -> None:
@@ -42,14 +40,14 @@ def notify_new_alerts(db: Session, *, alert_ids: list[uuid.UUID]) -> None:
             f"{rule.rule_type} {rule.comparison_operator} {float(rule.threshold_value):.4f} :: {alert.message}"
         )
 
-    message = EmailMessage()
-    message["Subject"] = f"GrainBids: {len(rows)} alert(s) triggered"
-    message["From"] = settings.alert_email_from
-    message["To"] = settings.alert_email_to
-    message.set_content("\n".join(lines))
-
     try:
-        _send(message)
+        subject = f"GrainBids: {len(rows)} alert(s) triggered"
+        send_email_message(
+            subject=subject,
+            to=settings.alert_email_to,
+            from_address=settings.alert_email_from,
+            body="\n".join(lines),
+        )
         for alert, rule in rows:
             db.add(
                 NotificationLog(
@@ -58,7 +56,7 @@ def notify_new_alerts(db: Session, *, alert_ids: list[uuid.UUID]) -> None:
                     channel="email",
                     recipient=settings.alert_email_to,
                     status="sent",
-                    payload_json={"subject": message["Subject"]},
+                    payload_json={"subject": subject},
                 )
             )
         db.commit()
@@ -72,30 +70,11 @@ def notify_new_alerts(db: Session, *, alert_ids: list[uuid.UUID]) -> None:
                     recipient=settings.alert_email_to,
                     status="failed",
                     error_message=str(exc),
-                    payload_json={"subject": message["Subject"]},
+                    payload_json={"subject": subject},
                 )
             )
         db.commit()
         raise
-
-
-def _send(message: EmailMessage) -> None:
-    host = settings.alert_smtp_host
-    port = settings.alert_smtp_port
-    username = settings.alert_smtp_username
-    password = settings.alert_smtp_password
-    use_tls = settings.alert_smtp_use_tls
-
-    if host is None:
-        return
-
-    context = ssl.create_default_context()
-    with smtplib.SMTP(host, port, timeout=20) as client:
-        if use_tls:
-            client.starttls(context=context)
-        if username and password:
-            client.login(username, password)
-        client.send_message(message)
 
 
 def _log_skipped_notifications(db: Session, *, alert_ids: list[uuid.UUID], reason: str) -> None:

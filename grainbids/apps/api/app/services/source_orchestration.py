@@ -18,6 +18,7 @@ from app.models.normalized_price import NormalizedPrice
 from app.models.price_snapshot import PriceSnapshot
 from app.models.source import Source
 from app.services.alert_evaluator import evaluate_alert_rules_for_snapshot
+from app.services.alert_notifier import notify_new_alerts
 from app.services.source_health import minutes_since, record_source_health_snapshot, update_source_health_state
 from app.services.source_registry import fetch_with_adapter, get_adapter, list_adapters, list_pilot_adapter_keys
 from app.services.upload_csv import process_csv_upload
@@ -102,6 +103,8 @@ def run_source_refresh(
             alert_eval = evaluate_alert_rules_for_snapshot(db, snapshot_id=upload.snapshot_id)
             created_alert_count = alert_eval.created_alerts
             deduped_alert_count = alert_eval.deduped_alerts
+            if alert_eval.created_alert_ids:
+                notify_new_alerts(db, alert_ids=alert_eval.created_alert_ids)
             status = "completed"
             run.raw_row_count = row_count
             run.normalized_row_count = upload.inserted_rows

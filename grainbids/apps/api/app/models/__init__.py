@@ -16,6 +16,7 @@ from app.models.source import Source
 from app.models.source_health_snapshot import SourceHealthSnapshot
 from app.models.user import User
 from app.models.watchlist import Watchlist
+from app.models.watchlist_automation import WatchlistAutomation
 from app.models.saved_search import SavedSearch
 
 __all__ = [
@@ -38,4 +39,5 @@ __all__ = [
     "SourceHealthSnapshot",
     "User",
     "Watchlist",
+    "WatchlistAutomation",
 ]

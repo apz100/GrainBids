@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 import { API_BASE, buildApiHeaders } from "@/lib/api";
+import {
+  formatNotificationTimestamp,
+  formatNotificationValue,
+  notificationStatusClass,
+} from "@/lib/alerts-history.mjs";
 
 type WatchlistRow = {
   id: string;
@@ -11,6 +16,7 @@ type WatchlistRow = {
   is_active: boolean;
   updated_at: string | null;
   filters_json?: Record<string, string>;
+  automation?: WatchlistAutomationSummary | null;
 };
 
 type SavedSearchRow = {
@@ -34,6 +40,63 @@ type PreviewRow = {
   futures_month: string | null;
   basis: number | null;
   cash_price_bu: number | null;
+};
+
+type NotificationLogRow = {
+  id: string;
+  alert_id: string | null;
+  channel: string;
+  recipient: string | null;
+  status: string;
+  provider_message_id: string | null;
+  error_message: string | null;
+  created_at: string | null;
+  payload_json: Record<string, unknown>;
+};
+
+type WatchlistAutomationSummary = {
+  id: string | null;
+  watchlist_id: string;
+  is_enabled: boolean;
+  digest_enabled: boolean;
+  alert_promotion_enabled: boolean;
+  linked_saved_search_id: string | null;
+  linked_alert_rule_id: string | null;
+  last_run_at: string | null;
+  last_digest_row_count: number | null;
+  last_error_message: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+type WatchlistAutomationDetails = {
+  watchlist: {
+    id: string;
+    org_id: string;
+    name: string;
+    filters_json: Record<string, string>;
+    is_active: boolean;
+  };
+  automation: WatchlistAutomationSummary;
+  saved_search: {
+    id: string;
+    name: string;
+    filters_json: Record<string, string>;
+    delivery_months: string[];
+    is_active: boolean;
+  } | null;
+  alert_rule: {
+    id: string;
+    rule_type: string;
+    comparison_operator: string;
+    threshold_value: number;
+    saved_search_id: string | null;
+    location: string | null;
+    delivery_months: string[];
+    is_active: boolean;
+  } | null;
+  recent_notifications: NotificationLogRow[];
+  preview_rows: PreviewRow[];
 };
 
 type FacetsResponse = {
@@ -85,6 +148,10 @@ export default function WatchlistsPage() {
   const [watchlistPreviewLabel, setWatchlistPreviewLabel] = useState<string>("");
   const [watchlistLoading, setWatchlistLoading] = useState(false);
   const [watchlistError, setWatchlistError] = useState<string | null>(null);
+  const [watchlistAutomation, setWatchlistAutomation] = useState<WatchlistAutomationDetails | null>(null);
+  const [watchlistAutomationLoading, setWatchlistAutomationLoading] = useState(false);
+  const [watchlistAutomationError, setWatchlistAutomationError] = useState<string | null>(null);
+  const [watchlistAutomationAction, setWatchlistAutomationAction] = useState<string>("");
 
   const [savedSearches, setSavedSearches] = useState<SavedSearchRow[]>([]);
   const [selectedSavedSearchId, setSelectedSavedSearchId] = useState<string>("");
@@ -165,9 +232,22 @@ export default function WatchlistsPage() {
     });
   }, [selectedSavedSearchId, savedSearches]);
 
+  useEffect(() => {
+    if (!selectedWatchlistId) {
+      setWatchlistAutomation(null);
+      return;
+    }
+    void refreshWatchlistAutomation(selectedWatchlistId);
+  }, [selectedWatchlistId]);
+
   const selectedWatchlist = useMemo(
     () => watchlists.find((row) => row.id === selectedWatchlistId) ?? null,
     [watchlists, selectedWatchlistId]
+  );
+
+  const selectedWatchlistAutomation = useMemo(
+    () => (watchlistAutomation?.watchlist.id === selectedWatchlistId ? watchlistAutomation : null),
+    [selectedWatchlistId, watchlistAutomation]
   );
 
   async function refreshSavedSearches(preferredId?: string) {
@@ -204,6 +284,68 @@ export default function WatchlistsPage() {
       setWatchlistPreviewRows([]);
     } finally {
       setWatchlistLoading(false);
+    }
+  }
+
+  async function refreshWatchlistAutomation(id = selectedWatchlistId) {
+    if (!id) return;
+    setWatchlistAutomationLoading(true);
+    setWatchlistAutomationError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/watchlists/${id}/automation`, {
+        cache: "no-store",
+        headers,
+      });
+      if (!res.ok) throw new Error(`Automation lookup failed (${res.status})`);
+      const json = (await res.json()) as WatchlistAutomationDetails;
+      setWatchlistAutomation(json);
+    } catch (err) {
+      setWatchlistAutomationError(err instanceof Error ? err.message : "Automation lookup failed");
+      setWatchlistAutomation(null);
+    } finally {
+      setWatchlistAutomationLoading(false);
+    }
+  }
+
+  async function updateWatchlistAutomation(overrides?: Partial<Record<"is_enabled" | "digest_enabled" | "alert_promotion_enabled", boolean>>) {
+    if (!selectedWatchlistId) return;
+    setWatchlistAutomationAction("");
+    setWatchlistAutomationError(null);
+    try {
+      const current = selectedWatchlistAutomation?.automation;
+      const params = new URLSearchParams();
+      params.set("is_enabled", String(overrides?.is_enabled ?? current?.is_enabled ?? false));
+      params.set("digest_enabled", String(overrides?.digest_enabled ?? current?.digest_enabled ?? false));
+      params.set(
+        "alert_promotion_enabled",
+        String(overrides?.alert_promotion_enabled ?? current?.alert_promotion_enabled ?? false)
+      );
+      const res = await fetch(`${API_BASE}/api/watchlists/${selectedWatchlistId}/automation?${params.toString()}`, {
+        method: "PUT",
+        headers,
+      });
+      if (!res.ok) throw new Error(`Automation update failed (${res.status})`);
+      await refreshWatchlistAutomation(selectedWatchlistId);
+      setWatchlistAutomationAction("Watchlist automation updated.");
+    } catch (err) {
+      setWatchlistAutomationError(err instanceof Error ? err.message : "Automation update failed");
+    }
+  }
+
+  async function runWatchlistAutomation() {
+    if (!selectedWatchlistId) return;
+    setWatchlistAutomationAction("");
+    setWatchlistAutomationError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/watchlists/${selectedWatchlistId}/automation/run?limit=50`, {
+        method: "POST",
+        headers,
+      });
+      if (!res.ok) throw new Error(`Automation run failed (${res.status})`);
+      await refreshWatchlistAutomation(selectedWatchlistId);
+      setWatchlistAutomationAction("Digest run completed.");
+    } catch (err) {
+      setWatchlistAutomationError(err instanceof Error ? err.message : "Automation run failed");
     }
   }
 
@@ -357,6 +499,118 @@ export default function WatchlistsPage() {
         ) : null}
         {watchlistError ? <p className="mt-3 text-sm text-red-600">{watchlistError}</p> : null}
         <PreviewTable rows={watchlistPreviewRows} emptyMessage={watchlistPreviewLabel ? `No rows matched "${watchlistPreviewLabel}".` : "Run preview to see rows."} />
+
+        <div className="mt-5 rounded-md border border-black/10 bg-white/80 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold">Automation</h3>
+              <p className="text-sm text-black/60">Daily digest and alert promotion for this watchlist.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void refreshWatchlistAutomation()}
+                disabled={!selectedWatchlistId || watchlistAutomationLoading}
+                className="rounded-md border border-black/20 bg-white px-3 py-2 text-xs disabled:opacity-60"
+              >
+                {watchlistAutomationLoading ? "Loading..." : "Refresh automation"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void runWatchlistAutomation()}
+                disabled={!selectedWatchlistId || watchlistAutomationLoading}
+                className="rounded-md border border-black bg-black px-3 py-2 text-xs text-white disabled:opacity-60"
+              >
+                Run digest now
+              </button>
+            </div>
+          </div>
+
+          {watchlistAutomationError ? <p className="mt-3 text-sm text-rose-700">{watchlistAutomationError}</p> : null}
+          {watchlistAutomationAction ? <p className="mt-3 text-sm text-emerald-700">{watchlistAutomationAction}</p> : null}
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <AutomationStat label="Enabled" value={booleanLabel(selectedWatchlistAutomation?.automation.is_enabled)} />
+            <AutomationStat label="Digest" value={booleanLabel(selectedWatchlistAutomation?.automation.digest_enabled)} />
+            <AutomationStat
+              label="Alert promotion"
+              value={booleanLabel(selectedWatchlistAutomation?.automation.alert_promotion_enabled)}
+            />
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <AutomationDetail
+              label="Linked saved search"
+              value={selectedWatchlistAutomation?.saved_search?.name || "None"}
+            />
+            <AutomationDetail label="Linked alert rule" value={selectedWatchlistAutomation?.alert_rule?.rule_type || "None"} />
+            <AutomationDetail
+              label="Last digest"
+              value={
+                selectedWatchlistAutomation?.automation.last_run_at
+                  ? `${formatNotificationTimestamp(selectedWatchlistAutomation.automation.last_run_at)} (${selectedWatchlistAutomation.automation.last_digest_row_count ?? 0} rows)`
+                  : "Never"
+              }
+            />
+            <AutomationDetail
+              label="Last error"
+              value={selectedWatchlistAutomation?.automation.last_error_message || "None"}
+            />
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void updateWatchlistAutomation({ is_enabled: true })}
+              className="rounded-md border border-black/20 bg-white px-3 py-2 text-xs"
+            >
+              Enable
+            </button>
+            <button
+              type="button"
+              onClick={() => void updateWatchlistAutomation({ is_enabled: false })}
+              className="rounded-md border border-black/20 bg-white px-3 py-2 text-xs"
+            >
+              Disable
+            </button>
+          </div>
+
+          <div className="mt-5 overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/50">
+                  <th className="px-2 py-2">When</th>
+                  <th className="px-2 py-2">Status</th>
+                  <th className="px-2 py-2">Channel</th>
+                  <th className="px-2 py-2">Recipient</th>
+                  <th className="px-2 py-2">Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(selectedWatchlistAutomation?.recent_notifications || []).length === 0 ? (
+                  <tr>
+                    <td className="px-2 py-4 text-black/55" colSpan={5}>
+                      No digest history yet.
+                    </td>
+                  </tr>
+                ) : (
+                  (selectedWatchlistAutomation?.recent_notifications || []).map((row) => (
+                    <tr key={row.id} className="border-b border-black/5">
+                      <td className="px-2 py-2">{formatNotificationTimestamp(row.created_at)}</td>
+                      <td className="px-2 py-2">
+                        <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${notificationStatusClass(row.status)}`}>
+                          {formatNotificationValue(row.status)}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2">{formatNotificationValue(row.channel)}</td>
+                      <td className="px-2 py-2">{formatNotificationValue(row.recipient)}</td>
+                      <td className="px-2 py-2 text-xs text-black/70">{formatNotificationValue(row.error_message)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <section className="mt-6 rounded-lg border border-black/10 bg-white/65 p-5 backdrop-blur">
@@ -568,6 +822,28 @@ function PreviewTable({ rows, emptyMessage }: { rows: PreviewRow[]; emptyMessage
       </table>
     </div>
   );
+}
+
+function AutomationStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-black/10 bg-white px-3 py-2">
+      <div className="text-xs uppercase tracking-wide text-black/45">{label}</div>
+      <div className="mt-1 text-sm font-medium">{value}</div>
+    </div>
+  );
+}
+
+function AutomationDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-black/10 bg-white px-3 py-2">
+      <div className="text-xs uppercase tracking-wide text-black/45">{label}</div>
+      <div className="mt-1 text-sm text-black/80">{value}</div>
+    </div>
+  );
+}
+
+function booleanLabel(value: boolean | undefined) {
+  return value ? "Enabled" : "Disabled";
 }
 
 function normalizeFacetValues(values: unknown): string[] {

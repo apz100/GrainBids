@@ -18,6 +18,7 @@ from app.models.ingestion_run import IngestionRun
 from app.models.source import Source
 from app.modules.imports.legacy_normalize import normalize_legacy_dataframe
 from app.services.alert_evaluator import evaluate_alert_rules_for_snapshot
+from app.services.alert_notifier import notify_new_alerts
 from app.services.source_health import record_source_health_snapshot, update_source_health_state
 from app.services.upload_csv import infer_column_mapping, persist_normalized_rows
 
@@ -389,6 +390,8 @@ def ingest_source_file(
             alert_eval = evaluate_alert_rules_for_snapshot(db, snapshot_id=snapshot_id)
             created_alert_count += alert_eval.created_alerts
             deduped_alert_count += alert_eval.deduped_alerts
+            if alert_eval.created_alert_ids:
+                notify_new_alerts(db, alert_ids=alert_eval.created_alert_ids)
         run.created_alert_count = created_alert_count
         run.deduped_alert_count = deduped_alert_count
 
