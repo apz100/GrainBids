@@ -21,6 +21,7 @@ class AlertRule(Base):
     threshold_value: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False)
     comparison_operator: Mapped[str] = mapped_column(String(10), nullable=False, default=">")
     delivery_months_json: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    notification_channels_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     location: Mapped[str | None] = mapped_column(String(200), nullable=True)
 

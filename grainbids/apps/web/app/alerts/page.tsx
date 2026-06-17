@@ -17,6 +17,7 @@ type AlertRuleRow = {
   location: string | null;
   saved_search_id: string | null;
   delivery_months: string[];
+  notification_channels: { channel: string; recipient: string }[];
   is_active: boolean;
   last_triggered_at: string | null;
   open_alert_count: number;
@@ -62,6 +63,7 @@ export default function AlertsPage() {
   const [error, setError] = useState("");
   const [activeAlertId, setActiveAlertId] = useState("");
   const [activeRuleId, setActiveRuleId] = useState("");
+  const [editingChannels, setEditingChannels] = useState<Record<string, { channel: string; recipient: string }[]>>({});
   const [statusFilter, setStatusFilter] = useState<"all" | "new" | "open" | "pending" | "acknowledged" | "resolved">("all");
   const [ruleFilter, setRuleFilter] = useState<string>("all");
   const [searchText, setSearchText] = useState("");
@@ -151,6 +153,50 @@ export default function AlertsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  async function updateNotificationChannels(ruleId: string) {
+    const channels = editingChannels[ruleId] || [];
+    setError("");
+    setMessage("");
+    try {
+      const res = await fetch(`${API_BASE}/api/alerts/rules/${ruleId}/channels`, {
+        method: "PATCH",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ notification_channels: channels }),
+      });
+      if (res.ok) {
+        setMessage("Notification channels updated.");
+        setEditingChannels((prev) => { const next = { ...prev }; delete next[ruleId]; return next; });
+        await loadData();
+      } else {
+        setError("Failed to update notification channels");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function addChannel(ruleId: string) {
+    setEditingChannels((prev) => ({
+      ...prev,
+      [ruleId]: [...(prev[ruleId] || []), { channel: "email", recipient: "" }],
+    }));
+  }
+
+  function updateChannel(ruleId: string, index: number, field: string, value: string) {
+    setEditingChannels((prev) => {
+      const channels = [...(prev[ruleId] || [])];
+      channels[index] = { ...channels[index], [field]: value };
+      return { ...prev, [ruleId]: channels };
+    });
+  }
+
+  function removeChannel(ruleId: string, index: number) {
+    setEditingChannels((prev) => {
+      const channels = (prev[ruleId] || []).filter((_, i) => i !== index);
+      return { ...prev, [ruleId]: channels };
+    });
   }
 
   async function deleteAlertRule(ruleId: string) {
@@ -289,6 +335,7 @@ export default function AlertsPage() {
                 <th className="px-2 py-2">Location</th>
                 <th className="px-2 py-2">Saved Search</th>
                 <th className="px-2 py-2">Months</th>
+                <th className="px-2 py-2">Channels</th>
                 <th className="px-2 py-2">Open Alerts</th>
                 <th className="px-2 py-2">Last Trigger</th>
                 <th className="px-2 py-2">Actions</th>
@@ -310,6 +357,49 @@ export default function AlertsPage() {
                     <td className="px-2 py-2">{row.location || "All"}</td>
                     <td className="px-2 py-2">{row.saved_search_id ? (savedSearchById.get(row.saved_search_id) || "Unknown") : "All bids"}</td>
                     <td className="px-2 py-2">{row.delivery_months?.length ? row.delivery_months.join(", ") : "-"}</td>
+                    <td className="px-2 py-2">
+                      {editingChannels[row.id] ? (
+                        <div className="space-y-1">
+                          {editingChannels[row.id].map((ch, ci) => (
+                            <div key={ci} className="flex items-center gap-1 text-xs">
+                              <select
+                                value={ch.channel}
+                                onChange={(e) => updateChannel(row.id, ci, "channel", e.target.value)}
+                                className="rounded border border-black/15 bg-white px-1 py-0.5 text-xs"
+                              >
+                                <option value="email">Email</option>
+                                <option value="webhook">Webhook</option>
+                              </select>
+                              <input
+                                type="text"
+                                value={ch.recipient}
+                                onChange={(e) => updateChannel(row.id, ci, "recipient", e.target.value)}
+                                placeholder={ch.channel === "webhook" ? "https://..." : "email@..."}
+                                className="flex-1 rounded border border-black/15 bg-white px-1 py-0.5 text-xs"
+                              />
+                              <button onClick={() => removeChannel(row.id, ci)} className="text-red-600 hover:text-red-800">&times;</button>
+                            </div>
+                          ))}
+                          <div className="flex gap-1">
+                            <button onClick={() => addChannel(row.id)} className="rounded border border-black/15 bg-white px-1.5 py-0.5 text-xs hover:bg-black/5">+ Add</button>
+                            <button onClick={() => updateNotificationChannels(row.id)} className="rounded bg-black/80 px-1.5 py-0.5 text-xs text-white hover:bg-black/60">Save</button>
+                            <button onClick={() => setEditingChannels((prev) => { const next = { ...prev }; delete next[row.id]; return next; })} className="rounded border border-black/15 bg-white px-1.5 py-0.5 text-xs hover:bg-black/5">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs">{row.notification_channels?.length ? row.notification_channels.map((c) => `${c.channel}:${c.recipient}`).join(", ") : "Default"}</span>
+                          {canManageAlerts && (
+                            <button
+                              onClick={() => setEditingChannels((prev) => ({ ...prev, [row.id]: row.notification_channels?.length ? [...row.notification_channels] : [{ channel: "email", recipient: "" }] }))}
+                              className="text-xs text-black/50 hover:text-black/80"
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-2 py-2">{row.open_alert_count}</td>
                     <td className="px-2 py-2">{row.last_triggered_at ? new Date(row.last_triggered_at).toLocaleString() : "-"}</td>
                     <td className="px-2 py-2">
