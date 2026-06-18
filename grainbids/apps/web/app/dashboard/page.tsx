@@ -409,11 +409,11 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="mx-auto max-w-7xl px-6 py-7">
-      <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <main className="mx-auto max-w-7xl px-4 py-5 lg:px-6 lg:py-7">
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-2 lg:mb-5 lg:gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.16em] text-black/50">GrainBids / Market</p>
-          <h1 className="mt-1 font-[family-name:var(--font-serif)] text-4xl leading-tight">Bid Intelligence Dashboard</h1>
+          <h1 className="mt-1 font-[family-name:var(--font-serif)] text-2xl leading-tight lg:text-4xl">Bid Intelligence Dashboard</h1>
         </div>
         <div className="flex items-center gap-2 text-xs">
           <StatusBadge summary={sla} />
@@ -426,7 +426,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <section className="sticky top-14 z-20 rounded-xl border border-black/10 bg-white/90 p-4 shadow-sm backdrop-blur">
+      <section className="sticky top-14 z-20 rounded-xl border border-black/10 bg-white/90 p-3 shadow-sm backdrop-blur lg:p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             {COMMODITY_TABS.map((tab) => {
@@ -454,7 +454,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_1fr_1fr_160px_160px]">
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_160px_160px]">
           <select
             value={filters.location_id}
             onChange={(event) => setFilters((prev) => ({ ...prev, location_id: event.target.value }))}
@@ -511,7 +511,7 @@ export default function DashboardPage() {
             Reset
           </button>
         </div>
-        <div className="mt-2 grid gap-2 md:grid-cols-[1fr_160px]">
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_160px]">
           <select
             value={filters.origin_location_id}
             onChange={(event) =>
@@ -569,18 +569,18 @@ export default function DashboardPage() {
             <thead className="sticky top-0 bg-white">
               <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/55">
                 <th className="px-3 py-2">Location</th>
-                <th className="px-3 py-2">Company</th>
+                <th className="hidden px-3 py-2 md:table-cell">Company</th>
                 <th className="px-3 py-2">Commodity</th>
-                <th className="px-3 py-2">Delivery</th>
-                <th className="px-3 py-2">Futures</th>
+                <th className="hidden px-3 py-2 md:table-cell">Delivery</th>
+                <th className="hidden px-3 py-2 md:table-cell">Futures</th>
                 <th className="px-3 py-2 text-right">Futures Price</th>
-                <th className="px-3 py-2 text-right">Fut Chg</th>
+                <th className="hidden px-3 py-2 text-right md:table-cell">Fut Chg</th>
                 <th className="px-3 py-2 text-right">Basis</th>
-                <th className="px-3 py-2 text-right">Basis Chg</th>
+                <th className="hidden px-3 py-2 text-right md:table-cell">Basis Chg</th>
                 <th className="px-3 py-2 text-right">Cash/Bu</th>
                 <th className="px-3 py-2 text-right">Bu Chg</th>
-                <th className="px-3 py-2 text-right">Cash/MT</th>
-                <th className="px-3 py-2 text-right">MT Chg</th>
+                <th className="hidden px-3 py-2 text-right md:table-cell">Cash/MT</th>
+                <th className="hidden px-3 py-2 text-right md:table-cell">MT Chg</th>
               </tr>
             </thead>
             <tbody>
@@ -598,18 +598,18 @@ export default function DashboardPage() {
                     onClick={() => setSelectedRowId(row.id)}
                   >
                     <td className="px-3 py-2">{row.location}</td>
-                    <td className="px-3 py-2">{row.company_name || "-"}</td>
+                    <td className="hidden px-3 py-2 md:table-cell">{row.company_name || "-"}</td>
                     <td className="px-3 py-2">{row.commodity_name}</td>
-                    <td className="px-3 py-2">{row.delivery_label || "-"}</td>
-                    <td className="px-3 py-2">{row.futures_month || "-"}</td>
+                    <td className="hidden px-3 py-2 md:table-cell">{row.delivery_label || "-"}</td>
+                    <td className="hidden px-3 py-2 md:table-cell">{row.futures_month || "-"}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.futures_price)}</td>
-                    <td className={`px-3 py-2 text-right ${toneForDelta(row.futures_change)}`}>{formatSigned(row.futures_change)}</td>
+                    <td className={`hidden px-3 py-2 text-right md:table-cell ${toneForDelta(row.futures_change)}`}>{formatSigned(row.futures_change)}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.basis)}</td>
-                    <td className={`px-3 py-2 text-right ${toneForDelta(row.basis_change)}`}>{formatSigned(row.basis_change)}</td>
+                    <td className={`hidden px-3 py-2 text-right md:table-cell ${toneForDelta(row.basis_change)}`}>{formatSigned(row.basis_change)}</td>
                     <td className="px-3 py-2 text-right">{formatNumber(row.cash_price_bu)}</td>
-                    <td className={`px-3 py-2 text-right ${toneForDelta(row.cash_price_bu_change)}`}>{formatSigned(row.cash_price_bu_change)}</td>
-                    <td className="px-3 py-2 text-right">{formatNumber(row.cash_price_mt)}</td>
-                    <td className={`px-3 py-2 text-right ${toneForDelta(row.cash_price_mt_change)}`}>{formatSigned(row.cash_price_mt_change)}</td>
+                    <td className="px-3 py-2 text-right">{formatSigned(row.cash_price_bu_change)}</td>
+                    <td className="hidden px-3 py-2 text-right md:table-cell">{formatNumber(row.cash_price_mt)}</td>
+                    <td className={`hidden px-3 py-2 text-right md:table-cell ${toneForDelta(row.cash_price_mt_change)}`}>{formatSigned(row.cash_price_mt_change)}</td>
                   </tr>
                 ))
               )}
@@ -618,7 +618,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">
+      <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-3 shadow-sm lg:p-4">
         <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Top Bids by Delivery Month</h2>
         <p className="mt-1 text-xs text-black/55">Best cash bids after filters, grouped by delivery month.</p>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -651,7 +651,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">
+      <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-3 shadow-sm lg:p-4">
         <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Selected Bid Actions</h2>
         {!selectedRow ? (
           <p className="mt-2 text-sm text-black/55">Pick a row from Live Price Preview to create watchlists and alerts.</p>
@@ -802,7 +802,7 @@ export default function DashboardPage() {
         )}
       </section>
 
-      <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">
+      <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-3 shadow-sm lg:p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Watchlist Run-Now Preview</h2>
@@ -870,7 +870,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-4 shadow-sm">
+      <section className="mt-4 rounded-xl border border-black/10 bg-white/85 p-3 shadow-sm lg:p-4">
         <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-black/70">Top Basis Movers</h2>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {movers.length === 0 ? (
