@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,10 @@ from app.models.alert import Alert
 from app.models.alert_rule import AlertRule
 from app.models.notification_log import NotificationLog
 from app.models.saved_search import SavedSearch
+
+
+class NotificationChannelUpdate(BaseModel):
+    notification_channels: list[dict]
 
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
@@ -52,6 +57,7 @@ def list_alert_rules(
                 "location": rule.location,
                 "saved_search_id": str(rule.saved_search_id) if rule.saved_search_id else None,
                 "delivery_months": rule.delivery_months_json or [],
+                "notification_channels": rule.notification_channels_json or [],
                 "is_active": rule.is_active,
                 "last_triggered_at": last_trigger.isoformat() if last_trigger else None,
                 "open_alert_count": int(open_count or 0),
@@ -239,6 +245,24 @@ def update_alert_rule(
     db.commit()
     db.refresh(row)
     return {"id": str(row.id), "is_active": row.is_active}
+
+
+@router.patch("/rules/{rule_id}/channels")
+def update_alert_rule_channels(
+    rule_id: uuid.UUID,
+    payload: NotificationChannelUpdate,
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    row = db.execute(
+        select(AlertRule).where(AlertRule.id == rule_id, AlertRule.org_id == context.org_id)
+    ).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="alert rule not found")
+    row.notification_channels_json = payload.notification_channels
+    db.add(row)
+    db.commit()
+    return {"id": str(row.id), "notification_channels": row.notification_channels_json or []}
 
 
 @router.delete("/rules/{rule_id}")

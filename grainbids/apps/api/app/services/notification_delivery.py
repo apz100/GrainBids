@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from email.message import EmailMessage
+import json
 import smtplib
 import ssl
+import urllib.error
+import urllib.request
 
 from app.core.config import settings
 
@@ -30,3 +33,14 @@ def send_email_message(*, subject: str, to: str, from_address: str, body: str) -
         if username and password:
             client.login(username, password)
         client.send_message(message)
+
+
+def send_webhook_message(*, url: str, payload: dict) -> None:
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    urllib.request.urlopen(req, timeout=15)
