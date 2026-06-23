@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
-import { API_BASE, AuthSession, buildApiRequestInit } from "@/lib/api";
+import type { AuthSession } from "@/lib/api";
 
 type AuthSessionState = {
   session: AuthSession | null;
@@ -22,7 +22,7 @@ export function AuthSessionProvider({ children }: { children: React.ReactNode })
     setStatus("loading");
     setError(null);
     try {
-      const response = await fetch(`${API_BASE}/api/settings/session`, buildApiRequestInit({ cache: "no-store" }));
+      const response = await fetch("/api/auth/session", { cache: "no-store", credentials: "include" });
       if (response.ok) {
         const nextSession: AuthSession = await response.json();
         setSession(nextSession);

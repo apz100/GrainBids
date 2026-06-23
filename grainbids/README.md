@@ -91,8 +91,16 @@ API (`apps/api`) required env:
 
 Web (`apps/web`) required env:
 - `NEXT_PUBLIC_API_URL=https://<your-api-domain>`
+- `AUTH_ORG_ID=<org-uuid>` or a trusted org cookie/header configured below
+- `AUTH_SESSION_COOKIE_NAME=<http-only auth user id cookie name>` or `AUTH_TRUST_PROXY_HEADERS=true`
+- `AUTH_TRUSTED_USER_HEADER=<trusted proxy user id header>` when using trusted proxy headers
+- `AUTH_TRUSTED_ORG_HEADER=<trusted proxy org id header>` when using trusted proxy headers
+
+Local web development can opt into browser-sent headers with:
+- `NEXT_PUBLIC_ENABLE_LOCAL_HEADER_AUTH=true`
 - `NEXT_PUBLIC_ORG_ID=<org-uuid>`
-- `NEXT_PUBLIC_AUTH_USER_ID=<trusted auth user id>`
+- `NEXT_PUBLIC_AUTH_USER_ID=<local auth user id>`
+- `NEXT_PUBLIC_USER_ROLE=admin`
 
 Health checks:
 - Liveness: `GET /health/live`
