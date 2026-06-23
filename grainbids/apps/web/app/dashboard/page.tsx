@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import OpenAlertsPanel from "./open-alerts-panel";
 import { API_BASE, buildApiHeaders, getApiConfigError, isAdminRole } from "@/lib/api";
+import { useAuthSession } from "../_components/auth-session-provider";
 
 type SummaryResponse = {
   average_basis: number | null;
@@ -164,6 +165,7 @@ const DEFAULT_FILTERS: FilterState = {
 };
 
 export default function DashboardPage() {
+  const { session } = useAuthSession();
   const headers = useMemo(() => buildApiHeaders(), []);
   const configError = useMemo(() => getApiConfigError({ requireOrg: true }), []);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
@@ -198,7 +200,7 @@ export default function DashboardPage() {
   const [actionMessage, setActionMessage] = useState("");
   const [actionError, setActionError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const canManageAlerts = useMemo(() => isAdminRole(), []);
+  const canManageAlerts = useMemo(() => isAdminRole(session?.user_role), [session?.user_role]);
   const [watchlists, setWatchlists] = useState<WatchlistRow[]>([]);
   const [selectedWatchlistId, setSelectedWatchlistId] = useState("");
   const [watchlistPreviewRows, setWatchlistPreviewRows] = useState<PreviewRow[]>([]);
@@ -344,8 +346,8 @@ export default function DashboardPage() {
       }
 
       const [signalHealthRes, signalForecastRes] = await Promise.all([
-        fetch(`${API_BASE}/api/signals/health`, { cache: "no-store", ...requestInit }),
-        fetch(`${API_BASE}/api/signals/forecast?limit=5`, { cache: "no-store", ...requestInit }),
+        fetch(`${API_BASE}/api/signals/health`, { cache: "no-store", headers }),
+        fetch(`${API_BASE}/api/signals/forecast?limit=5`, { cache: "no-store", headers }),
       ]);
       setSignalHealth(signalHealthRes.ok ? await signalHealthRes.json() : null);
       setSignalForecasts(signalForecastRes.ok ? (await signalForecastRes.json()).rows || [] : []);

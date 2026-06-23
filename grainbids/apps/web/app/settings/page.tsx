@@ -98,8 +98,7 @@ export default function SettingsPage() {
     setSuccess(null);
     try {
       const res = await fetch(`${API_BASE}/api/settings/org`, {
-        ...buildApiRequestInit({ method: "PATCH" }),
-        headers: { "Content-Type": "application/json" },
+        ...buildApiRequestInit({ method: "PATCH", headers: { "Content-Type": "application/json" } }),
         body: JSON.stringify({ name: nameDraft }),
       });
       if (res.ok) {
@@ -122,8 +121,7 @@ export default function SettingsPage() {
     setSuccess(null);
     try {
       const res = await fetch(`${API_BASE}/api/settings/users/${userId}`, {
-        ...buildApiRequestInit({ method: "PATCH" }),
-        headers: { "Content-Type": "application/json" },
+        ...buildApiRequestInit({ method: "PATCH", headers: { "Content-Type": "application/json" } }),
         body: JSON.stringify({ role: newRole }),
       });
       if (res.ok) {

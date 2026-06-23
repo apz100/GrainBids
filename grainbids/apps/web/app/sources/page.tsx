@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { API_BASE, buildApiHeaders, getApiConfigError, isAdminRole } from "@/lib/api";
+import { useAuthSession } from "../_components/auth-session-provider";
 
 type IngestionRun = {
   id: string;
@@ -139,9 +140,10 @@ type AmbiguousLocationCompanyRow = {
 };
 
 export default function SourcesPage() {
+  const { session, status } = useAuthSession();
   const headers = buildApiHeaders();
-  const adminAllowed = isAdminRole();
-  const configError = getApiConfigError({ requireOrg: true });
+  const adminAllowed = isAdminRole(session?.user_role);
+  const configError = getApiConfigError({ requireOrg: false });
   const [runs, setRuns] = useState<IngestionRun[]>([]);
   const [alerts, setAlerts] = useState<RecentAlert[]>([]);
   const [sources, setSources] = useState<SourceRow[]>([]);
@@ -198,7 +200,7 @@ export default function SourcesPage() {
   }
 
   useEffect(() => {
-    if (!adminAllowed) {
+    if (status === "loading" || !adminAllowed) {
       return;
     }
     if (configError) {
@@ -206,7 +208,7 @@ export default function SourcesPage() {
       return;
     }
     loadData().catch((err) => setError(String(err)));
-  }, [adminAllowed, openAlertsOnly, configError]);
+  }, [status, adminAllowed, openAlertsOnly, configError]);
 
   async function triggerIngestion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -437,6 +439,28 @@ export default function SourcesPage() {
     } finally {
       setUpdatingAlertId("");
     }
+  }
+
+  if (status === "loading") {
+    return (
+      <main className="mx-auto max-w-4xl px-6 py-12">
+        <div className="rounded-xl border border-black/10 bg-white/80 p-6 shadow-sm">
+          <p className="text-sm text-black/70">Loading session...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!session) {
+    return (
+      <main className="mx-auto max-w-4xl px-6 py-12">
+        <div className="rounded-xl border border-black/10 bg-white/80 p-6 shadow-sm">
+          <p className="text-xs uppercase tracking-[0.16em] text-black/50">Admin route</p>
+          <h1 className="mt-2 font-[family-name:var(--font-serif)] text-3xl">Sign in required</h1>
+          <p className="mt-3 text-sm text-black/70">Please sign in to access sources and ingestion controls.</p>
+        </div>
+      </main>
+    );
   }
 
   if (!adminAllowed) {

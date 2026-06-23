@@ -29,7 +29,26 @@ class UserRoleUpdateRequest(BaseModel):
 def module_info():
     return {
         "module": "settings",
-        "primary_routes": ["/api/settings/org", "/api/settings/users"],
+        "primary_routes": ["/api/settings/session", "/api/settings/org", "/api/settings/users"],
+    }
+
+
+@router.get("/session")
+def get_session(
+    context: RequestContext = Depends(get_request_context),
+    db: Session = Depends(get_db),
+):
+    org = db.get(Organization, context.org_id)
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return {
+        "authenticated": True,
+        "org_id": str(context.org_id),
+        "org_name": org.name,
+        "user_id": str(context.user_id) if context.user_id else None,
+        "auth_user_id": context.auth_user_id,
+        "user_email": context.user_email,
+        "user_role": context.user_role,
     }
 
 

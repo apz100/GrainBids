@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { API_BASE, buildApiHeaders } from "@/lib/api";
+import { API_BASE, buildApiHeaders, isAdminRole } from "@/lib/api";
 import {
   formatNotificationTimestamp,
   formatNotificationValue,
   notificationStatusClass,
 } from "@/lib/alerts-history.mjs";
+import { useAuthSession } from "../_components/auth-session-provider";
 
 type AlertRuleRow = {
   id: string;
@@ -52,7 +53,9 @@ type NotificationLogRow = {
 };
 
 export default function AlertsPage() {
+  const { session } = useAuthSession();
   const headers = buildApiHeaders();
+  const canManageAlerts = isAdminRole(session?.user_role);
   const [rules, setRules] = useState<AlertRuleRow[]>([]);
   const [savedSearches, setSavedSearches] = useState<SavedSearchRow[]>([]);
   const [alerts, setAlerts] = useState<RecentAlert[]>([]);

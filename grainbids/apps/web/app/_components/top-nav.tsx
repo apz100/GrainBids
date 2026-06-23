@@ -1,6 +1,9 @@
+"use client";
+
 import Link from "next/link";
 
-import { isAdminRole, USER_ROLE } from "@/lib/api";
+import { isAdminRole } from "@/lib/api";
+import { useAuthSession } from "./auth-session-provider";
 
 type NavItem = { href: string; label: string };
 
@@ -17,7 +20,8 @@ const ADMIN_NAV: NavItem[] = [
 ];
 
 export default function TopNav() {
-  const admin = isAdminRole(USER_ROLE);
+  const { session } = useAuthSession();
+  const admin = isAdminRole(session?.user_role);
   return (
     <header className="border-b border-black/10 bg-white/85 backdrop-blur">
       <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-6">

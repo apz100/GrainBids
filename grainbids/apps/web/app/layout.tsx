@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Instrument_Sans, Instrument_Serif } from "next/font/google";
+import { AuthSessionProvider } from "./_components/auth-session-provider";
 import TopNav from "./_components/top-nav";
 import "./globals.css";
 
@@ -15,8 +16,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${sans.variable} ${serif.variable}`}>
       <body className="min-h-screen antialiased">
-        <TopNav />
-        {children}
+        <AuthSessionProvider>
+          <TopNav />
+          {children}
+        </AuthSessionProvider>
       </body>
     </html>
   );
