@@ -16,6 +16,7 @@
 - `app/api/routes/alerts.py` exposes alert rules, recent alerts, notification logs, status updates, and rule CRUD.
 - `app/api/routes/saved_searches.py` and `app/api/routes/watchlists.py` both provide CRUD plus preview endpoints; `watchlists.py` now also exposes watchlist automation inspection, enable/disable, run-now, and preview endpoints backed by a persisted automation record.
 - `app/core/request_context.py` now resolves org and user identity explicitly. In production it requires `AUTH_CONTEXT_MODE=trusted_proxy`, `X-Auth-User-Id`, and an active `users.auth_user_id` match; local header fallback is only available where deliberately enabled for local development.
+- `app/api/routes/settings.py` now exposes a real session/bootstrap endpoint plus org and user-management endpoints; it is no longer just a module stub.
 - `app/api/routes/quotes.py` provides quote-run history and delivered-value export generation.
 - `app/api/routes/signals.py` exposes forecast rows and a health check.
 - `app/api/routes/reference.py` exposes source and commodity reference lists.
@@ -50,9 +51,10 @@
 - `app/watchlists/page.tsx` is a real watchlist and saved-search CRUD page with previews, automation status, linked alert state, and digest history.
 - `app/quotes/page.tsx` is a real delivered-value export page.
 - `app/signals/page.tsx` is a real forecast viewer, albeit isolated from the core market flow.
-- `app/settings/page.tsx` is still a scaffolded admin shell.
+- `app/settings/page.tsx` is now a session-aware admin surface for org info and user-role management, but it is still thin relative to a full account/billing workspace.
 - `app/upload/page.tsx` and `app/uploads/page.tsx` now redirect to `/sources`.
-- `app/_components/top-nav.tsx` shows the main product routes and hides admin routes unless the user role is admin/owner.
+- `app/_components/top-nav.tsx` shows the main product routes, reads the active session from the web session provider, and hides admin routes unless the session role is admin/owner.
+- `app/api/auth/session/route.ts` is a same-origin session bridge that resolves the active session from trusted cookies or proxy headers in production and keeps local header auth gated to deliberate non-production use.
 
 ### Operational scripts
 - `infra/scripts/run-api.ps1` starts the FastAPI app and bootstraps the venv if needed.
@@ -68,7 +70,6 @@
 
 ## Stale Or Thin Areas
 - `app/api/routes/bids.py` is only module metadata; the real data lives in `normalized_prices`.
-- `app/api/routes/settings.py` is only a module stub.
 - `app/api/routes/signals.py` is real, but it is still a standalone feature island.
 - `app/modules/market_sources` is a compatibility shim that points callers to `app/platform/market_data/sources`.
 - `app/modules/imports` still contains legacy normalization helpers.
@@ -78,6 +79,7 @@
 ## Verified Breaks
 - No verified backend breaks remain from the Wave 1 audit tasks or Task 6.
 - The Task 6 worker verification reported a successful `npm run build` in `apps/web` after the access-control changes.
+- Task 9 merged cleanly and targeted post-merge checks passed; the remaining known web-build issue is still the environment-specific local `spawn EPERM` failure when Next.js tries to start worker processes.
 
 ## Verification Run
 - `pytest -q tests/test_location_company_seed_docx.py` passed with 2 tests.
@@ -88,9 +90,11 @@
 - `pytest -q tests/test_config_runtime.py tests/test_request_context.py tests/test_route_authorization.py tests/test_alert_notification_logs.py` passed with 14 tests and 1 warning.
 - `pytest -q tests/test_source_company_identity_diagnostics.py tests/test_sources_location_company_mapping.py` passed with 7 tests and 2 warnings.
 - `pytest -q tests/test_watchlist_automation.py tests/test_alert_evaluator.py tests/test_alert_notification_logs.py tests/test_route_authorization.py` passed with 13 tests and 1 warning.
+- `pytest -q tests/test_settings_session.py` passed with 2 tests and 1 warning after Task 9 merged.
 - `pytest -q` in `apps/api` passed in the worker reports for Wave 1 tasks, with totals ranging from 99 to 101 tests and 1 warning.
 - `pytest -q` in `apps/api` passed locally after the watchlist automation implementation with 119 tests and 1 warning.
 - `pytest -q` in `apps/api` passed in the Wave 2 Task 4 worker report with 117 tests and 2 warnings.
+- `node tests/auth-session-bridge.test.mjs` passed after Task 9 merged.
 - `npm run build` in `apps/web` passed in the Task 6 worker verification after the request-context changes.
 - `npx tsc --noEmit --pretty false` passed in the Wave 2 Task 4 worker report using the local TypeScript binary.
 - `npm run build` in `apps/web` passed in the Wave 2 Task 4 worker report after the worker reran it with escalation.

@@ -9,7 +9,7 @@
 - Watchlist automation and alert promotion have since been implemented in the active branch; they are no longer a future roadmap gap.
 - Wave 2 begins with Task 4.
 - Task 8 is the trimmed billing-only split from the rejected broad billing/auth bundle and is approved for merge.
-- Task 9 is the next planned production auth/session bootstrap task.
+- Task 9 is complete and merged.
 
 ## Task Files
 - [01-stabilize-docx-backfill.md](docs/operations/tasks/wave-1/01-stabilize-docx-backfill.md)
@@ -130,7 +130,7 @@
 - Likely files: `apps/api/app/api/routes/auth.py`, `apps/api/app/core/session_auth.py`, `apps/api/app/core/request_context.py`, `apps/api/tests/test_auth_routes.py`, `apps/api/tests/test_request_context.py`, `apps/api/tests/test_route_authorization.py`, `apps/web/app/login/**`, `apps/web/app/auth/**`, `apps/web/middleware.ts`, `apps/web/lib/api.ts`, `apps/web/app/_components/auth-session-provider.tsx`.
 - Files that must not be touched: `apps/api/app/api/routes/normalized_prices.py`, `apps/api/app/api/routes/alerts.py`, `apps/api/app/api/routes/watchlists.py`, `apps/api/app/api/routes/sources.py`, `apps/api/app/services/source_file_ingestion.py`, `apps/web/app/dashboard/page.tsx`, `apps/web/app/alerts/page.tsx`, `apps/web/app/watchlists/page.tsx`, `apps/web/app/sources/page.tsx`, `apps/web/app/quotes/page.tsx`, `apps/web/app/signals/page.tsx`.
 - Dependencies: Task 6 request-context hardening is the baseline. Task 8 billing shell should stay separate and not run concurrently with this task.
-- Status: Planned.
+- Status: Completed and merged on `main` in commits `e279839` and `d084ee5` after review approval of worker fixes.
 - Acceptance criteria: Production pages require authenticated identity, the web shell redirects unauthenticated users to login, local-dev header auth still works where explicitly supported, and admin-only routes still reject non-admin users.
 - Tests: API config and context tests, auth route tests, protected-route tests, and a web type-check/build check.
 - Risk level: High.

@@ -15,17 +15,18 @@
 - Source-company backfill alias resolution for GLG-style cases is fixed and covered by tests.
 - Notification delivery history is now visible in the Alerts UI and API.
 - Production request-context hardening now exists: explicit org/user identity in production, deliberate local fallback only where configured, and admin-gated mutation routes.
+- A production-safe session bootstrap path now exists: the API exposes session details, the web app uses a same-origin session bridge, and admin navigation/session-aware pages no longer depend on browser-exposed production identity headers.
 
 ## Partial
 - The dashboard is responsive in CSS terms, but it is still a dense desktop-first table UI.
 - The sources page exposes meaningful admin controls, including company/location mapping editor controls, but the workflow is still narrower than a full bulk-management workspace.
 - Signals exists as a product area, but it is not integrated into the core discovery workflow.
-- `settings` is still a shell, so organization defaults, billing, and access controls are not productized in the UI.
+- `settings` now covers session-aware org and user-role basics, but billing, invites, and broader account administration are still not productized in the UI.
 - Root `/` is now a lightweight entry page; `/bids` is the active market dashboard, so the homepage is no longer a dashboard duplicate.
 
 ## Missing
 - Price alerts exist, but the provider abstraction is still effectively email-only.
-- Access control is still not a full external auth/session product, but it is no longer purely implicit header-based behavior in production.
+- A full external auth product is still missing: there is no complete sign-in/sign-out/callback UX or provider-managed session issuance flow in the product itself yet.
 
 ## Obsolete or Misleading
 - `docs/architecture/module-plan.md` has been synchronized with the current implementation and should be treated as the active architecture reference.
@@ -37,4 +38,4 @@
 - The core discovery loop is usable, and location search is now radius-aware instead of string-based.
 - Admins can prioritize source winners and directly maintain company/location mappings from the product UI.
 - Users can create alerts and watchlists, and both alert and watchlist delivery history are visible; watchlists can now run scheduled automation loops that promote matching filters into alert rules.
-- The app can be operated locally and via scripts, and production-grade access control is now represented through explicit request-context enforcement and mutation gating.
+- The app can be operated locally and via scripts, and production-grade access control now includes explicit request-context enforcement plus a same-origin session bootstrap path for the web shell.
