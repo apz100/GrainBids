@@ -8,12 +8,16 @@
 - Wave 1 Tasks 1-3 are complete and merged.
 - Watchlist automation and alert promotion have since been implemented in the active branch; they are no longer a future roadmap gap.
 - Wave 2 begins with Task 4.
+- Task 8 is the trimmed billing-only split from the rejected broad billing/auth bundle and is approved for merge.
+- Task 9 is the next planned production auth/session bootstrap task.
 
 ## Task Files
 - [01-stabilize-docx-backfill.md](docs/operations/tasks/wave-1/01-stabilize-docx-backfill.md)
 - [02-radius-bid-search.md](docs/operations/tasks/wave-1/02-radius-bid-search.md)
 - [03-alert-notification-history.md](docs/operations/tasks/wave-1/03-alert-notification-history.md)
 - [04-admin-mapping-editor.md](docs/operations/tasks/wave-2/04-admin-mapping-editor.md)
+- [08-billing-entitlement-shell.md](docs/operations/tasks/wave-2/08-billing-entitlement-shell.md)
+- [09-production-auth-session-bootstrap.md](docs/operations/tasks/wave-2/09-production-auth-session-bootstrap.md)
 
 ## Task 1. Restore DOCX benchmark filtering
 - Spec file: [docs/operations/tasks/wave-1/01-stabilize-docx-backfill.md](docs/operations/tasks/wave-1/01-stabilize-docx-backfill.md)
@@ -106,7 +110,35 @@
 - Risk level: Low.
 - Can run in parallel: Yes, but only after the feature tasks are merged or frozen. Already completed.
 
+## Task 8. Add a read-only billing and entitlement shell
+- Spec file: [docs/operations/tasks/wave-2/08-billing-entitlement-shell.md](docs/operations/tasks/wave-2/08-billing-entitlement-shell.md)
+- Objective: Give users a simple read-only billing surface that explains the current plan and upgrade path without changing auth/session or product behavior.
+- Exact scope: Expose a small billing API, render a read-only billing page, and add a minimal top-nav entry point while leaving every existing product flow intact.
+- Likely files: `apps/api/app/api/routes/settings.py`, `apps/api/app/services/entitlements.py`, `apps/api/tests/test_entitlements.py`, `apps/api/tests/test_settings_billing.py`, `apps/web/app/billing/page.tsx`, `apps/web/app/_components/top-nav.tsx`, `apps/web/lib/api.ts` if a tiny helper is needed.
+- Files that must not be touched: `apps/api/app/core/request_context.py`, `apps/api/app/api/routes/auth.py`, `apps/api/app/core/session_auth.py`, `apps/web/middleware.ts`, `apps/web/app/login/**`, `apps/web/app/auth/**`, `apps/web/app/settings/page.tsx`, discovery routes, alert routes, watchlist routes, ingestion jobs.
+- Dependencies: Task 6 request-context hardening is the baseline. Do not include auth/session rewiring in this task.
+- Status: Planned.
+- Acceptance criteria: A signed-in user can view plan and upgrade information in a read-only UI; no auth/session or unrelated product behavior changes are introduced.
+- Tests: Endpoint tests, entitlement mapping tests, and a web type-check/build check.
+- Risk level: Medium.
+- Can run in parallel: No with any task that edits `apps/web/app/settings/page.tsx` or auth/session plumbing.
+
+## Task 9. Bootstrap production auth and sessions
+- Spec file: [docs/operations/tasks/wave-2/09-production-auth-session-bootstrap.md](docs/operations/tasks/wave-2/09-production-auth-session-bootstrap.md)
+- Objective: Replace the production identity path with real authenticated sessions while preserving the existing local-dev header flow where it is intentionally supported.
+- Exact scope: Add a minimal sign-in/session bootstrap flow, expose a current-user endpoint or equivalent bootstrap response, and make the web shell route unauthenticated users toward login without changing the working discovery, alert, watchlist, quote, or ingestion flows.
+- Likely files: `apps/api/app/api/routes/auth.py`, `apps/api/app/core/session_auth.py`, `apps/api/app/core/request_context.py`, `apps/api/tests/test_auth_routes.py`, `apps/api/tests/test_request_context.py`, `apps/api/tests/test_route_authorization.py`, `apps/web/app/login/**`, `apps/web/app/auth/**`, `apps/web/middleware.ts`, `apps/web/lib/api.ts`, `apps/web/app/_components/auth-session-provider.tsx`.
+- Files that must not be touched: `apps/api/app/api/routes/normalized_prices.py`, `apps/api/app/api/routes/alerts.py`, `apps/api/app/api/routes/watchlists.py`, `apps/api/app/api/routes/sources.py`, `apps/api/app/services/source_file_ingestion.py`, `apps/web/app/dashboard/page.tsx`, `apps/web/app/alerts/page.tsx`, `apps/web/app/watchlists/page.tsx`, `apps/web/app/sources/page.tsx`, `apps/web/app/quotes/page.tsx`, `apps/web/app/signals/page.tsx`.
+- Dependencies: Task 6 request-context hardening is the baseline. Task 8 billing shell should stay separate and not run concurrently with this task.
+- Status: Planned.
+- Acceptance criteria: Production pages require authenticated identity, the web shell redirects unauthenticated users to login, local-dev header auth still works where explicitly supported, and admin-only routes still reject non-admin users.
+- Tests: API config and context tests, auth route tests, protected-route tests, and a web type-check/build check.
+- Risk level: High.
+- Can run in parallel: No with any task that edits auth/session plumbing, `apps/web/middleware.ts`, or `apps/web/app/settings/page.tsx`.
+
 ## Conflict Summary
 - Task 4 is completed; future dashboard/location-selection work should still treat `apps/web/app/sources/page.tsx` and mapping semantics as shared surfaces.
 - Task 5 and Task 6 should not run concurrently because they both affect admin-facing mutation and request-context behavior.
 - Task 7 is complete; any future docs maintenance should be treated as a low-risk follow-up.
+- Task 8 must not run concurrently with auth/session rewiring or any task that edits `apps/web/app/settings/page.tsx`.
+- Task 9 must not run concurrently with Task 8, any auth/session task, or any task that edits `apps/web/app/settings/page.tsx`.
