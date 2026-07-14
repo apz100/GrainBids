@@ -50,6 +50,10 @@ type SourceRow = {
   adapter_key: string | null;
   source_type: string;
   region: string | null;
+  country_code: string | null;
+  currency_code: string | null;
+  timezone_name: string | null;
+  collection_status: string;
   is_active: boolean;
   polling_interval_minutes: number;
   timeout_seconds: number;
@@ -71,6 +75,36 @@ type SourceRow = {
   can_refresh?: boolean;
   logical_parent_source_name?: string;
   logical_row_count?: number;
+};
+
+type ProbeCoverage = {
+  matched_columns: string[];
+  present_rows: number;
+  total_rows: number;
+  ratio: number;
+};
+
+type ProbeResult = {
+  passed: boolean;
+  attempts: number;
+  timeout_seconds: number;
+  raw_row_count: number;
+  column_count: number;
+  columns: string[];
+  required_field_coverage: Record<string, ProbeCoverage>;
+  commodities: string[];
+  locations: string[];
+  pass_reasons: string[];
+  fail_reasons: string[];
+  preview: Record<string, string | number | boolean | null>[];
+  preview_limit: number;
+  preview_truncated: boolean;
+  persisted: boolean;
+};
+
+type ProbeResponse = {
+  source: Pick<SourceRow, "id" | "name" | "adapter_key" | "collection_status" | "is_active">;
+  result: ProbeResult;
 };
 
 type SlaSummary = {
@@ -143,6 +177,10 @@ export default function SourcesPage() {
   const [coverageRows, setCoverageRows] = useState<CanonicalCoverageRow[]>([]);
   const [priorityCandidates, setPriorityCandidates] = useState<CompanyPriorityCandidateRow[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [importingCandidates, setImportingCandidates] = useState(false);
+  const [probingSourceId, setProbingSourceId] = useState("");
+  const [updatingSourceId, setUpdatingSourceId] = useState("");
+  const [probeResponse, setProbeResponse] = useState<ProbeResponse | null>(null);
 
   async function loadData() {
     const openOnlyQuery = openAlertsOnly ? "&open_only=true" : "";
@@ -245,6 +283,68 @@ export default function SourcesPage() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function importUsCandidates() {
+    setImportingCandidates(true);
+    setMessage("");
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/sources/seed-us-candidates`, { method: "POST", headers });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof json.detail === "string" ? json.detail : "Candidate import failed");
+      }
+      setMessage(`Imported ${json.created ?? 0} inactive US candidates; skipped ${json.skipped ?? 0}.`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setImportingCandidates(false);
+    }
+  }
+
+  async function probeCandidate(sourceId: string) {
+    setProbingSourceId(sourceId);
+    setProbeResponse(null);
+    setMessage("");
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/sources/${sourceId}/probe`, { method: "POST", headers });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof json.detail === "string" ? json.detail : "Candidate probe failed");
+      }
+      setProbeResponse(json as ProbeResponse);
+      setMessage(`Probe completed for ${json.source.name}: ${json.result.passed ? "passed" : "needs review"}. No rows were saved.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setProbingSourceId("");
+    }
+  }
+
+  async function updateCandidateStatus(source: SourceRow, action: "promote-to-pilot" | "quarantine") {
+    const verb = action === "promote-to-pilot" ? "promote to pilot and activate" : "quarantine";
+    if (!window.confirm(`Confirm: ${verb} ${source.name}?`)) return;
+
+    setUpdatingSourceId(source.id);
+    setMessage("");
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/api/sources/${source.id}/${action}`, { method: "POST", headers });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(typeof json.detail === "string" ? json.detail : `Failed to ${verb}`);
+      }
+      setMessage(`${source.name} is now ${json.collection_status}.`);
+      setProbeResponse(null);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUpdatingSourceId("");
     }
   }
 
@@ -591,6 +691,13 @@ export default function SourcesPage() {
               Seed pilot adapters
             </button>
             <button
+              disabled={importingCandidates}
+              onClick={importUsCandidates}
+              className="rounded-md border border-black/20 bg-white px-4 py-2 text-sm disabled:opacity-50"
+            >
+              {importingCandidates ? "Importing..." : "Import US candidates"}
+            </button>
+            <button
               disabled={seedingDefaults}
               onClick={seedDefaultPriority}
               className="rounded-md border border-black/20 bg-white px-4 py-2 text-sm disabled:opacity-50"
@@ -604,6 +711,8 @@ export default function SourcesPage() {
             <thead>
               <tr className="border-b border-black/10 text-xs uppercase tracking-wide text-black/50">
                 <th className="px-2 py-2">Source</th>
+                <th className="px-2 py-2">Geography</th>
+                <th className="px-2 py-2">Collection</th>
                 <th className="px-2 py-2">Interval</th>
                 <th className="px-2 py-2">Freshness</th>
                 <th className="px-2 py-2">Confidence</th>
@@ -618,7 +727,7 @@ export default function SourcesPage() {
             <tbody>
               {sources.length === 0 ? (
                 <tr>
-                  <td className="px-2 py-4 text-black/55" colSpan={10}>
+                  <td className="px-2 py-4 text-black/55" colSpan={12}>
                     No sources configured yet.
                   </td>
                 </tr>
@@ -632,6 +741,16 @@ export default function SourcesPage() {
                           ? `${source.logical_parent_source_name} (${source.logical_row_count ?? 0} rows)`
                           : source.adapter_key || "-"}
                       </div>
+                    </td>
+                    <td className="px-2 py-2">
+                      <div>{source.region || "-"}</div>
+                      <div className="text-xs text-black/50">
+                        {[source.country_code, source.currency_code, source.timezone_name].filter(Boolean).join(" · ") || "-"}
+                      </div>
+                    </td>
+                    <td className="px-2 py-2">
+                      <div>{source.collection_status}</div>
+                      <div className="text-xs text-black/50">{source.is_active ? "active" : "inactive"}</div>
                     </td>
                     <td className="px-2 py-2">{source.polling_interval_minutes}m</td>
                     <td className="px-2 py-2">
@@ -651,7 +770,36 @@ export default function SourcesPage() {
                       <div className="text-xs text-black/50">runs: {source.successful_run_count}</div>
                     </td>
                     <td className="px-2 py-2">
-                      {source.can_refresh === false ? (
+                      {source.collection_status === "candidate" && !source.is_active ? (
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            disabled={probingSourceId === source.id || updatingSourceId === source.id}
+                            onClick={() => probeCandidate(source.id)}
+                            className="rounded-md border border-black/20 bg-black px-3 py-1 text-xs text-white disabled:opacity-50"
+                          >
+                            {probingSourceId === source.id ? "Probing..." : "Probe"}
+                          </button>
+                          <button
+                            disabled={
+                              updatingSourceId === source.id ||
+                              probeResponse?.source.id !== source.id ||
+                              !probeResponse.result.passed
+                            }
+                            onClick={() => updateCandidateStatus(source, "promote-to-pilot")}
+                            className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs text-emerald-900 disabled:opacity-40"
+                            title="A passing probe is required in this browser session"
+                          >
+                            Promote
+                          </button>
+                          <button
+                            disabled={updatingSourceId === source.id}
+                            onClick={() => updateCandidateStatus(source, "quarantine")}
+                            className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1 text-xs text-amber-900 disabled:opacity-50"
+                          >
+                            Quarantine
+                          </button>
+                        </div>
+                      ) : source.can_refresh === false ? (
                         <span className="text-xs text-black/55">n/a</span>
                       ) : (
                         <button
@@ -669,6 +817,7 @@ export default function SourcesPage() {
             </tbody>
           </table>
         </div>
+        {probeResponse ? <ProbeResultPanel response={probeResponse} /> : null}
         {sla?.failing_source_rows && sla.failing_source_rows.length > 0 ? (
           <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm">
             <p className="font-medium text-red-900">Failing sources</p>
@@ -841,6 +990,96 @@ function Field({ name, label, placeholder }: { name: string; label: string; plac
       <span className="text-xs uppercase tracking-wide text-black/50">{label}</span>
       <input name={name} placeholder={placeholder} className="mt-1 w-full rounded-md border border-black/15 bg-white px-3 py-2 text-sm" />
     </label>
+  );
+}
+
+function ProbeResultPanel({ response }: { response: ProbeResponse }) {
+  const result = response.result;
+  const previewColumns = result.preview.length > 0 ? Object.keys(result.preview[0]) : [];
+  return (
+    <div className="mt-5 rounded-lg border border-black/10 bg-white p-4 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-semibold">Probe result: {response.source.name}</p>
+          <p className="mt-1 text-xs text-black/55">
+            One attempt · {result.raw_row_count} raw rows · {result.column_count} columns · nothing persisted
+          </p>
+        </div>
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-medium ${
+            result.passed ? "bg-emerald-100 text-emerald-900" : "bg-amber-100 text-amber-900"
+          }`}
+        >
+          {result.passed ? "Passed" : "Needs review"}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-black/50">Required-field coverage</p>
+          <ul className="mt-2 space-y-1">
+            {Object.entries(result.required_field_coverage).map(([field, coverage]) => (
+              <li key={field}>
+                {field}: {(coverage.ratio * 100).toFixed(1)}% ({coverage.present_rows}/{coverage.total_rows})
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-black/50">Coverage found</p>
+          <p className="mt-2">Commodities: {result.commodities.join(", ") || "none"}</p>
+          <p className="mt-1">Locations: {result.locations.join(", ") || "none"}</p>
+          <p className="mt-1">Columns: {result.columns.join(", ") || "none"}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <div className="rounded-md bg-emerald-50 p-3 text-emerald-900">
+          <p className="font-medium">Passed checks</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {result.pass_reasons.map((reason) => <li key={reason}>{reason}</li>)}
+          </ul>
+        </div>
+        <div className="rounded-md bg-amber-50 p-3 text-amber-900">
+          <p className="font-medium">Failed checks</p>
+          {result.fail_reasons.length > 0 ? (
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {result.fail_reasons.map((reason) => <li key={reason}>{reason}</li>)}
+            </ul>
+          ) : (
+            <p className="mt-1">None.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 overflow-x-auto">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-black/50">
+          Sanitized preview (maximum {result.preview_limit} rows)
+        </p>
+        {result.preview.length === 0 ? (
+          <p className="text-black/55">No preview rows returned.</p>
+        ) : (
+          <table className="min-w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-black/10 text-black/55">
+                {previewColumns.map((column) => <th key={column} className="whitespace-nowrap px-2 py-2">{column}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {result.preview.map((row, index) => (
+                <tr key={index} className="border-b border-black/5">
+                  {previewColumns.map((column) => (
+                    <td key={column} className="max-w-64 truncate px-2 py-2" title={String(row[column] ?? "")}>
+                      {String(row[column] ?? "-")}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
   );
 }
 

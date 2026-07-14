@@ -18,6 +18,7 @@ from app.models.price_snapshot import PriceSnapshot
 from app.models.source import Source
 from app.services.market_canonicalization import canonical_key, canonical_source_name
 from app.services.source_orchestration import list_sources_with_health, run_source_refresh, seed_sources_from_registry
+from app.services.source_probe import SourceProbeEligibilityError, probe_source
 from app.services.source_registry import get_adapter, list_pilot_adapter_keys
 from app.services.us_source_candidates import seed_us_source_candidates
 
@@ -77,6 +78,39 @@ def seed_us_candidates(
         "collection_status": "candidate",
         "is_active": False,
         "network_requests_started": 0,
+    }
+
+
+@router.post("/{source_id}/probe")
+def probe_source_candidate(
+    source_id: uuid.UUID,
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    source = db.execute(
+        select(Source).where(Source.id == source_id, Source.org_id == context.org_id)
+    ).scalar_one_or_none()
+    if source is None:
+        raise HTTPException(status_code=404, detail="source not found")
+
+    try:
+        result = probe_source(source)
+    except SourceProbeEligibilityError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail="source probe timed out") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail="source probe fetch failed") from exc
+
+    return {
+        "source": {
+            "id": str(source.id),
+            "name": source.name,
+            "adapter_key": source.adapter_key,
+            "collection_status": source.collection_status,
+            "is_active": source.is_active,
+        },
+        "result": result,
     }
 
 
