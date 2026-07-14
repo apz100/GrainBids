@@ -17,6 +17,18 @@ from app.services.market_canonicalization import canonical_key, canonical_source
 from app.services.upload_csv import _source_creates_company_identity
 
 
+_SOURCE_LOOKUP_ALIASES: dict[str, tuple[str, ...]] = {
+    "great lakes grain": ("glg", "g.l.g.", "agris", "agris co-operative", "agris cooperative", "central ontario fs"),
+    "the andersons": ("andersons", "thompsons", "thompsons ltd", "thompsons limited"),
+    "london agricultural commodities": ("lac", "london ag commodities"),
+    "hensall co-operative": ("hensall", "hensall hdc", "hdc", "hensall co-op", "hensall cooperative"),
+    "snobelen farms": ("snobelen",),
+    "port of prescott": ("port of prescott grain terminal",),
+    "agricharts": ("agricharts",),
+    "wanstead": ("wanstead",),
+}
+
+
 @dataclass
 class BackfillStats:
     scanned_rows: int = 0
@@ -58,6 +70,13 @@ def _source_lookup_keys(source_name: str | None) -> tuple[str, ...]:
         key = canonical_key(candidate)
         if key and key not in keys:
             keys.append(key)
+        if candidate is None:
+            continue
+        alias_candidates = _SOURCE_LOOKUP_ALIASES.get(candidate.casefold(), ())
+        for alias in alias_candidates:
+            alias_key = canonical_key(alias)
+            if alias_key and alias_key not in keys:
+                keys.append(alias_key)
     return tuple(keys)
 
 

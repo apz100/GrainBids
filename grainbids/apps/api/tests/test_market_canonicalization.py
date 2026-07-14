@@ -44,8 +44,31 @@ class MarketCanonicalizationTests(unittest.TestCase):
         self.assertEqual(canonical_location_name("Embrun Co-op"), "Embrun")
 
     def test_benchmark_location_labels(self) -> None:
-        self.assertTrue(is_benchmark_location_label("Benchmark"))
+        for label in (
+            "Benchmark",
+            "Avg",
+            "Average",
+            "F.O.B.",
+            "County",
+            "Cty",
+            "U.S. Rep",
+            "Regional Price",
+            "Price Index",
+        ):
+            self.assertTrue(is_benchmark_location_label(label), msg=label)
         self.assertFalse(is_benchmark_location_label("Mitchell"))
+
+    def test_benchmark_location_labels_keep_physical_locations_false(self) -> None:
+        for label in (
+            None,
+            "Embrun Elevator",
+            "Prescott Transfer",
+            "South Feed Mill",
+            "Ayr Town",
+            "Great Lakes Grain",
+            "Mitchell GLG Corn",
+        ):
+            self.assertFalse(is_benchmark_location_label(label), msg=str(label))
 
     def test_commodity_aliases(self) -> None:
         self.assertEqual(canonical_commodity_name("soybean"), "Soybeans")

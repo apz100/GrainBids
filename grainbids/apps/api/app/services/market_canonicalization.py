@@ -30,8 +30,47 @@ LOCATION_CANONICAL_OVERRIDES = {
     "toledo corn": "Toledo Elevator",
     "toledo soybeans": "Toledo Elevator",
 }
-BENCHMARK_LOCATION_TOKENS = ("benchmark", "fob", "avg", "rep", "feed")
-BENCHMARK_LOCATION_PHRASES = ("regional price", "price index", "u.s. rep")
+_BENCHMARK_STRONG_PHRASES = (
+    "benchmark",
+    "regional price",
+    "price index",
+)
+_BENCHMARK_WEAK_WORDS = {"avg", "average", "county", "cty"}
+_BENCHMARK_PHYSICAL_HINTS = {
+    "branch",
+    "co op",
+    "cooperative",
+    "company",
+    "coop",
+    "elevator",
+    "farm",
+    "farms",
+    "feed",
+    "grain",
+    "location",
+    "mill",
+    "road",
+    "route",
+    "street",
+    "town road",
+    "plant",
+    "terminal",
+    "trail",
+    "town",
+    "township",
+    "transfer",
+    "village",
+    "way",
+    "drive",
+    "lane",
+    "highway",
+    "avenue",
+    "boulevard",
+    "court",
+    "place",
+}
+_BENCHMARK_FOB_PATTERN = re.compile(r"\bf[\s.]*o[\s.]*b\b", flags=re.IGNORECASE)
+_BENCHMARK_US_REP_PATTERN = re.compile(r"\b(?:u[\s.]*s|us)[\s.]*rep\b", flags=re.IGNORECASE)
 
 
 def normalize_text(value: str | None) -> str | None:
@@ -134,13 +173,28 @@ def canonical_location_name(location_name: str | None) -> str | None:
 
 
 def is_benchmark_location_label(location_name: str | None) -> bool:
-    normalized = canonical_location_name(location_name) or normalize_text(location_name)
+    normalized = normalize_text(location_name)
     if normalized is None:
         return False
-    lowered = normalized.casefold()
-    if any(phrase in lowered for phrase in BENCHMARK_LOCATION_PHRASES):
+    lowered = re.sub(r"[^0-9A-Za-z]+", " ", normalized).casefold()
+    lowered = re.sub(r"\s+", " ", lowered).strip()
+    if not lowered:
+        return False
+    if any(phrase in lowered for phrase in _BENCHMARK_STRONG_PHRASES):
         return True
-    return any(token in lowered.split() for token in BENCHMARK_LOCATION_TOKENS)
+    if _BENCHMARK_FOB_PATTERN.search(lowered) or _BENCHMARK_US_REP_PATTERN.search(lowered):
+        return True
+
+    tokens = lowered.split()
+    if not tokens:
+        return False
+    if any(token in _BENCHMARK_WEAK_WORDS for token in tokens):
+        if any(hint in lowered for hint in _BENCHMARK_PHYSICAL_HINTS):
+            return False
+        return True
+    if tokens == ["county"] or tokens == ["cty"]:
+        return True
+    return False
 
 
 def source_scope(source_name: str | None) -> tuple[str, str | None]:
