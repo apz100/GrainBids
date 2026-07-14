@@ -5,6 +5,7 @@ from sqlalchemy import text
 
 from app.api.routes.alerts import router as alerts_router
 from app.api.routes.bids import router as bids_router
+from app.api.routes.content_drafts import router as content_drafts_router
 from app.api.routes.ingestion import router as ingestion_router
 from app.api.routes.market_data import router as market_data_router
 from app.api.routes.market_report import router as market_report_router
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
 
     app.include_router(reference_router)
     app.include_router(bids_router)
+    app.include_router(content_drafts_router)
     app.include_router(sources_router)
     app.include_router(ingestion_router)
     app.include_router(market_data_router)
