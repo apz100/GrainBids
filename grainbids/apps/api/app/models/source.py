@@ -19,6 +19,10 @@ class Source(Base):
     url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     location_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     region: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    currency_code: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    timezone_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    collection_status: Mapped[str] = mapped_column(String(30), nullable=False, default="candidate")
 
     polling_interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=15)
     timeout_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=90)

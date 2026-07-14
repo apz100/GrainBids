@@ -19,7 +19,13 @@ from app.models.price_snapshot import PriceSnapshot
 from app.models.source import Source
 from app.services.alert_evaluator import evaluate_alert_rules_for_snapshot
 from app.services.source_health import minutes_since, record_source_health_snapshot, update_source_health_state
-from app.services.source_registry import fetch_with_adapter, get_adapter, list_adapters, list_pilot_adapter_keys
+from app.services.source_registry import (
+    SourceFetchTarget,
+    fetch_with_adapter,
+    get_adapter,
+    list_adapters,
+    list_pilot_adapter_keys,
+)
 from app.services.upload_csv import process_csv_upload
 
 
@@ -76,7 +82,14 @@ def run_source_refresh(
         schema_drift_count = 0
         parse_success_rate: float | None = 0.0
         try:
-            df = _fetch_with_timeout(adapter.key, timeout_seconds=timeout_seconds)
+            fetch_target = None
+            if adapter.requires_target:
+                fetch_target = SourceFetchTarget(name=source.name, url=(source.url or "").strip())
+            df = _fetch_with_timeout(
+                adapter.key,
+                timeout_seconds=timeout_seconds,
+                target=fetch_target,
+            )
             duration_ms = int((time.perf_counter() - started) * 1000)
             row_count = int(len(df.index))
             if row_count == 0:
@@ -195,7 +208,6 @@ def list_sources_with_health(
     now = datetime.now(timezone.utc)
     latest_run_by_source = _load_latest_run_by_source_name(db, org_id=org_id)
     success_run_counts = _load_completed_run_counts(db, org_id=org_id)
-    pilot_keys = set(list_pilot_adapter_keys())
     output: list[dict] = []
     for source in rows:
         stale_age_minutes = minutes_since(source.last_success_at, now)
@@ -206,7 +218,6 @@ def list_sources_with_health(
         promotion_status = _promotion_status(
             source=source,
             successful_run_count=successful_run_count,
-            pilot_keys=pilot_keys,
         )
         output.append(
             {
@@ -215,6 +226,10 @@ def list_sources_with_health(
                 "adapter_key": source.adapter_key,
                 "source_type": source.source_type,
                 "region": source.region,
+                "country_code": source.country_code,
+                "currency_code": source.currency_code,
+                "timezone_name": source.timezone_name,
+                "collection_status": source.collection_status,
                 "is_active": source.is_active,
                 "polling_interval_minutes": source.polling_interval_minutes,
                 "timeout_seconds": source.timeout_seconds,
@@ -314,13 +329,14 @@ def build_sla_summary(db: Session, *, org_id: uuid.UUID | None = None) -> dict:
 
 def list_due_sources(db: Session, *, now: datetime | None = None) -> list[Source]:
     current = now or datetime.now(timezone.utc)
-    pilot_keys = list_pilot_adapter_keys()
+    supported_adapter_keys = [adapter.key for adapter in list_adapters()]
     return db.execute(
         select(Source).where(
             and_(
                 Source.is_active.is_(True),
                 Source.source_type == "automated",
-                Source.adapter_key.in_(pilot_keys),
+                Source.collection_status.in_(("pilot", "active")),
+                Source.adapter_key.in_(supported_adapter_keys),
                 (Source.next_poll_at.is_(None) | (Source.next_poll_at <= current)),
             )
         )
@@ -356,11 +372,16 @@ def poll_due_sources(
     return results
 
 
-def _fetch_with_timeout(adapter_key: str, *, timeout_seconds: int) -> pd.DataFrame:
+def _fetch_with_timeout(
+    adapter_key: str,
+    *,
+    timeout_seconds: int,
+    target: SourceFetchTarget | None = None,
+) -> pd.DataFrame:
     adapter = get_adapter(adapter_key)
     ctx = get_context("spawn")
     result_queue = ctx.Queue(maxsize=1)
-    process = ctx.Process(target=_fetch_with_timeout_worker, args=(result_queue, adapter), daemon=True)
+    process = ctx.Process(target=_fetch_with_timeout_worker, args=(result_queue, adapter, target), daemon=True)
     process.start()
     try:
         try:
@@ -382,9 +403,9 @@ def _fetch_with_timeout(adapter_key: str, *, timeout_seconds: int) -> pd.DataFra
         process.join(timeout=5)
 
 
-def _fetch_with_timeout_worker(result_queue, adapter) -> None:
+def _fetch_with_timeout_worker(result_queue, adapter, target) -> None:
     try:
-        df = fetch_with_adapter(adapter)
+        df = fetch_with_adapter(adapter, target=target)
         result_queue.put(("ok", df))
     except Exception as exc:  # noqa: BLE001
         result_queue.put(("error", repr(exc)))
@@ -414,21 +435,30 @@ def seed_sources_from_registry(
         for source in db.execute(select(Source).where(Source.org_id == org_id)).scalars().all()
     }
     allowed = set(adapter_keys or [adapter.key for adapter in list_adapters()])
+    pilot_keys = set(list_pilot_adapter_keys())
     created = 0
     for adapter in list_adapters():
         if adapter.key not in allowed:
             continue
+        if adapter.requires_target:
+            continue
         if adapter.key in existing_names:
             continue
+        is_pilot = adapter.key in pilot_keys
         source = Source(
             org_id=org_id,
             name=adapter.key,
             adapter_key=adapter.key,
             source_type="automated",
+            region="Ontario",
+            country_code="CA",
+            currency_code="CAD",
+            timezone_name="America/Toronto",
+            collection_status="pilot" if is_pilot else "candidate",
             polling_interval_minutes=adapter.default_poll_minutes,
             timeout_seconds=adapter.default_timeout_seconds,
             max_retries=2,
-            is_active=True,
+            is_active=is_pilot,
         )
         db.add(source)
         created += 1
@@ -465,15 +495,17 @@ def _load_completed_run_counts(db: Session, *, org_id: uuid.UUID | None = None) 
     return {name: int(count) for name, count in db.execute(query).all()}
 
 
-def _promotion_status(*, source: Source, successful_run_count: int, pilot_keys: set[str]) -> str:
-    adapter = (source.adapter_key or "").strip().lower()
+def _promotion_status(*, source: Source, successful_run_count: int) -> str:
     if source.source_type != "automated":
         return "n/a"
-    if adapter not in pilot_keys:
-        return "not_pilot"
+    collection_status = (source.collection_status or "candidate").strip().lower()
+    if collection_status in {"candidate", "quarantined"}:
+        return collection_status
+    if collection_status == "active":
+        return "active"
     confidence = float(source.confidence_score) if source.confidence_score is not None else 0.0
     if successful_run_count >= 3 and confidence >= 0.8 and int(source.consecutive_failures or 0) == 0:
-        return "promoted"
+        return "ready_for_active"
     if successful_run_count >= 1:
         return "pilot"
     return "pilot_pending"
@@ -509,6 +541,10 @@ def _build_file_logical_source_rows(
                     "adapter_key": source.adapter_key,
                     "source_type": "file_logical",
                     "region": source.region,
+                    "country_code": source.country_code,
+                    "currency_code": source.currency_code,
+                    "timezone_name": source.timezone_name,
+                    "collection_status": source.collection_status,
                     "is_active": source.is_active,
                     "polling_interval_minutes": source.polling_interval_minutes,
                     "timeout_seconds": source.timeout_seconds,

@@ -18,7 +18,8 @@ from app.models.price_snapshot import PriceSnapshot
 from app.models.source import Source
 from app.services.market_canonicalization import canonical_key, canonical_source_name
 from app.services.source_orchestration import list_sources_with_health, run_source_refresh, seed_sources_from_registry
-from app.services.source_registry import list_pilot_adapter_keys
+from app.services.source_registry import get_adapter, list_pilot_adapter_keys
+from app.services.us_source_candidates import seed_us_source_candidates
 
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
@@ -65,6 +66,77 @@ def seed_sources(
     return {"created": created, "scope": scope, "adapter_keys": adapter_keys or "all"}
 
 
+@router.post("/seed-us-candidates")
+def seed_us_candidates(
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    result = seed_us_source_candidates(db, org_id=context.org_id)
+    return {
+        **result,
+        "collection_status": "candidate",
+        "is_active": False,
+        "network_requests_started": 0,
+    }
+
+
+@router.post("/{source_id}/promote-to-pilot")
+def promote_source_to_pilot(
+    source_id: uuid.UUID,
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    source = db.execute(
+        select(Source).where(Source.id == source_id, Source.org_id == context.org_id)
+    ).scalar_one_or_none()
+    if source is None:
+        raise HTTPException(status_code=404, detail="source not found")
+    if source.source_type != "automated" or not source.adapter_key:
+        raise HTTPException(status_code=400, detail="only automated sources with a supported adapter can be piloted")
+    try:
+        adapter = get_adapter(source.adapter_key)
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if adapter.requires_target and not (source.url or "").strip():
+        raise HTTPException(status_code=400, detail="source URL is required before promotion")
+    if source.collection_status == "quarantined":
+        raise HTTPException(status_code=400, detail="quarantined sources must be reviewed before promotion")
+
+    source.collection_status = "pilot"
+    source.is_active = True
+    source.next_poll_at = None
+    db.commit()
+    return {
+        "id": str(source.id),
+        "name": source.name,
+        "collection_status": source.collection_status,
+        "is_active": source.is_active,
+    }
+
+
+@router.post("/{source_id}/quarantine")
+def quarantine_source(
+    source_id: uuid.UUID,
+    context: RequestContext = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    source = db.execute(
+        select(Source).where(Source.id == source_id, Source.org_id == context.org_id)
+    ).scalar_one_or_none()
+    if source is None:
+        raise HTTPException(status_code=404, detail="source not found")
+    source.collection_status = "quarantined"
+    source.is_active = False
+    source.next_poll_at = None
+    db.commit()
+    return {
+        "id": str(source.id),
+        "name": source.name,
+        "collection_status": source.collection_status,
+        "is_active": source.is_active,
+    }
+
+
 @router.post("/{source_id}/refresh")
 def refresh_source_by_id(
     source_id: uuid.UUID,
@@ -77,6 +149,8 @@ def refresh_source_by_id(
         raise HTTPException(status_code=404, detail="source not found")
     if not source.is_active:
         raise HTTPException(status_code=400, detail="source is inactive")
+    if source.collection_status not in {"pilot", "active"}:
+        raise HTTPException(status_code=400, detail="source must be in pilot or active collection status")
 
     resolved_commodity_id = commodity_id or _default_commodity_id(db)
     result = run_source_refresh(

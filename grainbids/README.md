@@ -100,6 +100,12 @@ Scheduling:
 - Job command: `python -m app.jobs.daily_source_ingestion`
 - For Render-hosted ingestion, set `sources.url` to stable public HTTPS file URLs (not local `P:\...` paths).
 
+Regional source rollout:
+- `POST /api/sources/seed-us-candidates` imports supported entries from `us_elevators_urls.toml` as inactive candidates. It performs no network requests.
+- Review candidates through `GET /api/sources`, then explicitly call `POST /api/sources/{id}/promote-to-pilot` for only the sources you want tested.
+- Only active automated sources in `pilot` or `active` collection status are eligible for scheduled polling.
+- `POST /api/sources/{id}/quarantine` immediately disables a source and removes it from scheduled polling.
+
 Weekly market report:
 - Safe preview: `python -m app.jobs.weekly_market_report` (prints the report and subscriber count; sends nothing).
 - Delivery: set `MARKET_REPORT_EMAIL_ENABLED=true`, `MARKET_REPORT_EMAIL_FROM`, `MARKET_REPORT_UNSUBSCRIBE_URL`, and the existing `ALERT_SMTP_*` values, then run `python -m app.jobs.weekly_market_report --send`.

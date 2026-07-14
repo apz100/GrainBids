@@ -19,6 +19,13 @@ class SourceAdapter:
     source_class: str
     default_poll_minutes: int
     default_timeout_seconds: int
+    requires_target: bool = False
+
+
+@dataclass(frozen=True)
+class SourceFetchTarget:
+    name: str
+    url: str
 
 
 ADAPTERS: dict[str, SourceAdapter] = {
@@ -32,6 +39,26 @@ ADAPTERS: dict[str, SourceAdapter] = {
     "lac": SourceAdapter("lac", "lac_source", "fetch_lac_all", "playwright", "scraper", 15, 90),
     "snobelen": SourceAdapter("snobelen", "snobelen_source", "fetch_snobelen_all", "playwright", "scraper", 15, 90),
     "wanstead": SourceAdapter("wanstead", "wanstead_source", "fetch_wanstead_all", "playwright", "scraper", 15, 90),
+    "us_agricharts": SourceAdapter(
+        "us_agricharts",
+        "us_agricharts_source",
+        "fetch_us_agricharts",
+        "direct",
+        "scraper",
+        30,
+        90,
+        True,
+    ),
+    "us_dtn": SourceAdapter(
+        "us_dtn",
+        "us_dtn_source",
+        "fetch_us_dtn",
+        "playwright",
+        "scraper",
+        30,
+        120,
+        True,
+    ),
 }
 PILOT_ADAPTER_KEYS = ("agricharts", "glg", "hensall", "snobelen", "andersons")
 
@@ -51,9 +78,9 @@ def get_adapter(key: str) -> SourceAdapter:
     return ADAPTERS[normalized]
 
 
-def fetch_with_adapter(adapter: SourceAdapter) -> pd.DataFrame:
+def fetch_with_adapter(adapter: SourceAdapter, target: SourceFetchTarget | None = None) -> pd.DataFrame:
     _ensure_sources_path_on_sys_path()
-    fetch_fn = _load_fetch_fn(adapter)
+    fetch_fn = _load_fetch_fn(adapter, target=target)
     result = fetch_fn()
     if result is None:
         return pd.DataFrame()
@@ -68,19 +95,32 @@ def _ensure_sources_path_on_sys_path() -> None:
         sys.path.insert(0, str(path))
 
 
-def _load_fetch_fn(adapter: SourceAdapter) -> Callable[[], pd.DataFrame]:
+def _load_fetch_fn(
+    adapter: SourceAdapter,
+    *,
+    target: SourceFetchTarget | None = None,
+) -> Callable[[], pd.DataFrame]:
     module = import_module(f"app.platform.market_data.sources.{adapter.module}")
-    target = getattr(module, adapter.function)
+    fetch_fn = getattr(module, adapter.function)
+
+    if adapter.requires_target and (target is None or not target.url.strip()):
+        raise ValueError(f"Source adapter '{adapter.key}' requires a source name and URL")
 
     if adapter.mode == "direct":
-        return target
+        if adapter.requires_target:
+            assert target is not None
+            return lambda: fetch_fn(target.url, target.name)
+        return fetch_fn
 
     if adapter.mode == "playwright":
         def _runner() -> pd.DataFrame:
             from playwright.sync_api import sync_playwright
 
             with sync_playwright() as playwright:
-                return target(playwright)
+                if adapter.requires_target:
+                    assert target is not None
+                    return fetch_fn(target.url, target.name, playwright)
+                return fetch_fn(playwright)
 
         return _runner
 
