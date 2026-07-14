@@ -7,6 +7,7 @@ from app.api.routes.alerts import router as alerts_router
 from app.api.routes.bids import router as bids_router
 from app.api.routes.ingestion import router as ingestion_router
 from app.api.routes.market_data import router as market_data_router
+from app.api.routes.newsletter import router as newsletter_router
 from app.api.routes.normalized_prices import router as normalized_prices_router
 from app.api.routes.quotes import router as quotes_router
 from app.api.routes.reference import router as reference_router
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     app.include_router(sources_router)
     app.include_router(ingestion_router)
     app.include_router(market_data_router)
+    app.include_router(newsletter_router)
     app.include_router(normalized_prices_router)
     app.include_router(alerts_router)
     app.include_router(quotes_router)
@@ -84,5 +86,4 @@ def _check_database() -> tuple[bool, str]:
         return True, "connected"
     except Exception as exc:
         return False, str(exc)
-
 

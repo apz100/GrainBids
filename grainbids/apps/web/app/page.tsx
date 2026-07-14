@@ -1,5 +1,6 @@
 import Link from "next/link";
 import DashboardPage from "./dashboard/page";
+import MarketReportSignup from "./_components/market-report-signup";
 
 export default function HomePage() {
   return (
@@ -21,8 +22,14 @@ export default function HomePage() {
             <Link href="mailto:demo@grainbids.com" className="rounded-md border border-black/20 bg-white px-5 py-2.5 text-sm">
               Request Demo
             </Link>
+            <Link href="#market-report" className="rounded-md border border-black/20 bg-white px-5 py-2.5 text-sm">
+              Get the Weekly Report
+            </Link>
           </div>
         </section>
+        <div className="mt-6">
+          <MarketReportSignup />
+        </div>
       </main>
       <DashboardPage />
     </>
