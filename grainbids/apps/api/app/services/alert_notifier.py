@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from email.message import EmailMessage
-import smtplib
-import ssl
 import uuid
 
 from sqlalchemy import select
@@ -12,6 +10,7 @@ from app.core.config import settings
 from app.models.alert import Alert
 from app.models.alert_rule import AlertRule
 from app.models.notification_log import NotificationLog
+from app.services.smtp_sender import send_smtp_message
 
 
 def notify_new_alerts(db: Session, *, alert_ids: list[uuid.UUID]) -> None:
@@ -49,7 +48,7 @@ def notify_new_alerts(db: Session, *, alert_ids: list[uuid.UUID]) -> None:
     message.set_content("\n".join(lines))
 
     try:
-        _send(message)
+        send_smtp_message(message)
         for alert, rule in rows:
             db.add(
                 NotificationLog(
@@ -77,26 +76,6 @@ def notify_new_alerts(db: Session, *, alert_ids: list[uuid.UUID]) -> None:
             )
         db.commit()
         raise
-
-
-def _send(message: EmailMessage) -> None:
-    host = settings.alert_smtp_host
-    port = settings.alert_smtp_port
-    username = settings.alert_smtp_username
-    password = settings.alert_smtp_password
-    use_tls = settings.alert_smtp_use_tls
-
-    if host is None:
-        return
-
-    context = ssl.create_default_context()
-    with smtplib.SMTP(host, port, timeout=20) as client:
-        if use_tls:
-            client.starttls(context=context)
-        if username and password:
-            client.login(username, password)
-        client.send_message(message)
-
 
 def _log_skipped_notifications(db: Session, *, alert_ids: list[uuid.UUID], reason: str) -> None:
     if not alert_ids:
