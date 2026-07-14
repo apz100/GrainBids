@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+import uuid
 
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -36,6 +37,23 @@ class _FakeSession:
 
     def rollback(self) -> None:
         pass
+
+
+class _ExistingResult:
+    def __init__(self, row) -> None:
+        self.row = row
+
+    def scalar_one_or_none(self):
+        return self.row
+
+
+class _ExistingSession(_FakeSession):
+    def __init__(self, row) -> None:
+        super().__init__()
+        self.row = row
+
+    def execute(self, _query):
+        return _ExistingResult(self.row)
 
 
 class NewsletterSignupTests(unittest.TestCase):
@@ -113,6 +131,28 @@ class NewsletterSignupTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(db.added, [])
         self.assertEqual(db.commit_count, 0)
+
+    def test_unsubscribe_requires_confirmation_post(self) -> None:
+        token = uuid.uuid4()
+        subscriber = type("Subscriber", (), {"status": "active", "updated_at": None})()
+        db = _ExistingSession(subscriber)
+
+        def override_db():
+            yield db
+
+        app.dependency_overrides[get_db] = override_db
+        try:
+            client = TestClient(app)
+            confirmation = client.get(f"/api/newsletter/unsubscribe?token={token}")
+            response = client.post(f"/api/newsletter/unsubscribe?token={token}")
+        finally:
+            app.dependency_overrides.clear()
+
+        self.assertEqual(confirmation.status_code, 200)
+        self.assertIn("Unsubscribe from GrainBids?", confirmation.text)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(subscriber.status, "unsubscribed")
+        self.assertEqual(db.commit_count, 1)
 
 
 if __name__ == "__main__":

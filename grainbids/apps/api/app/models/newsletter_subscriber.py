@@ -18,6 +18,9 @@ class NewsletterSubscriber(Base):
     signup_source: Mapped[str] = mapped_column(String(100), nullable=False, default="homepage")
     consent_version: Mapped[str] = mapped_column(String(40), nullable=False, default="market-report-v1")
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="active")
+    unsubscribe_token: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, unique=True, index=True, default=uuid.uuid4
+    )
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()

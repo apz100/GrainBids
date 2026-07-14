@@ -32,6 +32,7 @@ API:
 Optional API env values:
 - `ALLOW_IMPLICIT_ORG=true` allows local dev requests without `X-Org-Id`.
 - `ALERT_EMAIL_*` + `ALERT_SMTP_*` enable outbound email when alert events are created.
+- `MARKET_REPORT_EMAIL_*` uses the same SMTP connection but has a separate, default-off delivery switch.
 - `API_CORS_ORIGINS` controls allowed frontend origins.
 - `API_ENABLE_DOCS=false` can disable Swagger/OpenAPI in production.
 
@@ -45,6 +46,8 @@ Web:
 - Legacy Flask/SQLite and old orchestration code are archived under `archive/`.
 - Alembic migrations live in `apps/api/alembic/versions`.
 - Public market-report signups use `POST /api/newsletter/subscribers` and do not require organization headers.
+- Market-report previews use admin-only `GET /api/market-report/preview`.
+- Subscriber unsubscribe links show a confirmation page before `POST /api/newsletter/unsubscribe` changes status.
 - Admin-only routes (source refresh/seed, quote export, ingestion run trigger) accept `X-User-Role: admin`.
 
 ## Parallel coding workflow
@@ -96,3 +99,9 @@ Scheduling:
 - Use host scheduler/cron at `08:00` and `15:00` America/Toronto.
 - Job command: `python -m app.jobs.daily_source_ingestion`
 - For Render-hosted ingestion, set `sources.url` to stable public HTTPS file URLs (not local `P:\...` paths).
+
+Weekly market report:
+- Safe preview: `python -m app.jobs.weekly_market_report` (prints the report and subscriber count; sends nothing).
+- Delivery: set `MARKET_REPORT_EMAIL_ENABLED=true`, `MARKET_REPORT_EMAIL_FROM`, `MARKET_REPORT_UNSUBSCRIBE_URL`, and the existing `ALERT_SMTP_*` values, then run `python -m app.jobs.weekly_market_report --send`.
+- Schedule delivery once weekly after a successful ingestion cycle. Each subscriber/ISO-week pair is recorded so rerunning the job skips already sent or pending deliveries.
+- Failed deliveries remain recorded and are only retried with the explicit `--send --retry-failed` flags.

@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     alert_smtp_username: str | None = None
     alert_smtp_password: str | None = None
     alert_smtp_use_tls: bool = True
+    market_report_email_enabled: bool = False
+    market_report_email_from: str | None = None
+    market_report_region: str = "Eastern Ontario"
+    market_report_public_url: str = "https://grainbids.com"
+    market_report_unsubscribe_url: str | None = None
 
     @property
     def api_cors_origins_list(self) -> list[str]:
