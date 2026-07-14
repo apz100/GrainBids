@@ -3,6 +3,7 @@ from app.models.alert_rule import AlertRule
 from app.models.company import Company
 from app.models.company_source_priority import CompanySourcePriority
 from app.models.commodity import Commodity
+from app.models.content_draft import ContentDraft
 from app.models.ingestion_run import IngestionRun
 from app.models.location import Location
 from app.models.market_report_delivery import MarketReportDelivery
@@ -26,6 +27,7 @@ __all__ = [
     "Company",
     "CompanySourcePriority",
     "Commodity",
+    "ContentDraft",
     "IngestionRun",
     "Location",
     "MarketReportDelivery",
