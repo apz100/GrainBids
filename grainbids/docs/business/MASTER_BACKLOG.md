@@ -6,7 +6,7 @@ This is the portable source of truth for autonomous GrainBids work. Keep no more
 
 | ID | Track | Priority | Outcome | Definition of done | Status | Gate / dependency |
 |---|---|---:|---|---|---|---|
-| R-002 | Revenue | P0 | Three customer-ready proof packs | Snapshot, freight/netback, and paid-pilot scorecard templates are populated from verified data and presentation-ready | ACTIVE | Production snapshot access or authorized data required; do not invent prices |
+| R-005 | Revenue | P0 | First-ten account briefs | Ten public-information briefs with verified facilities, sources, gaps, proof angle, role map, discovery questions, and offer | ACTIVE | Use `PROSPECT_PIPELINE.md`; no named contacts or outreach |
 | P-002 | Product/data | P0 | Source validation harness and pilot console | One candidate can be probed manually, scored, reviewed, promoted, or quarantined without scheduled activation or price persistence | ACTIVE | Stacked on PR #3; no live probes |
 | C-002 | Content/operations | P0 | Daily/weekly draft generator | Persisted QA-gated email/site/social drafts are created from verified snapshots and never sent | ACTIVE | Stacked on PR #3; no publishing |
 
@@ -14,7 +14,6 @@ This is the portable source of truth for autonomous GrainBids work. Keep no more
 
 | ID | Track | Priority | Outcome | Definition of done | Status | Dependency / gate |
 |---|---|---:|---|---|---|---|
-| R-003 | Revenue | P0 | Initial prospect pipeline | Thirty qualified organizations with reason-to-buy, contact role, and sample angle | QUEUED | Public research; contact requires approval |
 | P-003 | Product/data | P1 | Regional source configuration | Country, currency, timezone, region, and source ownership are configurable without invented metadata | QUEUED | P-002 |
 | C-003 | Content/operations | P1 | Content approval queue | Drafts expose evidence, warnings, status, reviewer decision, and revision history | QUEUED | C-002 |
 | R-004 | Revenue | P1 | Paid pilot package | One-page scope, onboarding checklist, success metrics, terms, and recurring conversion path | QUEUED | R-001 |
@@ -30,12 +29,14 @@ This is the portable source of truth for autonomous GrainBids work. Keep no more
 | O-002 | Operations | Persistent GrainBids business skill | Created `build-grainbids-business` skill |
 | P-000 | Product/data | Signup and guarded weekly report foundation | PRs #1 and #2 merged; production deployment passed |
 | R-001 | Revenue | Productized GrainBids service offer | CAD $750 snapshot, $2,500 pilot, and managed monthly desk documented in `SERVICE_OFFER.md` |
+| R-003 | Revenue | Initial prospect pipeline | Thirty qualified organizations and a ranked first-ten shortlist documented in `PROSPECT_PIPELINE.md`; no outreach performed |
 | C-001 | Content/operations | Autonomous draft content engine specification | Fact-pack, QA, storage, scheduling, templates, metrics, and implementation scope documented in `CONTENT_ENGINE.md` |
 
 ## Blocked or deliberately deferred
 
 | Item | Reason |
 |---|---|
+| Populate the three proof-pack templates (R-002) | Templates are ready, but a verified production snapshot or customer-authorized data is required; never invent prices |
 | Full elevator-management suite | The user is not buying/running an elevator; no paying demand validates this scope |
 | Merge PR #3 | Draft is mergeable and its Vercel preview passed; merge awaits explicit authorization |
 | Nationwide bulk scraping | Source rights, reliability, load, normalization, and commercial need must be validated region-by-region |
