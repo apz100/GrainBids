@@ -7,8 +7,8 @@ const sans = Instrument_Sans({ subsets: ["latin"], variable: "--font-sans" });
 const serif = Instrument_Serif({ subsets: ["latin"], weight: "400", variable: "--font-serif" });
 
 export const metadata: Metadata = {
-  title: "GrainBids",
-  description: "GrainBids Bids module: see where your bid sits versus the local market in under 60 seconds."
+  title: "GrainBids | Eastern Ontario Grain Prices and Market Intelligence",
+  description: "Compare Eastern Ontario grain bids, follow basis movement, and receive practical local market intelligence."
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -21,4 +21,3 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
-

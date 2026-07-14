@@ -15,6 +15,7 @@ BasisBoard is the bids/market module inside GrainBids, not a separate product.
 - `GrainBids / Sources`: source definitions, mappings, and ingest
 - `GrainBids / Watchlists`: tracked markets and priority rows
 - `GrainBids / Admin`: org settings and access controls
+- `GrainBids / Market Report`: public, consent-tracked newsletter signup and lead capture
 
 ## Local dev
 1. Copy `.env.example` to `.env` in repo root.
@@ -43,6 +44,7 @@ Web:
 - This is the single active runtime architecture for GrainBids.
 - Legacy Flask/SQLite and old orchestration code are archived under `archive/`.
 - Alembic migrations live in `apps/api/alembic/versions`.
+- Public market-report signups use `POST /api/newsletter/subscribers` and do not require organization headers.
 - Admin-only routes (source refresh/seed, quote export, ingestion run trigger) accept `X-User-Role: admin`.
 
 ## Parallel coding workflow
@@ -94,4 +96,3 @@ Scheduling:
 - Use host scheduler/cron at `08:00` and `15:00` America/Toronto.
 - Job command: `python -m app.jobs.daily_source_ingestion`
 - For Render-hosted ingestion, set `sources.url` to stable public HTTPS file URLs (not local `P:\...` paths).
-

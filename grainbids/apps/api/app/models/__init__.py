@@ -6,6 +6,7 @@ from app.models.commodity import Commodity
 from app.models.ingestion_run import IngestionRun
 from app.models.location import Location
 from app.models.notification_log import NotificationLog
+from app.models.newsletter_subscriber import NewsletterSubscriber
 from app.models.normalized_price import NormalizedPrice
 from app.models.organization import Organization
 from app.models.price_snapshot import PriceSnapshot
@@ -27,6 +28,7 @@ __all__ = [
     "IngestionRun",
     "Location",
     "NotificationLog",
+    "NewsletterSubscriber",
     "NormalizedPrice",
     "Organization",
     "PriceSnapshot",
