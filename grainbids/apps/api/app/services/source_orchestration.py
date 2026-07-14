@@ -85,7 +85,7 @@ def run_source_refresh(
             fetch_target = None
             if adapter.requires_target:
                 fetch_target = SourceFetchTarget(name=source.name, url=(source.url or "").strip())
-            df = _fetch_with_timeout(
+            df = fetch_source_once(
                 adapter.key,
                 timeout_seconds=timeout_seconds,
                 target=fetch_target,
@@ -372,7 +372,7 @@ def poll_due_sources(
     return results
 
 
-def _fetch_with_timeout(
+def fetch_source_once(
     adapter_key: str,
     *,
     timeout_seconds: int,
