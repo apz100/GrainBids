@@ -6,7 +6,7 @@ This is the portable source of truth for autonomous GrainBids work. Keep no more
 
 | ID | Track | Priority | Outcome | Definition of done | Status | Gate / dependency |
 |---|---|---:|---|---|---|---|
-| R-006 | Revenue | P0 | Sales discovery kit | Reusable call guide, qualification scorecard, data-permission checklist, and stop/snapshot/pilot routing tied to the first-ten briefs | ACTIVE | Use `FIRST_10_ACCOUNT_BRIEFS.md`; no named contacts, outreach, or customer claims |
+| R-004 | Revenue | P0 | Paid pilot package | One-page scope, onboarding checklist, success metrics, terms, and recurring conversion path | ACTIVE | Use `SERVICE_OFFER.md` and `SALES_DISCOVERY_KIT.md`; draft only, no customer commitment or payment setup |
 | P-002 | Product/data | P0 | Source validation harness and pilot console | One candidate can be probed manually, scored, reviewed, promoted, or quarantined without scheduled activation or price persistence | ACTIVE | Stacked on PR #3; no live probes |
 | C-002 | Content/operations | P0 | Daily/weekly draft generator | Persisted QA-gated email/site/social drafts are created from verified snapshots and never sent | ACTIVE | Stacked on PR #3; no publishing |
 
@@ -16,7 +16,6 @@ This is the portable source of truth for autonomous GrainBids work. Keep no more
 |---|---|---:|---|---|---|---|
 | P-003 | Product/data | P1 | Regional source configuration | Country, currency, timezone, region, and source ownership are configurable without invented metadata | QUEUED | P-002 |
 | C-003 | Content/operations | P1 | Content approval queue | Drafts expose evidence, warnings, status, reviewer decision, and revision history | QUEUED | C-002 |
-| R-004 | Revenue | P1 | Paid pilot package | One-page scope, onboarding checklist, success metrics, terms, and recurring conversion path | QUEUED | R-001 |
 | P-004 | Product/data | P1 | Customer-ready market report export | Branded PDF/CSV/email-preview output with provenance, units, currency, delivery, futures, and freight disclosures | QUEUED | Verified data |
 | P-005 | Product/data | P1 | Regional comparison model | Compare bids across regions only when units, currency, timing, grade, and freight assumptions are compatible | QUEUED | P-003 |
 | C-004 | Content/operations | P2 | Content performance feedback | Track signup, open, click, lead, and conversion metrics by issue and content type | QUEUED | Actual distribution approval |
@@ -31,6 +30,8 @@ This is the portable source of truth for autonomous GrainBids work. Keep no more
 | R-001 | Revenue | Productized GrainBids service offer | CAD $750 snapshot, $2,500 pilot, and managed monthly desk documented in `SERVICE_OFFER.md` |
 | R-003 | Revenue | Initial prospect pipeline | Thirty qualified organizations and a ranked first-ten shortlist documented in `PROSPECT_PIPELINE.md`; no outreach performed |
 | R-005 | Revenue | First-ten account briefs | Ten evidence-bounded public-information briefs with coverage gaps, proof angles, role maps, discovery questions, offer routing, checklists, and official links in `FIRST_10_ACCOUNT_BRIEFS.md`; no outreach performed |
+| R-006 | Revenue | Sales discovery kit | Evidence-bounded 20-minute call guide, qualification scorecard, stop rules, offer routing, data-permission checklist, recap template, and CRM fields documented in `SALES_DISCOVERY_KIT.md`; no outreach or calls performed |
+| R-007 | Revenue / product | Farmer beta and B2B sales wave | Farmer beta program, landing copy, feedback template, demo script, elevator/merchandiser one-pager, recruitment drafts, and consent-tracked beta-interest homepage path documented and implemented in draft PR #8; no outreach or deployment performed |
 | C-001 | Content/operations | Autonomous draft content engine specification | Fact-pack, QA, storage, scheduling, templates, metrics, and implementation scope documented in `CONTENT_ENGINE.md` |
 
 ## Blocked or deliberately deferred
