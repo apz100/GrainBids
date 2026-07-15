@@ -12,8 +12,8 @@ export default function HomePage() {
             Local grain prices, basis movement, and quote-ready market context.
           </h1>
           <p className="mt-4 max-w-3xl text-base text-black/70">
-            Table-first market intelligence for merchandisers, elevators, feed mills, and farms.
-            <span className="mt-1 block">Open the market view in one click, then filter by commodity, location, and company.</span>
+            Compare posted corn, soybean, and wheat bids by commodity, location, delivery period, and company.
+            <span className="mt-1 block">Built for farmers and the commercial teams that monitor local grain markets.</span>
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link href="/bids" className="rounded-md border border-black/20 bg-black px-5 py-2.5 text-sm text-white">
@@ -23,7 +23,7 @@ export default function HomePage() {
               Request Demo
             </Link>
             <Link href="#market-report" className="rounded-md border border-black/20 bg-white px-5 py-2.5 text-sm">
-              Get the Weekly Report
+              Join the Free Farmer Beta
             </Link>
           </div>
         </section>

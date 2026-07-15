@@ -9,6 +9,7 @@ type FormStatus = "idle" | "submitting" | "success" | "error";
 export default function MarketReportSignup() {
   const [status, setStatus] = useState<FormStatus>("idle");
   const [message, setMessage] = useState("");
+  const [farmerBetaInterest, setFarmerBetaInterest] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -21,7 +22,7 @@ export default function MarketReportSignup() {
       first_name: String(form.get("first_name") || ""),
       region: "Eastern Ontario",
       audience: String(form.get("audience") || "farmer"),
-      signup_source: "homepage_market_report",
+      signup_source: farmerBetaInterest ? "homepage_farmer_beta" : "homepage_market_report",
       consent: form.get("consent") === "on",
       website: String(form.get("website") || ""),
     };
@@ -37,8 +38,13 @@ export default function MarketReportSignup() {
         throw new Error(detail?.detail?.[0]?.msg || detail?.detail || "Signup could not be completed.");
       }
       setStatus("success");
-      setMessage("You're on the list. The first GrainBids market report will arrive by email.");
+      setMessage(
+        farmerBetaInterest
+          ? "You're on the list. We'll send the market report and may ask for brief farmer-beta feedback."
+          : "You're on the list. The first GrainBids market report will arrive by email.",
+      );
       event.currentTarget.reset();
+      setFarmerBetaInterest(false);
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "Signup could not be completed.");
@@ -93,6 +99,17 @@ export default function MarketReportSignup() {
               <option value="ag_professional">Agricultural professional</option>
               <option value="other">Other</option>
             </select>
+          </label>
+
+          <label className="flex items-start gap-2 text-xs leading-5 text-white/65">
+            <input
+              name="farmer_beta_interest"
+              type="checkbox"
+              checked={farmerBetaInterest}
+              onChange={(event) => setFarmerBetaInterest(event.target.checked)}
+              className="mt-1"
+            />
+            <span>I want to help test GrainBids as a farmer during the free beta.</span>
           </label>
 
           <label className="hidden" aria-hidden="true">
