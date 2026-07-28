@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     market_report_region: str = "Eastern Ontario"
     market_report_public_url: str = "https://grainbids.com"
     market_report_unsubscribe_url: str | None = None
+    content_snapshot_api_keys: str = ""
+    content_snapshot_org_id: str = ""
+    content_snapshot_currency_code: str = "CAD"
+    content_snapshot_max_age_minutes: int = 1440
 
     @property
     def api_cors_origins_list(self) -> list[str]:
@@ -48,9 +52,15 @@ class Settings(BaseSettings):
     def canonical_aggregator_sources_set(self) -> set[str]:
         return {token.strip().casefold() for token in self.canonical_aggregator_sources.split(",") if token.strip()}
 
+    @property
+    def content_snapshot_api_keys_list(self) -> list[str]:
+        return [token.strip() for token in self.content_snapshot_api_keys.split(",") if token.strip()]
+
     @model_validator(mode="after")
     def validate_runtime(self) -> "Settings":
         env = self.app_env.strip().lower()
+        if self.content_snapshot_max_age_minutes < 1:
+            raise ValueError("CONTENT_SNAPSHOT_MAX_AGE_MINUTES must be at least 1")
         if env in {"production", "prod"}:
             if not self.database_url.strip():
                 raise ValueError("DATABASE_URL is required when APP_ENV=production")
