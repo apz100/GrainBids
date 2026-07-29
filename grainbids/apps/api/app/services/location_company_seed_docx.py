@@ -216,10 +216,6 @@ def _mapping_status(value: str) -> str:
 
 
 def _is_benchmark_label(raw_location: str) -> bool:
-    key = raw_location.casefold()
-    blocked_tokens = ("f.o.b", "u.s. rep", "county", "regional price", "price index")
-    if any(token in key for token in blocked_tokens):
-        return True
     return is_benchmark_location_label(raw_location)
 
 
