@@ -19,9 +19,6 @@ jobs:
     name: API tests and migration checks
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: grainbids/apps/api
     env:
       APP_ENV: development
       DATABASE_URL: postgresql+psycopg://grainbids:grainbids@127.0.0.1:5432/grainbids
@@ -40,23 +37,31 @@ jobs:
           cache: pip
           cache-dependency-path: grainbids/apps/api/requirements.txt
 
-      - name: Install API dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+      - name: Install API dependencies and test runner
+        working-directory: grainbids/apps/api
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest==8.2.2
 
       - name: Run focused stabilization tests
+        working-directory: grainbids/apps/api
         run: >-
-          pytest -q
+          python -m pytest -q
           tests/test_market_canonicalization.py
           tests/test_location_company_seed_docx.py
           tests/test_backfill_source_company_identity.py
 
       - name: Run full API suite
-        run: pytest -q
+        working-directory: grainbids/apps/api
+        run: python -m pytest -q
 
       - name: Compile API and tests
+        working-directory: grainbids/apps/api
         run: python -m compileall -q app tests
 
       - name: Verify one Alembic head
+        working-directory: grainbids/apps/api
         run: |
           python - <<'PY'
           from alembic.config import Config
@@ -69,7 +74,6 @@ jobs:
           PY
 
       - name: Check patch whitespace
-        working-directory: .
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -82,9 +86,6 @@ jobs:
     name: Web typecheck, lint and build
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: grainbids/apps/web
     env:
       NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
       NEXT_PUBLIC_ORG_ID: 00000000-0000-0000-0000-000000000001
@@ -100,14 +101,19 @@ jobs:
           cache: npm
           cache-dependency-path: grainbids/apps/web/package-lock.json
 
+      - name: Verify web lockfile
+        run: |
+          test -f grainbids/apps/web/package-lock.json
+          node -e "const lock=require('./grainbids/apps/web/package-lock.json'); console.log('lockfileVersion=' + lock.lockfileVersion)"
+
       - name: Install web dependencies
-        run: npm ci
+        run: npm --prefix grainbids/apps/web ci
 
       - name: Typecheck web application
-        run: npx tsc --noEmit --pretty false
+        run: npm --prefix grainbids/apps/web exec -- tsc --noEmit --pretty false
 
       - name: Lint web application
-        run: npm run lint
+        run: npm --prefix grainbids/apps/web run lint
 
       - name: Build web application
-        run: npm run build
+        run: npm --prefix grainbids/apps/web run build
