@@ -1,0 +1,119 @@
+name: GrainBids CI
+
+on:
+  push:
+    branches:
+      - main
+      - "agent/**"
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: grainbids-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: API tests and migration checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg://grainbids:grainbids@127.0.0.1:5432/grainbids
+      ALLOW_IMPLICIT_ORG: "true"
+      PYTHONPATH: .
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: grainbids/apps/api/requirements.txt
+
+      - name: Install API dependencies and test runner
+        working-directory: grainbids/apps/api
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest==8.2.2
+
+      - name: Run focused stabilization tests
+        working-directory: grainbids/apps/api
+        run: >-
+          python -m pytest -q
+          tests/test_market_canonicalization.py
+          tests/test_location_company_seed_docx.py
+          tests/test_backfill_source_company_identity.py
+
+      - name: Run full API suite
+        working-directory: grainbids/apps/api
+        run: python -m pytest -q
+
+      - name: Compile API and tests
+        working-directory: grainbids/apps/api
+        run: python -m compileall -q app tests
+
+      - name: Verify one Alembic head
+        working-directory: grainbids/apps/api
+        run: |
+          python - <<'PY'
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+
+          heads = ScriptDirectory.from_config(Config("alembic.ini")).get_heads()
+          if len(heads) != 1:
+              raise SystemExit(f"Expected one Alembic head, found {heads}")
+          print(f"Alembic head: {heads[0]}")
+          PY
+
+      - name: Check patch whitespace
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git diff --check "${{ github.event.pull_request.base.sha }}"...HEAD
+          else
+            git diff --check HEAD^...HEAD
+          fi
+
+  web:
+    name: Web typecheck, lint and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+      NEXT_PUBLIC_ORG_ID: 00000000-0000-0000-0000-000000000001
+      NEXT_PUBLIC_USER_ROLE: member
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: grainbids/apps/web/package-lock.json
+
+      - name: Verify web lockfile
+        run: |
+          test -f grainbids/apps/web/package-lock.json
+          node -e "const lock=require('./grainbids/apps/web/package-lock.json'); console.log('lockfileVersion=' + lock.lockfileVersion)"
+
+      - name: Install web dependencies
+        run: npm --prefix grainbids/apps/web ci
+
+      - name: Typecheck web application
+        run: ./grainbids/apps/web/node_modules/.bin/tsc --project grainbids/apps/web/tsconfig.json --noEmit --pretty false
+
+      - name: Lint web application
+        run: npm --prefix grainbids/apps/web run lint
+
+      - name: Build web application
+        run: npm --prefix grainbids/apps/web run build
