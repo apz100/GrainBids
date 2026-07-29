@@ -107,13 +107,17 @@ jobs:
           node -e "const lock=require('./grainbids/apps/web/package-lock.json'); console.log('lockfileVersion=' + lock.lockfileVersion)"
 
       - name: Install web dependencies
-        run: npm --prefix grainbids/apps/web ci
+        working-directory: grainbids/apps/web
+        run: npm ci
 
       - name: Typecheck web application
-        run: npm --prefix grainbids/apps/web exec -- tsc --noEmit --pretty false
+        working-directory: grainbids/apps/web
+        run: npx tsc --noEmit --pretty false
 
       - name: Lint web application
-        run: npm --prefix grainbids/apps/web run lint
+        working-directory: grainbids/apps/web
+        run: npm run lint
 
       - name: Build web application
-        run: npm --prefix grainbids/apps/web run build
+        working-directory: grainbids/apps/web
+        run: npm run build
