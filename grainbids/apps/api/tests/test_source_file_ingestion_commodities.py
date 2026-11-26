@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import sys
 import unittest
-from unittest.mock import Mock, patch
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -22,11 +22,10 @@ class SourceFileIngestionCommodityTests(unittest.TestCase):
         self.assertEqual(_display_commodity_name("canola"), "Canola")
         self.assertEqual(_display_commodity_name("  "), "")
 
-
     @patch("app.services.source_file_ingestion.requests.get")
     def test_read_source_url_parses_https_csv_without_filesystem_access(self, get: Mock) -> None:
         response = Mock()
-        response.content = b"location,commodity\\nChesterville,Corn\\n"
+        response.content = b"location,commodity\nChesterville,Corn\n"
         get.return_value = response
 
         rows, headers = _read_source_url("https://example.test/ontario-bids.csv")
