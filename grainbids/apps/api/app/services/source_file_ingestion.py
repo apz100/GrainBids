@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -85,6 +86,10 @@ def _read_source_file(path: Path) -> tuple[list[dict[str, object]], list[str]]:
 def _is_http_url(value: str) -> bool:
     parsed = urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _source_identifier(value: str) -> str:
+    return value if _is_http_url(value) else str(Path(value))
 
 
 def _read_source_url(url: str) -> tuple[list[dict[str, object]], list[str]]:
@@ -276,7 +281,7 @@ def ingest_source_file(
     max_attempts: int = 1,
     captured_at: datetime | None = None,
 ) -> SourceFileIngestionResult:
-    source_identifier = str(Path(source_file_path))
+    source_identifier = _source_identifier(source_file_path)
     source = _get_source(db, source_id)
     run = IngestionRun(
         source_name=source.name,
