@@ -88,6 +88,10 @@ def _is_http_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
+def _source_identifier(value: str) -> str:
+    return value if _is_http_url(value) else str(Path(value))
+
+
 def _read_source_url(url: str) -> tuple[list[dict[str, object]], list[str]]:
     response = requests.get(url, timeout=120)
     response.raise_for_status()
@@ -277,7 +281,7 @@ def ingest_source_file(
     max_attempts: int = 1,
     captured_at: datetime | None = None,
 ) -> SourceFileIngestionResult:
-    source_identifier = str(Path(source_file_path))
+    source_identifier = _source_identifier(source_file_path)
     source = _get_source(db, source_id)
     run = IngestionRun(
         source_name=source.name,
