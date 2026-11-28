@@ -8,7 +8,11 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services.source_file_ingestion import _display_commodity_name, _read_source_url  # noqa: E402
+from app.services.source_file_ingestion import (  # noqa: E402
+    _display_commodity_name,
+    _read_source_url,
+    _source_identifier,
+)
 
 
 class SourceFileIngestionCommodityTests(unittest.TestCase):
@@ -21,6 +25,10 @@ class SourceFileIngestionCommodityTests(unittest.TestCase):
     def test_display_commodity_name_fallback_title_case(self) -> None:
         self.assertEqual(_display_commodity_name("canola"), "Canola")
         self.assertEqual(_display_commodity_name("  "), "")
+
+    def test_source_identifier_preserves_https_url_for_reprocessing(self) -> None:
+        url = "https://example.test/ontario-bids.csv?as_of=2026-11-28"
+        self.assertEqual(_source_identifier(url), url)
 
     @patch("app.services.source_file_ingestion.requests.get")
     def test_read_source_url_parses_https_csv_without_filesystem_access(self, get: Mock) -> None:
